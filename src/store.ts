@@ -116,7 +116,7 @@ export async function login(username: string, password: string): Promise<void> {
   const res = await api<{ token: string; user: UserInfo }>('/api/auth/login', { username, password })
   setToken(res.token)
   commit({ me: res.user, actingAs: res.user.username })
-  window.FlowCatch.log(`logged in as ${res.user.name} (${res.user.role})`)
+  window.Understudy.log(`logged in as ${res.user.name} (${res.user.role})`)
   await refresh()
 }
 
@@ -127,7 +127,7 @@ export function logout(): void {
 
 export function switchActingAs(username: string): void {
   commit({ actingAs: username })
-  window.FlowCatch.log(`switched active persona to ${username}`)
+  window.Understudy.log(`switched active persona to ${username}`)
 }
 
 export interface WorklogInput {
@@ -142,7 +142,7 @@ export interface WorklogInput {
 
 export async function createWorklog(input: WorklogInput): Promise<Worklog> {
   const wl = await api<Worklog>('/api/worklogs', { ...input, actingAs: state.actingAs })
-  window.FlowCatch.log(
+  window.Understudy.log(
     `created worklog "${wl.task}" (line ${wl.line}, ${wl.progressPct}%, ${wl.hours}h${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
@@ -156,7 +156,7 @@ export async function requestApproval(worklogId: string, approver: string): Prom
     actingAs: state.actingAs,
   })
   const wl = state.worklogs.find((w) => w.id === worklogId)
-  window.FlowCatch.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
+  window.Understudy.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
     approvalId: approval.id,
   })
   await refresh()
@@ -174,7 +174,7 @@ export async function decideApproval(
     actingAs: state.actingAs,
   })
   const wl = state.worklogs.find((w) => w.id === decided.worklogId)
-  window.FlowCatch.log(
+  window.Understudy.log(
     `${decision.toLowerCase()} worklog "${wl?.task ?? decided.worklogId}"${comment ? ` — "${comment}"` : ''}`,
     { approvalId },
   )
@@ -190,7 +190,7 @@ export async function saveProcess(map: { title: string; steps: unknown[] }): Pro
     map,
     actingAs: state.actingAs,
   })
-  window.FlowCatch.log(`saved process "${saved.title}" to the shared library`, { processId: saved.id })
+  window.Understudy.log(`saved process "${saved.title}" to the shared library`, { processId: saved.id })
   await refresh()
   return saved
 }

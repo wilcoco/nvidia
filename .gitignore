@@ -1,6 +1,6 @@
 node_modules/
 dist/
-public/flowcatch.js
+public/understudy.js
 .env
 .env.*
 !.env.example

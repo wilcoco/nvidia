@@ -1,9 +1,9 @@
 /**
- * FlowCatch — drop-in WebMCP layer that turns any web work-app into an
+ * Understudy — drop-in WebMCP layer that turns any web work-app into an
  * agent-readable, agent-operable workspace.
  *
- * Add <script src="/flowcatch.js"></script> to a page and call
- * FlowCatch.init(). The page gains:
+ * Add <script src="/understudy.js"></script> to a page and call
+ * Understudy.init(). The page gains:
  *  - an action journal of what the human does,
  *  - a side panel where the agent drafts a process map the human can edit,
  *  - a WebMCP toolset so an agent (ChatGPT, Chrome) can read the work,
@@ -55,4 +55,4 @@ function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }
   loadSavedMap(map, meta)
 }
 
-;(window as any).FlowCatch = { init, log, registerAction, loadProcess }
+;(window as any).Understudy = { init, log, registerAction, loadProcess }

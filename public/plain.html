@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Plain Purchase Requests — FlowCatch attach demo</title>
+  <title>Plain Purchase Requests — Understudy attach demo</title>
   <style>
     body { font-family: Georgia, serif; background: #fffbeb; margin: 0; padding: 24px; color: #333; }
     .wrap { max-width: 560px; margin-right: 380px; }
@@ -17,13 +17,13 @@
     td, th { border: 1px solid #e5e0c8; padding: 6px 10px; font-size: 14px; text-align: left; }
   </style>
   <!-- The whole integration is this one script tag plus the init call below. -->
-  <script src="/flowcatch.js"></script>
+  <script src="/understudy.js"></script>
 </head>
 <body>
   <div class="wrap">
     <h1>Purchase Requests</h1>
     <p class="tag">A deliberately plain, unrelated app — no build step, no framework, different styling.
-       FlowCatch is attached with one script tag and still journals the work, so an agent can
+       Understudy is attached with one script tag and still journals the work, so an agent can
        structure it into a process here too.</p>
     <form id="pr-form" data-flow-label="purchase request form">
       <label>Item <input name="item" required placeholder="e.g. cutting oil 20L" /></label>
@@ -43,7 +43,7 @@
   </div>
   <script>
     const rows = []
-    FlowCatch.init({
+    Understudy.init({
       appName: 'Plain Purchase Requests',
       autoCapture: 'full',
       stateProvider: () => ({ requests: rows }),

@@ -1,8 +1,8 @@
-# ⚡ FlowCatch
+# 🎭 Understudy
 
 > **You did it once. The agent can do it forever.**
 
-FlowCatch is a **drop-in WebMCP layer** that turns any web work-app into an
+Understudy is a **drop-in WebMCP layer** that turns any web work-app into an
 agent-readable, agent-operable workspace. Add one script tag, and:
 
 1. **The human just works.** Every meaningful action — clicks, form submissions,
@@ -21,13 +21,13 @@ agent-readable, agent-operable workspace. Add one script tag, and:
    team-wide library — anyone (or their agent) can pull up a process a
    colleague refined and work along it.
 
-Company processes live in people's habits, not in documents. FlowCatch turns
+Company processes live in people's habits, not in documents. Understudy turns
 **doing** into **documentation** into **automation** — without anyone ever
 writing a process down.
 
 The point is not "AI automates your work" — recorders, task miners, and
 computer-use agents already chase that, all of them turn-taking: the human
-records, then the tool takes over. FlowCatch's claim is different:
+records, then the tool takes over. Understudy's claim is different:
 **automation becomes something the human and the agent do together, at the
 same time, on the same screen.** The human keeps working while the map grows
 beside them; the human touches the map and the agent's next question changes.
@@ -82,7 +82,7 @@ reviewer play both sides of the flow (worker files, lead approves).
    the agent: *"Watch what I do and turn it into a process."*
 2. As Kim (line worker): write a worklog, mark it urgent, request approval.
    Switch to Lee (team lead) and approve it.
-3. Ask the agent to draft the process. Edit its map in the FlowCatch panel —
+3. Ask the agent to draft the process. Edit its map in the Understudy panel —
    rename a step, fix a branch condition — and watch its follow-ups change.
 4. Press **Confirm process**, then ask the agent to *run* it (e.g. "file
    today's worklog for booth 2 and route it for approval"). Approve each agent
@@ -103,12 +103,12 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `load_process` | Load a saved process into the session for replay. |
 | `run_action` | Execute a host action (replay), gated by an in-page human approval card. |
 
-## Attach FlowCatch to your own app
+## Attach Understudy to your own app
 
 ```html
-<script src="/flowcatch.js"></script>
+<script src="/understudy.js"></script>
 <script>
-  FlowCatch.init({
+  Understudy.init({
     appName: 'My CRM',
     autoCapture: 'full',              // or 'min' if you emit semantic logs
     stateProvider: () => ({ ... }),   // what the agent sees via get_page_state
@@ -119,7 +119,7 @@ reviewer play both sides of the flow (worker files, lead approves).
       handler: (p) => createTicket(p),
     }],
   })
-  // Optional richer journal: FlowCatch.log('closed ticket #42', {...})
+  // Optional richer journal: Understudy.log('closed ticket #42', {...})
 </script>
 ```
 
@@ -131,7 +131,7 @@ panel styles cannot collide.
 ```bash
 npm install
 npm run dev:server # API on :8787 (in-memory store when DATABASE_URL is unset)
-npm run dev        # builds sdk → public/flowcatch.js, starts Vite on :5173 (proxies /api)
+npm run dev        # builds sdk → public/understudy.js, starts Vite on :5173 (proxies /api)
 npm run build      # production build to dist/
 npm start          # serves dist/ + API from one process (production mode)
 ```
@@ -151,13 +151,13 @@ Without `DATABASE_URL` the server still runs with an in-memory store, so
 nothing else is required to try it.
 
 To exercise the tools without an agent, open the console:
-`__flowcatch.call('describe_workspace')`,
-`__flowcatch.call('propose_process_map', {...})`, etc.
+`__understudy.call('describe_workspace')`,
+`__understudy.call('propose_process_map', {...})`, etc.
 
 ## Repository layout
 
 ```
-sdk/        FlowCatch itself (TypeScript → bundled to a single flowcatch.js)
+sdk/        Understudy itself (TypeScript → bundled to a single understudy.js)
   index.ts    entry & public API (init / log / registerAction)
   capture.ts  automatic action capture (clicks, submits, navigation)
   journal.ts  the action journal

@@ -1,11 +1,11 @@
-interface FlowCatchHostAction {
+interface UnderstudyHostAction {
   name: string
   description: string
   params?: Record<string, { type: 'string' | 'number' | 'boolean'; description?: string; required?: boolean }>
   handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
 }
 
-interface FlowCatchProcessMap {
+interface UnderstudyProcessMap {
   title: string
   steps: Array<{
     id: string
@@ -18,30 +18,30 @@ interface FlowCatchProcessMap {
   confirmed?: boolean
 }
 
-interface FlowCatchProcessSummary {
+interface UnderstudyProcessSummary {
   id: string
   title: string
   createdBy?: string
   createdAt?: number
 }
 
-interface FlowCatchApi {
+interface UnderstudyApi {
   init(opts?: {
     appName?: string
     autoCapture?: 'full' | 'min' | 'off'
     stateProvider?: () => unknown
-    actions?: FlowCatchHostAction[]
+    actions?: UnderstudyHostAction[]
     processStore?: {
-      save(map: FlowCatchProcessMap): Promise<FlowCatchProcessSummary>
-      list(): Promise<FlowCatchProcessSummary[]>
-      load(id: string): Promise<{ map: FlowCatchProcessMap; title?: string; createdBy?: string }>
+      save(map: UnderstudyProcessMap): Promise<UnderstudyProcessSummary>
+      list(): Promise<UnderstudyProcessSummary[]>
+      load(id: string): Promise<{ map: UnderstudyProcessMap; title?: string; createdBy?: string }>
     }
   }): void
   log(label: string, detail?: unknown): void
-  registerAction(action: FlowCatchHostAction): void
-  loadProcess(map: FlowCatchProcessMap, meta?: { id?: string; createdBy?: string }): void
+  registerAction(action: UnderstudyHostAction): void
+  loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string }): void
 }
 
 interface Window {
-  FlowCatch: FlowCatchApi
+  Understudy: UnderstudyApi
 }

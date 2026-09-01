@@ -4,7 +4,7 @@ import * as asksStore from './asks'
 import * as host from './host'
 import type { Step } from './types'
 
-const HOST_ID = 'flowcatch-panel-host'
+const HOST_ID = 'understudy-panel-host'
 
 let autoApprove = false
 export function isAutoApprove(): boolean {
@@ -195,7 +195,7 @@ function render() {
   if (!root) return
   root.innerHTML = ''
 
-  const fab = el('button', 'fab', collapsed ? '⚡ FlowCatch' : '')
+  const fab = el('button', 'fab', collapsed ? '🎭 Understudy' : '')
   if (collapsed) {
     fab.onclick = () => {
       collapsed = false
@@ -209,7 +209,7 @@ function render() {
 
   // Header
   const header = el('header')
-  header.appendChild(el('span', 'logo', '⚡ FlowCatch'))
+  header.appendChild(el('span', 'logo', '🎭 Understudy'))
   const status = el('span', 'status')
   const dot = el('span', `dot${webmcpStatus === 'connected' ? ' on' : ''}`)
   status.appendChild(dot)

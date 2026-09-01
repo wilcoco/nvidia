@@ -51,7 +51,7 @@ const tools: ToolDef[] = [
   {
     name: 'describe_workspace',
     description:
-      'Start here. Describes this web app: what it is, what actions the agent can run on it, and whether a process map already exists. FlowCatch is a layer that lets you (the agent) watch what the human does in this app, structure their work into a business process, and later execute that process for them.',
+      'Start here. Describes this web app: what it is, what actions the agent can run on it, and whether a process map already exists. Understudy is a layer that lets you (the agent) watch what the human does in this app, structure their work into a business process, and later execute that process for them.',
     inputSchema: schema(),
     execute: async () => ({
       app: host.getAppName(),
@@ -223,7 +223,7 @@ export function registerWebmcpTools(): void {
 
   const wrapped = tools.map(wrap)
   // Always expose a dev handle for manual testing from the console.
-  ;(window as any).__flowcatch = {
+  ;(window as any).__understudy = {
     tools: wrapped,
     call: async (name: string, args: Record<string, unknown> = {}) => {
       const t = tools.find((x) => x.name === name)
@@ -247,7 +247,7 @@ export function registerWebmcpTools(): void {
     }
     setWebmcpStatus('connected')
   } catch (err) {
-    console.warn('[FlowCatch] WebMCP registration failed:', err)
+    console.warn('[Understudy] WebMCP registration failed:', err)
     setWebmcpStatus('error')
   }
 }

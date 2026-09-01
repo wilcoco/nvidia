@@ -74,7 +74,7 @@ export interface ProcessStoreAdapter {
 export interface InitOptions {
   appName?: string
   /** 'full' captures clicks/submits/changes automatically; 'min' captures navigation only
-   *  (for apps that emit their own semantic logs via FlowCatch.log). */
+   *  (for apps that emit their own semantic logs via Understudy.log). */
   autoCapture?: 'full' | 'min' | 'off'
   stateProvider?: () => unknown
   actions?: HostAction[]

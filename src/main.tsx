@@ -4,9 +4,9 @@ import App from './App'
 import './styles.css'
 import * as store from './store'
 
-window.FlowCatch.init({
+window.Understudy.init({
   appName: 'LinePulse — Shift Worklog & Approvals',
-  // LinePulse emits its own semantic journal entries via FlowCatch.log,
+  // LinePulse emits its own semantic journal entries via Understudy.log,
   // so automatic click capture is limited to navigation.
   autoCapture: 'min',
   stateProvider: () => {

@@ -223,7 +223,7 @@ interface LoadedProcess {
   id: string
   title: string
   createdBy: string
-  map: FlowCatchProcessMap
+  map: UnderstudyProcessMap
 }
 
 function ProcessList({ state }: { state: store.AppState }) {
@@ -231,19 +231,19 @@ function ProcessList({ state }: { state: store.AppState }) {
 
   const open = async (id: string) => {
     const p = await store.getProcess(id)
-    setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as FlowCatchProcessMap })
+    setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as UnderstudyProcessMap })
   }
 
   const follow = (p: LoadedProcess) => {
-    window.FlowCatch.loadProcess(p.map, { id: p.id, createdBy: p.createdBy })
-    window.FlowCatch.log(`opened process "${p.title}" to work along it`, { processId: p.id })
+    window.Understudy.loadProcess(p.map, { id: p.id, createdBy: p.createdBy })
+    window.Understudy.log(`opened process "${p.title}" to work along it`, { processId: p.id })
   }
 
   if (state.processes.length === 0) {
     return (
       <p className="empty">
         No saved processes yet. Work in the app, let the agent draft a process, then press
-        “Confirm &amp; save to library” in the FlowCatch panel.
+        “Confirm &amp; save to library” in the Understudy panel.
       </p>
     )
   }
@@ -274,7 +274,7 @@ function ProcessList({ state }: { state: store.AppState }) {
             </button>
           </div>
           <p className="meta">
-            Loads into the FlowCatch panel — work along it yourself, or ask the agent to run it for
+            Loads into the Understudy panel — work along it yourself, or ask the agent to run it for
             you.
           </p>
           <ol className="proc-steps">

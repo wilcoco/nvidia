@@ -1,6 +1,6 @@
 import { record } from './journal'
 
-const PANEL_HOST_ID = 'flowcatch-panel-host'
+const PANEL_HOST_ID = 'understudy-panel-host'
 
 function insidePanel(target: EventTarget | null): boolean {
   return target instanceof Element && !!target.closest(`#${PANEL_HOST_ID}`)
