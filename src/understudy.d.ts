@@ -4,6 +4,7 @@ interface UnderstudyHostAction {
   params?: Record<string, { type: 'string' | 'number' | 'boolean'; description?: string; required?: boolean }>
   handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
   precondition?: () => string | null
+  hidden?: boolean
 }
 
 interface UnderstudyFieldDef {

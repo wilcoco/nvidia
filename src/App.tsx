@@ -211,7 +211,7 @@ function IncidentForm() {
             onChange={(e) => setTask(e.target.value)}
             placeholder={
               isRoutine
-                ? 'e.g. Completed booth A filter change and calibration'
+                ? 'e.g. Completed the release checklist review and follow-ups'
                 : 'e.g. Orange peel on hoods after switching to matte gray'
             }
           />
@@ -482,14 +482,7 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
   )
 }
 
-function latestPerTitle(processes: store.ProcessSummary[]): store.ProcessSummary[] {
-  const latest = new Map<string, store.ProcessSummary>()
-  for (const p of processes) {
-    const cur = latest.get(p.title)
-    if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
-  }
-  return [...latest.values()].sort((a, b) => Number(b.id) - Number(a.id))
-}
+const latestPerTitle = store.latestPerTitle
 
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)

@@ -405,11 +405,39 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
 }
 
 export async function listProcesses(): Promise<ProcessSummary[]> {
-  return api<ProcessSummary[]>('/api/processes')
+  // The agent (and the UI) only ever deal with the latest version per title —
+  // older versions may carry outdated action bindings.
+  return latestPerTitle(await api<ProcessSummary[]>('/api/processes'))
+}
+
+const LEGACY_ACTION_NAMES: Record<string, string> = {
+  log_incident: 'log_work_item',
+  record_corrective_action: 'record_step_result',
+}
+
+/** Playbooks saved before the action rename keep working: bindings are
+ *  migrated to the current names whenever a map is loaded. */
+function migrateMapActions<T>(map: T): T {
+  const m = map as { steps?: Array<{ action?: string }> }
+  for (const s of m?.steps ?? []) {
+    if (s.action && LEGACY_ACTION_NAMES[s.action]) s.action = LEGACY_ACTION_NAMES[s.action]
+  }
+  return map
+}
+
+export function latestPerTitle(processes: ProcessSummary[]): ProcessSummary[] {
+  const latest = new Map<string, ProcessSummary>()
+  for (const p of processes) {
+    const cur = latest.get(p.title)
+    if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
+  }
+  return [...latest.values()].sort((a, b) => Number(b.id) - Number(a.id))
 }
 
 export async function getProcess(id: string): Promise<{ id: string; title: string; map: unknown; createdBy: string }> {
-  return api(`/api/processes/${id}`)
+  const p = await api<{ id: string; title: string; map: unknown; createdBy: string }>(`/api/processes/${id}`)
+  p.map = migrateMapActions(p.map)
+  return p
 }
 
 /* Run records: one per execution of a playbook */

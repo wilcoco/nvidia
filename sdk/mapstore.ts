@@ -162,6 +162,15 @@ export function recordActionSuccess(
   resultId?: string,
   by: 'user' | 'agent' = 'user',
 ): void {
+  // The same success can be reported twice (the app's notifyAction inside the
+  // handler AND the runner around it). A duplicate would sit unconsumed and
+  // later bleed into the next loaded playbook — record each result only once.
+  if (
+    resultId &&
+    actionHistory.some((e) => e.action === actionName && e.resultId === resultId)
+  ) {
+    return
+  }
   const ev: ActionEvent = { action: actionName, resultId, ts: Date.now() }
   actionHistory.push(ev)
   if (actionHistory.length > 100) actionHistory.shift()

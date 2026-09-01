@@ -95,6 +95,8 @@ export interface HostAction {
   /** Return a human-readable reason why the action cannot run right now, or null when it can.
    *  Used to mark process steps as 'blocked' instead of 'ready'. */
   precondition?: () => string | null
+  /** Hidden from describe_workspace (e.g. legacy aliases kept for old playbooks). */
+  hidden?: boolean
 }
 
 export interface ProcessSummary {

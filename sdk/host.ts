@@ -41,9 +41,7 @@ export function getAction(name: string): HostAction | undefined {
   return actions.get(name)
 }
 export function listActions(): Array<Omit<HostAction, 'handler'>> {
-  return Array.from(actions.values()).map(({ name, description, params }) => ({
-    name,
-    description,
-    params,
-  }))
+  return Array.from(actions.values())
+    .filter((a) => !a.hidden)
+    .map(({ name, description, params }) => ({ name, description, params }))
 }

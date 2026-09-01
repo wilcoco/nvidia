@@ -106,6 +106,46 @@ window.Understudy.init({
         store.getState().worklogs.length > 0 ? null : 'no work log entry exists yet — log the work item first',
     },
     {
+      // Legacy aliases: playbooks saved before the rename may still call these.
+      name: 'log_incident',
+      hidden: true,
+      description: '(legacy alias of log_work_item)',
+      params: {
+        date: { type: 'string', required: true },
+        line: { type: 'string', required: true },
+        kind: { type: 'string', required: true },
+        task: { type: 'string', required: true },
+        urgent: { type: 'boolean' },
+        hours: { type: 'number' },
+      },
+      handler: (p) => {
+        const known = new Set(['date', 'line', 'kind', 'task', 'urgent', 'hours'])
+        const extras = Object.fromEntries(Object.entries(p).filter(([k]) => !known.has(k)))
+        return store.createWorklog({
+          date: String(p.date), line: String(p.line), task: String(p.task),
+          hours: Number(p.hours ?? 0.5), note: '', urgent: Boolean(p.urgent),
+          kind: String(p.kind), data: extras as store.IncidentData,
+        })
+      },
+    },
+    {
+      name: 'record_corrective_action',
+      hidden: true,
+      description: '(legacy alias of record_step_result)',
+      params: {
+        worklogId: { type: 'string', required: true },
+        actionTaken: { type: 'string', required: true },
+        result: { type: 'string' },
+      },
+      handler: (p) =>
+        store.recordCorrectiveAction(String(p.worklogId), {
+          actionTaken: String(p.actionTaken),
+          result: p.result ? String(p.result) : undefined,
+        }),
+      precondition: () =>
+        store.getState().worklogs.length > 0 ? null : 'no work log entry exists yet — log the work item first',
+    },
+    {
       name: 'request_review',
       description: 'Send a work log entry to the reviewer for approval.',
       params: {
