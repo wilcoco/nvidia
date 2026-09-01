@@ -34,9 +34,15 @@ export function subscribe(fn: Listener): () => void {
   return () => listeners.delete(fn)
 }
 
-/** Agent proposes a full map (replaces the current draft). */
+/** Agent proposes a full map (replaces the current draft). Interview answers
+ *  survive a re-propose: resolvedGaps merge with the previous draft's. */
 export function proposeMap(next: ProcessMap): void {
-  map = { ...next, confirmed: false }
+  const prevResolved = map?.resolvedGaps ?? []
+  map = {
+    ...next,
+    confirmed: false,
+    resolvedGaps: [...new Set([...(next.resolvedGaps ?? []), ...prevResolved])],
+  }
   record('agent', 'map', `proposed process map "${next.title}" (${next.steps.length} steps)`)
   notify()
 }
@@ -200,6 +206,47 @@ export function agentUpdateStep(
   record('agent', 'map', `updated step "${step.label}" (${changed.join(', ')})`)
   notify()
   return { ok: true, step }
+}
+
+/** Record which branch a branching step took (and why); choosing a loop-back
+ *  re-opens the loop body so those steps run again. */
+export function resolveDecision(
+  stepId: string,
+  branchTo: string,
+  reason: string,
+  evidence?: string,
+  by: 'user' | 'agent' = 'user',
+): { ok: boolean; error?: string; reopened?: string[] } {
+  if (!map) return { ok: false, error: 'no process is loaded' }
+  const step = map.steps.find((s) => s.id === stepId)
+  if (!step) return { ok: false, error: `unknown step "${stepId}"` }
+  const edge = step.next?.find((e) => e.to === branchTo)
+  if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branchTo}"` }
+  if (!map.decisions) map.decisions = []
+  map.decisions.push({ stepId, to: branchTo, reason, evidence, ts: Date.now() })
+  record(
+    by,
+    'map',
+    `decision at "${step.label}": took branch → "${map.steps.find((s) => s.id === branchTo)?.label ?? branchTo}" — ${reason}${evidence ? ` (evidence: ${evidence})` : ''}`,
+  )
+  const idx = new Map(map.steps.map((s, i) => [s.id, i]))
+  const from = idx.get(stepId) ?? 0
+  const to = idx.get(branchTo) ?? 0
+  const reopened: string[] = []
+  if (to <= from) {
+    // Loop-back: the loop body (target through the branching step) runs again.
+    for (const s of map.steps) {
+      const i = idx.get(s.id) ?? 0
+      if (i >= to && i <= from && s.type !== 'decision' && (s.done || s.naReason)) {
+        s.done = false
+        delete s.naReason
+        reopened.push(s.label)
+      }
+    }
+    if (reopened.length) record(by, 'map', `re-opened for the loop: ${reopened.join('; ')}`)
+  }
+  notify()
+  return { ok: true, reopened }
 }
 
 /** Set/replace the playbook's data contract (from the required_context interview). */
@@ -366,14 +413,25 @@ export function resolveDeviation(
  *  the active one, which promotes them to required. */
 function conditionalSteps(steps: Step[]): Map<string, string[]> {
   const byId = new Map(steps.map((s) => [s.id, s]))
+  const order = new Map(steps.map((s, i) => [s.id, i]))
   const reach = (from: string, acc: Set<string>) => {
     if (acc.has(from)) return
     acc.add(from)
-    for (const e of byId.get(from)?.next ?? []) reach(e.to, acc)
+    for (const e of byId.get(from)?.next ?? []) {
+      // follow forward edges only — loop-backs don't extend a branch's footprint
+      if ((order.get(e.to) ?? 0) > (order.get(from) ?? 0)) reach(e.to, acc)
+    }
   }
+  const indexOf = new Map(steps.map((s, i) => [s.id, i]))
   const conditional = new Map<string, string[]>()
   for (const d of steps.filter((s) => (s.next?.length ?? 0) > 1)) {
-    const perBranch = d.next!.map((e) => {
+    const dIdx = indexOf.get(d.id) ?? 0
+    // A loop-back edge (target earlier than the branching step) means "repeat",
+    // never "optional" — exclude it, or it would poison required main-path
+    // steps like maintenance-before-verification.
+    const forward = d.next!.filter((e) => (indexOf.get(e.to) ?? 0) > dIdx)
+    if (forward.length < 2) continue
+    const perBranch = forward.map((e) => {
       const set = new Set<string>()
       reach(e.to, set)
       return { condition: e.condition, set }

@@ -26,6 +26,25 @@ export type RunStart =
 
 /** SDK-built-in actions, runnable like host actions. */
 const BUILTIN_ACTIONS: Record<string, HostAction> = {
+  resolve_decision: {
+    name: 'resolve_decision',
+    description:
+      'Record which branch a branching step took, with the reason and evidence. Choosing a loop-back branch re-opens the loop body.',
+    params: {
+      stepId: { type: 'string', description: 'The branching step (has multiple next edges)', required: true },
+      branchTo: { type: 'string', description: 'Target step id of the chosen edge', required: true },
+      reason: { type: 'string', description: 'Why this branch — cite the branch condition', required: true },
+      evidence: { type: 'string', description: 'Measured values backing the choice, e.g. "axis temp 52°C, 3/3 dry cycles clean"' },
+    },
+    handler: (p) =>
+      mapstore.resolveDecision(
+        String(p.stepId),
+        String(p.branchTo),
+        String(p.reason),
+        p.evidence ? String(p.evidence) : undefined,
+        'user',
+      ),
+  },
   resolve_deviation: {
     name: 'resolve_deviation',
     description:

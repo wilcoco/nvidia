@@ -115,6 +115,7 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_action_result` | Poll a gated run_action: pending, denied, or complete with the result. |
 | `update_map_fields` | Set the playbook's data contract — typed fields (from the variables interview) rendered as a form for the next worker. |
 | `resolve_deviation` | Mark a skipped step completed-outside-the-app or not-applicable, with a reason. |
+| `resolve_decision` | Record which branch a branching step took, with reason and evidence; a loop-back choice re-opens the loop body. |
 | `find_relevant_processes` | Playbooks matching what the human is entering right now, with confidence and reasons. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |
 | `load_process` | Load a saved process for a new run; work already done this session is auto-linked as done. |

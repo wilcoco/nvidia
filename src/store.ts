@@ -282,10 +282,12 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
     if (!p.appliesWhen || Object.keys(p.appliesWhen).length === 0) continue
     if (!includeDismissed && state.dismissedSuggestions.includes(p.id)) continue
     const entries = Object.entries(p.appliesWhen)
-    const matched = entries.filter(
-      ([k, v]) => (draft as Record<string, unknown>)[k] !== undefined && (draft as Record<string, unknown>)[k] === v,
-    )
-    if (matched.length < entries.length) continue // all applicability conditions must hold
+    const d = draft as Record<string, unknown>
+    // Keys the form knows about must hold; finer agent-authored keys the form
+    // cannot supply (equipment, subsystem, …) are tolerated, not blocking.
+    const knowable = entries.filter(([k]) => d[k] !== undefined)
+    const matched = knowable.filter(([k, v]) => d[k] === v)
+    if (knowable.length === 0 || matched.length < knowable.length) continue
     const reasons = matched.map(([k, v]) => FIELD_LABEL[k]?.(v) ?? `${k} = ${v}`)
     let confidence = 0.8
     for (const [k, v] of Object.entries(p.priorityWhen ?? {})) {

@@ -18,7 +18,7 @@ process, and the agent's behavior changes because of it.*
 > experts actually work — on the same page, through WebMCP."
 
 *Screen: the demo workspace open, Understudy panel on the right, ChatGPT alongside.
-Briefly hover the "WebMCP connected" dot and ChatGPT's Site tools list (18
+Briefly hover the "WebMCP connected" dot and ChatGPT's Site tools list (19
 tools).*
 
 ## 0:15–0:45 — Scene 1: The expert just works; the agent watches and maps
@@ -100,7 +100,7 @@ incident. Then final approval card → Approve → "✓ Playbook run complete".*
 plain.html with its one script tag (view-source flash) → the tools list.*
 
 > "The paint-shop app is just a demo workspace. Understudy itself is one script tag —
-> eighteen WebMCP tools, an action journal, and a live process panel that any
+> nineteen WebMCP tools, an action journal, and a live process panel that any
 > web app can adopt. Your team already knows how the work is done.
 > Understudy is how the agent learns it. You did it once — the agent can
 > do it forever, and it asks before it acts."

@@ -101,7 +101,7 @@ const tools: ToolDef[] = [
         applies_when: {
           type: 'object',
           description:
-            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Without it the playbook can never be auto-suggested to the next worker.",
+            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Add finer keys when the human names them (equipment, subsystem, symptom — e.g. {\"kind\": \"equipment fault\", \"subsystem\": \"axis-2\"}); unknown keys are tolerated by matching but sharpen it where the app can supply them. Without applies_when the playbook can never be auto-suggested to the next worker.",
         },
         priority_when: {
           type: 'object',
@@ -350,10 +350,22 @@ const tools: ToolDef[] = [
         }))
       const ready = view.find((s) => s.status === 'ready')
       const blocked = view.find((s) => s.status === 'blocked')
+      const branchingSteps = map.steps
+        .filter((s) => (s.next?.length ?? 0) > 1)
+        .map((s) => ({
+          id: s.id,
+          label: s.label,
+          type: s.type,
+          branches: s.next,
+          chosen: map.decisions?.filter((d) => d.stepId === s.id).slice(-1)[0] ?? null,
+          note: 'Resolve with resolve_decision before moving past this step; loop-back choices re-open the loop body.',
+        }))
       return {
         active: true,
         process: map.title,
         steps: view,
+        branching_steps: branchingSteps,
+        decisions_taken: map.decisions ?? [],
         completed: view.filter((s) => s.status === 'done').map((s) => s.label),
         produced_ids: view
           .filter((s) => s.resultId)
@@ -376,6 +388,27 @@ const tools: ToolDef[] = [
           .map((s) => ({ at: s.label, branches: s.next })),
       }
     },
+  },
+  {
+    name: 'resolve_decision',
+    description:
+      'Record the outcome of a branching step: which edge was taken, why, and on what evidence. REQUIRED before moving past a step with conditional branches — and never choose a branch the evidence contradicts (e.g. do not take the "pass" branch while a measured value still violates the approval criteria in the step notes; ask the human instead). Choosing a loop-back branch (e.g. "verification failed → back to maintenance") automatically re-opens those steps. Prefer offering the choice to the human as run-bound ask_user options.',
+    inputSchema: schema(
+      {
+        stepId: { type: 'string' },
+        branchTo: { type: 'string' },
+        reason: { type: 'string' },
+        evidence: { type: 'string' },
+      },
+      ['stepId', 'branchTo', 'reason'],
+    ),
+    execute: async (args) =>
+      startHostAction('resolve_decision', {
+        stepId: args.stepId,
+        branchTo: args.branchTo,
+        reason: args.reason,
+        evidence: args.evidence,
+      }),
   },
   {
     name: 'resolve_deviation',

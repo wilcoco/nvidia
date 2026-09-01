@@ -62,6 +62,8 @@ export interface ProcessMap {
   sourceWorklogId?: string
   /** Interview gaps the human already answered (kind[:stepId]) — not re-asked. */
   resolvedGaps?: string[]
+  /** Explicit outcomes of branching steps in this run: which edge was taken and why. */
+  decisions?: Array<{ stepId: string; to: string; reason: string; evidence?: string; ts: number }>
   version?: number
 }
 
