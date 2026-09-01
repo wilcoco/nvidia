@@ -46,6 +46,7 @@ export interface ProcessSummary {
   createdAt: number
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>
+  version: number
 }
 
 /** What the human is entering in the incident form right now. */
@@ -61,6 +62,7 @@ export interface PlaybookMatch {
   createdBy: string
   confidence: number
   reasons: string[]
+  version: number
 }
 
 export interface AppState {
@@ -249,7 +251,13 @@ const FIELD_LABEL: Record<string, (v: unknown) => string> = {
 export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   const draft = state.draft
   const matches: PlaybookMatch[] = []
+  // Only the latest version of each playbook title competes.
+  const latest = new Map<string, ProcessSummary>()
   for (const p of state.processes) {
+    const cur = latest.get(p.title)
+    if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
+  }
+  for (const p of latest.values()) {
     if (!p.appliesWhen || Object.keys(p.appliesWhen).length === 0) continue
     if (!includeDismissed && state.dismissedSuggestions.includes(p.id)) continue
     const entries = Object.entries(p.appliesWhen)
@@ -271,6 +279,7 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
       createdBy: p.createdBy,
       confidence: Math.min(0.99, Number(confidence.toFixed(2))),
       reasons,
+      version: p.version || 1,
     })
   }
   return matches.sort((a, b) => b.confidence - a.confidence)
@@ -284,13 +293,30 @@ export async function followPlaybook(processId: string): Promise<void> {
 
 /* Process library (shared across users via the server) */
 
-export async function saveProcess(map: { title: string; steps: unknown[] }): Promise<ProcessSummary> {
+export async function saveProcess(map: { title: string; steps: unknown[]; version?: number }): Promise<ProcessSummary> {
+  // Saving a map under an existing title creates the next version of that playbook.
+  const prior = state.processes.filter((p) => p.title === map.title)
+  const version = prior.length ? Math.max(...prior.map((p) => p.version || 1)) + 1 : 1
+  // A revision inherits applicability conditions from the newest prior
+  // version that has them, unless the new map sets its own.
+  const donor = prior
+    .filter((p) => p.appliesWhen)
+    .sort((a, b) => (b.version || 1) - (a.version || 1))[0]
+  const mapWithMeta = map as Record<string, unknown>
   const saved = await api<ProcessSummary>('/api/processes', {
     title: map.title,
-    map,
+    map: {
+      ...map,
+      version,
+      appliesWhen: mapWithMeta.appliesWhen ?? donor?.appliesWhen,
+      priorityWhen: mapWithMeta.priorityWhen ?? donor?.priorityWhen,
+    },
     actingAs: state.actingAs,
   })
-  window.Understudy.log(`saved process "${saved.title}" to the shared library`, { processId: saved.id })
+  window.Understudy.log(
+    `saved process "${saved.title}" v${version} to the shared library${version > 1 ? ' (new revision)' : ''}`,
+    { processId: saved.id },
+  )
   await refresh()
   return saved
 }

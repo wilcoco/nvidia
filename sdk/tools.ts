@@ -118,6 +118,34 @@ const tools: ToolDef[] = [
     execute: async () => mapstore.getMap() ?? { exists: false },
   },
   {
+    name: 'update_step',
+    description:
+      "Refine a single step of the current map in place — no need to re-propose the whole map. Its main purpose is knowledge capture: when the human explains a judgment ('we lower viscosity to 17s when it reads over 18 after a color change'), write that rule into the step's detail so the playbook carries the expertise, and tell the human you did. Can also fix a label, bind an action, or set a branch condition.",
+    inputSchema: schema(
+      {
+        stepId: { type: 'string' },
+        label: { type: 'string' },
+        detail: { type: 'string', description: 'Judgment rule / note shown on the step card' },
+        action: { type: 'string', description: 'Host action bound to this step for replay' },
+        branch_to: { type: 'string', description: 'Target step id of an existing edge to update' },
+        branch_condition: { type: 'string', description: 'New condition for that edge' },
+      },
+      ['stepId'],
+    ),
+    execute: async (args) =>
+      mapstore.agentUpdateStep(
+        String(args.stepId),
+        {
+          label: args.label === undefined ? undefined : String(args.label),
+          detail: args.detail === undefined ? undefined : String(args.detail),
+          action: args.action === undefined ? undefined : String(args.action),
+        },
+        args.branch_to && args.branch_condition
+          ? { to: String(args.branch_to), condition: String(args.branch_condition) }
+          : undefined,
+      ),
+  },
+  {
     name: 'get_map_edits',
     description:
       'Edits the human made to your process map, oldest first. Treat these as corrections from the person who actually does this work — they outrank your inference. Pass the cursor from the previous call to get only new edits.',

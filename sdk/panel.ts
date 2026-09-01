@@ -65,7 +65,9 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .badge.approval { background: #7c3aed; color: #ede9fe; }
 .step .label { flex: 1; cursor: text; color: #f1f5f9; }
 .step input.label-edit { flex: 1; background: #0f172a; color: #fff; border: 1px solid #3b82f6; border-radius: 4px; padding: 2px 6px; font-size: 13px; }
-.step .detail { color: #94a3b8; font-size: 11px; margin-top: 3px; }
+.step .detail { color: #94a3b8; font-size: 11px; margin-top: 3px; cursor: text; }
+.step .detail-empty { color: #475569; font-style: italic; }
+.step input.detail-edit { width: 100%; background: #0f172a; color: #fff; border: 1px solid #3b82f6; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-top: 3px; }
 .step .action-tag { color: #38bdf8; font-size: 10px; margin-top: 2px; }
 .step button.del { background: none; border: none; color: #475569; cursor: pointer; flex: none; }
 .step button.del:hover { color: #f87171; }
@@ -206,7 +208,24 @@ function renderStep(
   row.appendChild(del)
 
   card.appendChild(row)
-  if (step.detail) card.appendChild(el('div', 'detail', step.detail))
+  if (step.type !== 'decision' || step.detail) {
+    const detail = el('div', `detail${step.detail ? '' : ' detail-empty'}`, step.detail || '+ add note')
+    detail.title = 'Click to edit this note (judgment rules live here)'
+    detail.onclick = () => {
+      const input = el('input', 'detail-edit') as HTMLInputElement
+      input.value = step.detail ?? ''
+      input.placeholder = 'e.g. reduce viscosity to 17s when >18 after a color change'
+      card.replaceChild(input, detail)
+      input.focus()
+      const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())
+      input.onkeydown = (e) => {
+        if (e.key === 'Enter') commit()
+        if (e.key === 'Escape') scheduleRender()
+      }
+      input.onblur = commit
+    }
+    card.appendChild(detail)
+  }
   if (step.naReason) card.appendChild(el('div', 'detail', `N/A: ${step.naReason}`))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
   if (status === 'blocked' && step.action) {

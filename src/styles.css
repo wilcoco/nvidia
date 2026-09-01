@@ -84,3 +84,7 @@ button.ghost { border: none; background: none; color: #94a3b8; }
 .run-history { display: flex; flex-direction: column; gap: 8px; }
 .run-row { border-top: 1px solid #f1f5f9; padding-top: 8px; }
 .run-steps { font-size: 15px; letter-spacing: 2px; margin-top: 2px; }
+
+.suggestion-item { border-top: 1px solid #dbeafe; padding-top: 8px; margin-top: 8px; }
+.suggestion-item:first-of-type { border-top: none; margin-top: 0; }
+.version-tag { font-size: 10px; font-weight: 700; background: #f1f5f9; color: #64748b; border-radius: 4px; padding: 1px 5px; vertical-align: middle; }

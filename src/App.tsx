@@ -63,29 +63,38 @@ function Login() {
 }
 
 function SuggestionCard() {
-  const matches = store.computeMatches()
+  const matches = store.computeMatches().slice(0, 2)
   if (matches.length === 0) return null
-  const m = matches[0]
   return (
     <div className="card suggestion">
       <div className="entry-head">
-        <span className="task">📋 Related playbook found</span>
-        <span className="confidence">{Math.round(m.confidence * 100)}% match</span>
+        <span className="task">
+          📋 {matches.length > 1 ? `${matches.length} related playbooks found — pick one` : 'Related playbook found'}
+        </span>
       </div>
-      <div className="suggestion-title">{m.title}</div>
-      <div className="meta">Matched because: {m.reasons.join(' · ')}</div>
-      <div className="decide">
-        <button className="primary" onClick={() => void store.followPlaybook(m.processId)}>
-          Follow this playbook
-        </button>
-        <button
-          className="ghost"
-          data-flow-ignore
-          onClick={() => store.dismissSuggestion(m.processId, 'not relevant to this incident')}
-        >
-          Not relevant
-        </button>
-      </div>
+      {matches.map((m) => (
+        <div key={m.processId} className="suggestion-item">
+          <div className="entry-head">
+            <span className="suggestion-title">
+              {m.title} <span className="version-tag">v{m.version}</span>
+            </span>
+            <span className="confidence">{Math.round(m.confidence * 100)}% match</span>
+          </div>
+          <div className="meta">Matched because: {m.reasons.join(' · ')}</div>
+          <div className="decide">
+            <button className="primary" onClick={() => void store.followPlaybook(m.processId)}>
+              Follow this playbook
+            </button>
+            <button
+              className="ghost"
+              data-flow-ignore
+              onClick={() => store.dismissSuggestion(m.processId, 'not relevant to this incident')}
+            >
+              Not relevant
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   )
 }
@@ -373,7 +382,9 @@ function PlaybookList({ state }: { state: store.AppState }) {
             className={`card proc-item ${selected?.id === p.id ? 'selected' : ''}`}
             onClick={() => void open(p.id)}
           >
-            <span className="task">{p.title}</span>
+            <span className="task">
+              {p.title} <span className="version-tag">v{p.version || 1}</span>
+            </span>
             <span className="meta">
               by {state.users.find((u) => u.username === p.createdBy)?.name ?? p.createdBy} ·{' '}
               {new Date(p.createdAt).toLocaleDateString()}

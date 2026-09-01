@@ -123,6 +123,35 @@ export function markActionDone(
   notify()
 }
 
+/** Agent refines a single step in place (e.g. writing captured judgment into its note). */
+export function agentUpdateStep(
+  stepId: string,
+  patch: { label?: string; detail?: string; action?: string },
+  branch?: { to: string; condition: string },
+): { ok: boolean; error?: string; step?: Step } {
+  if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
+  const step = map.steps.find((s) => s.id === stepId)
+  if (!step) return { ok: false, error: `unknown step "${stepId}"` }
+  const changed: string[] = []
+  for (const field of ['label', 'detail', 'action'] as const) {
+    const value = patch[field]
+    if (value !== undefined && value !== step[field]) {
+      step[field] = value
+      changed.push(field)
+    }
+  }
+  if (branch) {
+    const edge = step.next?.find((b) => b.to === branch.to)
+    if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branch.to}"` }
+    edge.condition = branch.condition
+    changed.push(`condition→${branch.to}`)
+  }
+  if (changed.length === 0) return { ok: true, step }
+  record('agent', 'map', `updated step "${step.label}" (${changed.join(', ')})`)
+  notify()
+  return { ok: true, step }
+}
+
 /** Human checks a step off (or un-checks it) in the panel. */
 export function humanToggleStepDone(stepId: string): void {
   if (!map) return
