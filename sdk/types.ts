@@ -1,0 +1,67 @@
+export type ActionSource = 'user' | 'agent'
+
+export interface ActionEntry {
+  id: number
+  ts: number
+  source: ActionSource
+  /** 'click' | 'submit' | 'change' | 'navigate' | 'app' | 'action' | 'answer' | 'map' */
+  kind: string
+  label: string
+  detail?: unknown
+  page: string
+}
+
+export interface BranchTarget {
+  to: string
+  condition?: string
+}
+
+export type StepType = 'task' | 'decision' | 'approval'
+
+export interface Step {
+  id: string
+  label: string
+  type: StepType
+  detail?: string
+  /** Which host action (if any) performs this step when the agent replays the process. */
+  action?: string
+  next?: BranchTarget[]
+}
+
+export interface ProcessMap {
+  title: string
+  steps: Step[]
+  entry?: string
+  confirmed?: boolean
+}
+
+export interface MapEdit {
+  id: number
+  ts: number
+  stepId?: string
+  field: string
+  from?: string
+  to?: string
+}
+
+export interface HostActionParam {
+  type: 'string' | 'number' | 'boolean'
+  description?: string
+  required?: boolean
+}
+
+export interface HostAction {
+  name: string
+  description: string
+  params?: Record<string, HostActionParam>
+  handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
+}
+
+export interface InitOptions {
+  appName?: string
+  /** 'full' captures clicks/submits/changes automatically; 'min' captures navigation only
+   *  (for apps that emit their own semantic logs via FlowCatch.log). */
+  autoCapture?: 'full' | 'min' | 'off'
+  stateProvider?: () => unknown
+  actions?: HostAction[]
+}
