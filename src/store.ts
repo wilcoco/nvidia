@@ -115,7 +115,9 @@ export function startPolling(): void {
 export async function login(username: string, password: string): Promise<void> {
   const res = await api<{ token: string; user: UserInfo }>('/api/auth/login', { username, password })
   setToken(res.token)
-  commit({ me: res.user, actingAs: res.user.username })
+  // The judge account is a reviewer identity with no persona of its own —
+  // start it as Kim so the UI selector and the acting state always agree.
+  commit({ me: res.user, actingAs: res.user.username === 'judge' ? 'kim' : res.user.username })
   window.Understudy.log(`logged in as ${res.user.name} (${res.user.role})`)
   await refresh()
 }

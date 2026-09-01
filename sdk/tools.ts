@@ -188,17 +188,63 @@ const tools: ToolDef[] = [
       if (!action) {
         return { ok: false, error: `Unknown action "${args.name}". Call describe_workspace for the list.` }
       }
-      const params = (args.params ?? {}) as Record<string, unknown>
+      const raw = (args.params ?? {}) as Record<string, unknown>
+      // Validate against the action's declared params before anything runs:
+      // agents sometimes omit fields or send numbers as strings.
+      const spec = action.params ?? {}
+      const params: Record<string, unknown> = {}
+      const problems: string[] = []
+      for (const [key, def] of Object.entries(spec)) {
+        let value = raw[key]
+        if (value === undefined || value === null || value === '') {
+          if (def.required) problems.push(`missing required param "${key}" (${def.type})`)
+          continue
+        }
+        if (def.type === 'number' && typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
+          value = Number(value)
+        }
+        if (def.type === 'boolean' && (value === 'true' || value === 'false')) {
+          value = value === 'true'
+        }
+        if (typeof value !== def.type) {
+          problems.push(`param "${key}" must be a ${def.type}`)
+          continue
+        }
+        params[key] = value
+      }
+      for (const key of Object.keys(raw)) if (!(key in spec)) params[key] = raw[key]
+      if (problems.length > 0) {
+        return {
+          ok: false,
+          error: `Invalid params for ${action.name}: ${problems.join('; ')}`,
+          declared_params: spec,
+        }
+      }
       if (!isAutoApprove()) {
         const approved = await requestApproval(action.name, params)
-        if (!approved) return { ok: false, denied: true, note: 'The human denied this action.' }
+        if (!approved) {
+          journal.record('agent', 'action', `${action.name} — denied by the human`, params)
+          return { ok: false, denied: true, note: 'The human denied this action.' }
+        }
       }
-      journal.record('agent', 'action', `ran ${action.name}`, params)
+      // Journal only after the outcome is known: a failed call must never read
+      // as performed work, or it pollutes process inference downstream.
       try {
         const result = await action.handler(params)
+        const errorMsg =
+          result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
+            ? String((result as Record<string, unknown>).error)
+            : null
+        if (errorMsg) {
+          journal.record('agent', 'action', `${action.name} FAILED: ${errorMsg}`, params)
+          return { ok: false, error: errorMsg }
+        }
+        journal.record('agent', 'action', `ran ${action.name}`, params)
         return { ok: true, result }
       } catch (err) {
-        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+        const msg = err instanceof Error ? err.message : String(err)
+        journal.record('agent', 'action', `${action.name} FAILED: ${msg}`, params)
+        return { ok: false, error: msg }
       }
     },
   },
