@@ -197,7 +197,15 @@ export function humanToggleStepDone(stepId: string): void {
 }
 
 export interface MapGap {
-  kind: 'before' | 'after' | 'branch_condition' | 'final_signoff' | 'judgment' | 'replay_binding'
+  kind:
+    | 'before'
+    | 'after'
+    | 'branch_condition'
+    | 'final_signoff'
+    | 'judgment'
+    | 'replay_binding'
+    | 'required_context'
+    | 'precursors'
   stepId?: string
   step?: string
   suggested_question?: string
@@ -216,6 +224,18 @@ export function mapGaps(): MapGap[] {
       stepId: first.id,
       step: first.label,
       suggested_question: `Before "${first.label}" — is there anything that must happen first (stopping the line, notifying someone, a check)?`,
+    })
+    gaps.push({
+      kind: 'required_context',
+      stepId: first.id,
+      step: first.label,
+      suggested_question: `When logging "${first.label}" — which variables or readings must always be captured (measurements, settings, conditions)? I'll note them on the step so nothing gets missed.`,
+    })
+    gaps.push({
+      kind: 'precursors',
+      stepId: first.id,
+      step: first.label,
+      suggested_question: `Are there warning signs that usually precede this situation — things an experienced operator would notice early? I'll record them so the playbook helps people catch it sooner.`,
     })
   }
   const last = map.steps.find((s) => !s.next || s.next.length === 0)

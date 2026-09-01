@@ -59,7 +59,7 @@ const tools: ToolDef[] = [
       app: host.getAppName(),
       url: location.href,
       how_this_works:
-        'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it.',
+        'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it. When the human starts an entry that matches NO saved playbook (find_relevant_processes), that is the capture moment: draft a map immediately and interview them with get_map_gaps while they work — the process takes shape on their screen as they answer.',
       available_actions: host.listActions(),
       process_map_exists: mapstore.getMap() !== null,
       process_map_confirmed: mapstore.getMap()?.confirmed ?? false,
@@ -318,7 +318,12 @@ const tools: ToolDef[] = [
       if (!store?.findRelevant) {
         return { available: false, note: 'This app does not provide contextual matching. Use list_saved_processes instead.' }
       }
-      return await store.findRelevant()
+      const result = (await store.findRelevant()) as { matches?: unknown[] } & Record<string, unknown>
+      if (Array.isArray(result?.matches) && result.matches.length === 0) {
+        result.capture_opportunity =
+          'No saved playbook covers what the human is entering right now. This is the moment to CREATE one: draft an initial map from the entry and the journal (propose_process_map), then interview via get_map_gaps — which variables must be captured, what precedes and follows, warning signs, who approves. The map grows beside their work as they answer.'
+      }
+      return result
     },
   },
   {
