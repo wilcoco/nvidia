@@ -152,9 +152,10 @@ function IncidentForm() {
     setSprayPressure('')
   }
 
+  const isRoutine = kind === 'routine log'
   return (
     <form className="card form" onSubmit={submit} data-flow-label="incident report">
-      <h3>Log an incident</h3>
+      <h3>{isRoutine ? 'Log your work' : 'Log an incident'}</h3>
       <div className="grid">
         <label>
           Date
@@ -180,25 +181,34 @@ function IncidentForm() {
           <input
             value={task}
             onChange={(e) => setTask(e.target.value)}
-            placeholder="e.g. Orange peel on hoods after switching to matte gray"
+            placeholder={
+              isRoutine
+                ? 'e.g. Completed booth A filter change and calibration'
+                : 'e.g. Orange peel on hoods after switching to matte gray'
+            }
           />
         </label>
-        <label>
-          Viscosity (s)
-          <input type="number" step={0.1} value={viscosity} onChange={(e) => setViscosity(e.target.value)} placeholder="18.5" />
-        </label>
-        <label>
-          Booth temp (°C)
-          <input type="number" step={0.5} value={boothTemp} onChange={(e) => setBoothTemp(e.target.value)} placeholder="23" />
-        </label>
-        <label>
-          Spray (bar)
-          <input type="number" step={0.1} value={sprayPressure} onChange={(e) => setSprayPressure(e.target.value)} placeholder="2.4" />
-        </label>
+        {!isRoutine && (
+          <>
+            <label>
+              Viscosity (s)
+              <input type="number" step={0.1} value={viscosity} onChange={(e) => setViscosity(e.target.value)} placeholder="18.5" />
+            </label>
+            <label>
+              Booth temp (°C)
+              <input type="number" step={0.5} value={boothTemp} onChange={(e) => setBoothTemp(e.target.value)} placeholder="23" />
+            </label>
+            <label>
+              Spray (bar)
+              <input type="number" step={0.1} value={sprayPressure} onChange={(e) => setSprayPressure(e.target.value)} placeholder="2.4" />
+            </label>
+          </>
+        )}
         <label>
           Hours
           <input type="number" min={0} step={0.5} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
         </label>
+        {!isRoutine && (
         <label className="wide wide4">
           Action taken
           <input
@@ -207,17 +217,20 @@ function IncidentForm() {
             placeholder="e.g. Reduced viscosity to 17s, test panel sprayed"
           />
         </label>
+        )}
+        {!isRoutine && (
         <label className="check">
           <input type="checkbox" checked={colorChange} onChange={(e) => setColorChange(e.target.checked)} />
           Right after a color change
         </label>
+        )}
         <label className="check">
           <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
           Urgent — line stopped / needs lead now
         </label>
       </div>
       <button type="submit" className="primary">
-        Save incident log
+        {isRoutine ? 'Save work log' : 'Save incident log'}
       </button>
     </form>
   )
@@ -258,7 +271,7 @@ function conditions(w: store.Worklog): string {
 
 function IncidentList({ state }: { state: store.AppState }) {
   const mine = state.worklogs.filter((w) => w.createdBy === state.actingAs)
-  if (mine.length === 0) return <p className="empty">No incident logs yet. Log your first one above.</p>
+  if (mine.length === 0) return <p className="empty">No entries yet. Log an incident or routine work above.</p>
   return (
     <div className="list">
       {mine.map((w) => (
@@ -530,7 +543,7 @@ export default function App() {
 
       <nav className="tabs">
         <button className={tab === 'incidents' ? 'active' : ''} onClick={() => setTab('incidents')}>
-          Incidents
+          Work log
         </button>
         <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
           Reviews{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
