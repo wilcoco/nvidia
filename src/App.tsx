@@ -15,8 +15,9 @@ const INCIDENT_TYPES = [
 ]
 
 function Login() {
-  const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
+  // Pre-filled with the reviewer account so judges can sign in with one click.
+  const [username, setUsername] = useState('judge')
+  const [password, setPassword] = useState('webmcp2026')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
