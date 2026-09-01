@@ -1,8 +1,9 @@
 import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as host from './host'
-import { askUser, requestApproval } from './asks'
-import { isAutoApprove, setWebmcpStatus } from './panel'
+import { askUser, type AskOption } from './asks'
+import { setWebmcpStatus } from './panel'
+import { runHostAction, preconditionFor } from './runner'
 import type { ProcessMap } from './types'
 
 interface ToolDef {
@@ -130,16 +131,53 @@ const tools: ToolDef[] = [
   {
     name: 'ask_user',
     description:
-      'Show the human a question card inside the page and wait for their answer. Use it to fill gaps the journal cannot answer: branch conditions, whether a skipped step was optional, who approves what. Prefer concrete options over open questions.',
+      'Show the human a question card inside the page and wait for their answer. Use it to fill gaps the journal cannot answer: branch conditions, whether a skipped step was optional, who approves what. Prefer concrete options over open questions. An option may carry a "run" binding — then choosing it EXECUTES that host action on the spot (validation and approval gate included) and you receive the real outcome, not just the button label. Use a run-bound option when proposing to fix a skipped step, e.g. {"label": "Request approval from Lee now", "run": {"name": "request_review", "params": {"worklogId": "4"}}}.',
     inputSchema: schema(
       {
         question: { type: 'string' },
-        options: { type: 'array', items: { type: 'string' }, description: 'Optional quick-answer buttons' },
+        options: {
+          type: 'array',
+          description: 'Quick-answer buttons: plain strings, or objects with an executable binding',
+          items: {
+            anyOf: [
+              { type: 'string' },
+              {
+                type: 'object',
+                properties: {
+                  label: { type: 'string' },
+                  run: {
+                    type: 'object',
+                    properties: {
+                      name: { type: 'string', description: 'Host action to execute when chosen' },
+                      params: { type: 'object' },
+                    },
+                    required: ['name'],
+                  },
+                },
+                required: ['label'],
+              },
+            ],
+          },
+        },
       },
       ['question'],
     ),
     execute: async (args) => {
-      const options = Array.isArray(args.options) ? args.options.map(String) : undefined
+      const options: AskOption[] | undefined = Array.isArray(args.options)
+        ? args.options.map((o): AskOption => {
+            if (typeof o === 'string') return { label: o }
+            const obj = o as { label?: unknown; run?: { name?: unknown; params?: unknown } }
+            return {
+              label: String(obj.label ?? ''),
+              run: obj.run?.name
+                ? {
+                    name: String(obj.run.name),
+                    params: (obj.run.params ?? {}) as Record<string, unknown>,
+                  }
+                : undefined,
+            }
+          })
+        : undefined
       const answer = await askUser(String(args.question), options)
       return { answer }
     },
@@ -154,18 +192,37 @@ const tools: ToolDef[] = [
       if (!map?.confirmed) {
         return { active: false, note: 'No confirmed process is loaded — nothing to track.' }
       }
-      const statuses = mapstore.progress()
+      const statuses = mapstore.progress(preconditionFor)
       const view = map.steps
         .filter((s) => s.type !== 'decision')
-        .map((s) => ({ id: s.id, label: s.label, action: s.action, status: statuses.get(s.id) }))
+        .map((s) => ({
+          id: s.id,
+          label: s.label,
+          action: s.action,
+          status: statuses.get(s.id),
+          resultId: s.resultId,
+          blockedReason:
+            statuses.get(s.id) === 'blocked' && s.action ? preconditionFor(s.action) : undefined,
+        }))
       const ready = view.find((s) => s.status === 'ready')
+      const blocked = view.find((s) => s.status === 'blocked')
       return {
         active: true,
         process: map.title,
         steps: view,
         completed: view.filter((s) => s.status === 'done').map((s) => s.label),
+        produced_ids: view
+          .filter((s) => s.resultId)
+          .map((s) => ({ step: s.label, action: s.action, id: s.resultId })),
         ready: ready ?? null,
+        blocked: blocked ?? null,
         skipped: view.filter((s) => s.status === 'skipped'),
+        conditional: view
+          .filter((s) => s.status === 'conditional')
+          .map((s) => ({
+            ...s,
+            note: 'On an undecided branch — required only if its condition turns out true. Judge from the branch conditions and page state; ask the human when unsure.',
+          })),
         suggestedAction: ready?.action ? { name: ready.action } : null,
         branch_conditions: map.steps
           .filter((s) => (s.next?.length ?? 0) > 1)
@@ -212,71 +269,8 @@ const tools: ToolDef[] = [
       },
       ['name'],
     ),
-    execute: async (args) => {
-      const action = host.getAction(String(args.name))
-      if (!action) {
-        return { ok: false, error: `Unknown action "${args.name}". Call describe_workspace for the list.` }
-      }
-      const raw = (args.params ?? {}) as Record<string, unknown>
-      // Validate against the action's declared params before anything runs:
-      // agents sometimes omit fields or send numbers as strings.
-      const spec = action.params ?? {}
-      const params: Record<string, unknown> = {}
-      const problems: string[] = []
-      for (const [key, def] of Object.entries(spec)) {
-        let value = raw[key]
-        if (value === undefined || value === null || value === '') {
-          if (def.required) problems.push(`missing required param "${key}" (${def.type})`)
-          continue
-        }
-        if (def.type === 'number' && typeof value === 'string' && value.trim() !== '' && !Number.isNaN(Number(value))) {
-          value = Number(value)
-        }
-        if (def.type === 'boolean' && (value === 'true' || value === 'false')) {
-          value = value === 'true'
-        }
-        if (typeof value !== def.type) {
-          problems.push(`param "${key}" must be a ${def.type}`)
-          continue
-        }
-        params[key] = value
-      }
-      for (const key of Object.keys(raw)) if (!(key in spec)) params[key] = raw[key]
-      if (problems.length > 0) {
-        return {
-          ok: false,
-          error: `Invalid params for ${action.name}: ${problems.join('; ')}`,
-          declared_params: spec,
-        }
-      }
-      if (!isAutoApprove()) {
-        const approved = await requestApproval(action.name, params)
-        if (!approved) {
-          journal.record('agent', 'action', `${action.name} — denied by the human`, params)
-          return { ok: false, denied: true, note: 'The human denied this action.' }
-        }
-      }
-      // Journal only after the outcome is known: a failed call must never read
-      // as performed work, or it pollutes process inference downstream.
-      try {
-        const result = await action.handler(params)
-        const errorMsg =
-          result && typeof result === 'object' && 'error' in (result as Record<string, unknown>)
-            ? String((result as Record<string, unknown>).error)
-            : null
-        if (errorMsg) {
-          journal.record('agent', 'action', `${action.name} FAILED: ${errorMsg}`, params)
-          return { ok: false, error: errorMsg }
-        }
-        journal.record('agent', 'action', `ran ${action.name}`, params)
-        mapstore.markActionDone(action.name)
-        return { ok: true, result }
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err)
-        journal.record('agent', 'action', `${action.name} FAILED: ${msg}`, params)
-        return { ok: false, error: msg }
-      }
-    },
+    execute: async (args) =>
+      runHostAction(String(args.name), (args.params ?? {}) as Record<string, unknown>),
   },
 ]
 

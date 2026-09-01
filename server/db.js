@@ -36,9 +36,13 @@ function memoryBackend() {
   const worklogs = []
   const approvals = []
   const processes = []
+  const secret = crypto.randomBytes(16).toString('hex')
 
   return {
     kind: 'memory',
+    async getSessionSecret() {
+      return secret
+    },
     async getUser(username) {
       return users.find((u) => u.username === username) ?? null
     },
@@ -132,6 +136,9 @@ async function pgBackend(databaseUrl) {
       id SERIAL PRIMARY KEY, title TEXT NOT NULL, map JSONB NOT NULL,
       created_by TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now()
     );
+    CREATE TABLE IF NOT EXISTS app_config (
+      key TEXT PRIMARY KEY, value TEXT NOT NULL
+    );
   `)
 
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
@@ -158,6 +165,15 @@ async function pgBackend(databaseUrl) {
 
   return {
     kind: 'postgres',
+    // Session secret persists in the DB so logins survive redeploys/restarts.
+    async getSessionSecret() {
+      await pool.query(
+        `INSERT INTO app_config (key, value) VALUES ('session_secret', $1) ON CONFLICT (key) DO NOTHING`,
+        [crypto.randomBytes(16).toString('hex')],
+      )
+      const { rows } = await pool.query(`SELECT value FROM app_config WHERE key='session_secret'`)
+      return rows[0].value
+    },
     async getUser(username) {
       const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [username])
       const r = rows[0]

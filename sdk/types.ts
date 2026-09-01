@@ -29,6 +29,9 @@ export interface Step {
   /** Completion state while working along a confirmed process. Auto-set when the
    *  step's action runs successfully; the human can also check steps off in the panel. */
   done?: boolean
+  /** Id of the record the step's action produced (e.g. worklogId), captured on success
+   *  so later steps can chain their params. */
+  resultId?: string
 }
 
 export interface ProcessMap {
@@ -58,6 +61,9 @@ export interface HostAction {
   description: string
   params?: Record<string, HostActionParam>
   handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
+  /** Return a human-readable reason why the action cannot run right now, or null when it can.
+   *  Used to mark process steps as 'blocked' instead of 'ready'. */
+  precondition?: () => string | null
 }
 
 export interface ProcessSummary {

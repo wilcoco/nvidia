@@ -104,11 +104,12 @@ export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy
 }
 
 /** Auto-mark the first not-done step bound to this host action (agent replay path). */
-export function markActionDone(actionName: string): void {
+export function markActionDone(actionName: string, resultId?: string): void {
   if (!map?.confirmed) return
   const step = map.steps.find((s) => s.action === actionName && !s.done)
   if (!step) return
   step.done = true
+  if (resultId) step.resultId = resultId
   record('agent', 'map', `completed step "${step.label}"`)
   notify()
 }
@@ -124,26 +125,55 @@ export function humanToggleStepDone(stepId: string): void {
   notify()
 }
 
-export type StepStatus = 'done' | 'ready' | 'skipped' | 'pending'
+export type StepStatus = 'done' | 'ready' | 'skipped' | 'pending' | 'conditional' | 'blocked'
+
+/** Steps that sit on only some branches out of a decision — they may legitimately
+ *  never run, so they are never called 'skipped' until they actually happen. */
+function conditionalStepIds(steps: Step[]): Set<string> {
+  const byId = new Map(steps.map((s) => [s.id, s]))
+  const reach = (from: string, acc: Set<string>) => {
+    if (acc.has(from)) return
+    acc.add(from)
+    for (const e of byId.get(from)?.next ?? []) reach(e.to, acc)
+  }
+  const conditional = new Set<string>()
+  for (const d of steps.filter((s) => (s.next?.length ?? 0) > 1)) {
+    const perBranch = d.next!.map((e) => {
+      const set = new Set<string>()
+      reach(e.to, set)
+      return set
+    })
+    const common = perBranch.reduce((a, b) => new Set([...a].filter((x) => b.has(x))))
+    for (const set of perBranch) for (const id of set) if (!common.has(id)) conditional.add(id)
+  }
+  return conditional
+}
 
 /**
  * Run-state of a confirmed map, derived on demand.
  * Decision steps are routing, not work, so they carry no status of their own.
- * 'ready' = the next step whose turn it is (guide, not a nag);
- * 'skipped' = still not done although a later step already ran (a deviation).
+ * 'ready'       = the next step whose turn it is (guide, not a nag)
+ * 'blocked'     = its turn, but the bound action's precondition fails (e.g. nothing to approve yet)
+ * 'skipped'     = a required step still not done although a later step already ran (a deviation)
+ * 'conditional' = on a branch whose condition is not yet decided — not required (yet)
  */
-export function progress(): Map<string, StepStatus> {
+export function progress(
+  preconditionFor?: (actionName: string) => string | null,
+): Map<string, StepStatus> {
   const statuses = new Map<string, StepStatus>()
   if (!map?.confirmed) return statuses
+  const conditional = conditionalStepIds(map.steps)
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   const lastDoneIdx = actionable.reduce((acc, s, i) => (s.done ? i : acc), -1)
-  let readyAssigned = false
+  let gateAssigned = false
   actionable.forEach((s, i) => {
     if (s.done) statuses.set(s.id, 'done')
+    else if (conditional.has(s.id)) statuses.set(s.id, 'conditional')
     else if (i < lastDoneIdx) statuses.set(s.id, 'skipped')
-    else if (!readyAssigned) {
-      statuses.set(s.id, 'ready')
-      readyAssigned = true
+    else if (!gateAssigned) {
+      const reason = s.action && preconditionFor ? preconditionFor(s.action) : null
+      statuses.set(s.id, reason ? 'blocked' : 'ready')
+      gateAssigned = true
     } else statuses.set(s.id, 'pending')
   })
   return statuses

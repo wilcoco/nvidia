@@ -6,10 +6,11 @@ import { createDb, verifyPassword } from './db.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 8787)
-const SECRET = process.env.SESSION_SECRET || crypto.randomBytes(16).toString('hex')
 const TOKEN_TTL_MS = 1000 * 60 * 60 * 24 * 30
 
 const db = await createDb()
+// Persisted in the DB (unless overridden) so sessions survive redeploys.
+const SECRET = process.env.SESSION_SECRET || (await db.getSessionSecret())
 const app = express()
 app.use(express.json())
 

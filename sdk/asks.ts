@@ -2,10 +2,17 @@ import { record } from './journal'
 
 type Listener = () => void
 
+export interface AskOption {
+  label: string
+  /** When set, choosing this option also executes the host action (through the
+   *  normal validation/approval pipeline) and the agent receives the outcome. */
+  run?: { name: string; params?: Record<string, unknown> }
+}
+
 export interface PendingAsk {
   id: number
   question: string
-  options?: string[]
+  options?: AskOption[]
   allowText: boolean
   resolve: (answer: string) => void
 }
@@ -34,7 +41,7 @@ export function subscribe(fn: Listener): () => void {
 const ANSWER_TIMEOUT_MS = 110_000
 
 /** Agent asks the human a question; resolves with the answer, or a timeout marker. */
-export function askUser(question: string, options?: string[], allowText = true): Promise<string> {
+export function askUser(question: string, options?: AskOption[], allowText = true): Promise<string> {
   record('agent', 'app', `asked: ${question}`)
   return new Promise((resolve) => {
     const ask: PendingAsk = {

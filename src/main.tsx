@@ -77,6 +77,10 @@ window.Understudy.init({
         approver: { type: 'string', description: 'Approver username (default "lee")' },
       },
       handler: (p) => store.requestApproval(String(p.worklogId), String(p.approver ?? 'lee')),
+      precondition: () =>
+        store.getState().worklogs.some((w) => w.status === 'draft')
+          ? null
+          : 'no draft incident log to send — log the incident first',
     },
     {
       name: 'approve_review',
@@ -88,6 +92,10 @@ window.Understudy.init({
       },
       handler: (p) =>
         store.decideApproval(String(p.approvalId), 'APPROVED', p.comment ? String(p.comment) : undefined),
+      precondition: () =>
+        store.getState().approvals.some((a) => a.status === 'PENDING')
+          ? null
+          : 'no pending review to approve — request a review first',
     },
     {
       name: 'reject_review',
@@ -97,6 +105,10 @@ window.Understudy.init({
         comment: { type: 'string', required: true },
       },
       handler: (p) => store.decideApproval(String(p.approvalId), 'REJECTED', String(p.comment ?? '')),
+      precondition: () =>
+        store.getState().approvals.some((a) => a.status === 'PENDING')
+          ? null
+          : 'no pending review to reject — request a review first',
     },
     {
       name: 'switch_persona',

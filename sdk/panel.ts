@@ -2,14 +2,11 @@ import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as asksStore from './asks'
 import * as host from './host'
+import { runHostAction, preconditionFor } from './runner'
+import { isAutoApprove, setAutoApprove } from './settings'
 import type { Step } from './types'
 
 const HOST_ID = 'understudy-panel-host'
-
-let autoApprove = false
-export function isAutoApprove(): boolean {
-  return autoApprove
-}
 
 let webmcpStatus = 'not detected'
 export function setWebmcpStatus(status: string): void {
@@ -48,10 +45,16 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .step.done .label { text-decoration: line-through; }
 .step.ready { border-left: 3px solid #fbbf24; }
 .step.skipped { border-left: 3px solid #ef4444; }
+.step.conditional { border-left: 3px dotted #64748b; }
+.step.blocked { border-left: 3px solid #f97316; }
 .step input.chk { accent-color: #34d399; flex: none; margin: 0; }
+.step input.chk:disabled { opacity: .4; }
 .chip { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; flex: none; }
 .chip.ready { background: #fbbf24; color: #451a03; }
 .chip.skipped { background: #ef4444; color: #fff; }
+.chip.conditional { background: #334155; color: #94a3b8; }
+.chip.blocked { background: #f97316; color: #431407; }
+.step .blocked-reason { color: #fdba74; font-size: 10px; margin-top: 3px; }
 .step .row { display: flex; align-items: center; gap: 6px; }
 .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex: none; }
 .badge.task { background: #1d4ed8; color: #dbeafe; }
@@ -148,13 +151,22 @@ function renderStep(
     const chk = el('input', 'chk') as HTMLInputElement
     chk.type = 'checkbox'
     chk.checked = !!step.done
-    chk.title = 'Mark this step done'
-    chk.onchange = () => mapstore.humanToggleStepDone(step.id)
+    if (step.type === 'approval') {
+      // Sign-offs cannot be hand-waved: they complete only through a
+      // successful review action.
+      chk.disabled = true
+      chk.title = 'Approval steps complete only via a successful review action'
+    } else {
+      chk.title = 'Mark this step done'
+      chk.onchange = () => mapstore.humanToggleStepDone(step.id)
+    }
     row.appendChild(chk)
   }
   row.appendChild(el('span', `badge ${step.type}`, step.type))
   if (status === 'ready') row.appendChild(el('span', 'chip ready', 'NEXT'))
   if (status === 'skipped') row.appendChild(el('span', 'chip skipped', 'SKIPPED'))
+  if (status === 'conditional') row.appendChild(el('span', 'chip conditional', 'IF'))
+  if (status === 'blocked') row.appendChild(el('span', 'chip blocked', 'BLOCKED'))
 
   const label = el('span', 'label', step.label)
   label.title = 'Click to rename'
@@ -191,6 +203,10 @@ function renderStep(
   card.appendChild(row)
   if (step.detail) card.appendChild(el('div', 'detail', step.detail))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
+  if (status === 'blocked' && step.action) {
+    const reason = preconditionFor(step.action)
+    if (reason) card.appendChild(el('div', 'blocked-reason', `⛔ ${reason}`))
+  }
 
   const branches = step.next ?? []
   const map = mapstore.getMap()
@@ -258,8 +274,23 @@ function render() {
       if (ask.options?.length) {
         const opts = el('div', 'opts')
         for (const o of ask.options) {
-          const b = el('button', undefined, o)
-          b.onclick = () => ask.resolve(o)
+          const b = el('button', undefined, o.label)
+          b.onclick = async () => {
+            if (!o.run) {
+              ask.resolve(o.label)
+              return
+            }
+            // Executable option: actually run the bound host action, then hand
+            // the agent the real outcome instead of just the button label.
+            b.disabled = true
+            b.textContent = `${o.label}…`
+            const outcome = await runHostAction(o.run.name, o.run.params ?? {})
+            ask.resolve(
+              outcome.ok
+                ? `${o.label} — executed ${o.run.name} successfully`
+                : `${o.label} — ${o.run.name} did not run (${outcome.denied ? 'denied by the human' : outcome.error})`,
+            )
+          }
           opts.appendChild(b)
         }
         card.appendChild(opts)
@@ -308,7 +339,7 @@ function render() {
     )
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
-    const statuses = mapstore.progress()
+    const statuses = mapstore.progress(preconditionFor)
     map.steps.forEach((s, i) =>
       renderStep(s, i === map.steps.length - 1, mapSection, statuses.get(s.id)),
     )
@@ -349,9 +380,9 @@ function render() {
   const footer = el('footer')
   const check = el('input') as HTMLInputElement
   check.type = 'checkbox'
-  check.checked = autoApprove
+  check.checked = isAutoApprove()
   check.onchange = () => {
-    autoApprove = check.checked
+    setAutoApprove(check.checked)
   }
   const lbl = el('label')
   lbl.appendChild(check)
