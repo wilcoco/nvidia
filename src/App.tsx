@@ -5,6 +5,15 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+const INCIDENT_TYPES = [
+  'orange peel',
+  'sagging / runs',
+  'dust inclusion',
+  'color mismatch',
+  'equipment fault',
+  'routine log',
+]
+
 function Login() {
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -28,7 +37,7 @@ function Login() {
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
         <h1>
-          LinePulse <span className="sub">shift worklog &amp; approvals</span>
+          LinePulse <span className="sub">paint shop incident &amp; response log</span>
         </h1>
         <p className="hint">
           Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
@@ -52,13 +61,17 @@ function Login() {
   )
 }
 
-function WorklogForm() {
+function IncidentForm() {
   const [date, setDate] = useState(today())
   const [line, setLine] = useState('A')
+  const [kind, setKind] = useState('orange peel')
   const [task, setTask] = useState('')
-  const [progress, setProgress] = useState(100)
-  const [hours, setHours] = useState(1)
-  const [note, setNote] = useState('')
+  const [viscosity, setViscosity] = useState('')
+  const [boothTemp, setBoothTemp] = useState('')
+  const [sprayPressure, setSprayPressure] = useState('')
+  const [colorChange, setColorChange] = useState(false)
+  const [actionTaken, setActionTaken] = useState('')
+  const [hours, setHours] = useState(0.5)
   const [urgent, setUrgent] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
@@ -68,100 +81,131 @@ function WorklogForm() {
       date,
       line,
       task: task.trim(),
-      progressPct: progress,
       hours,
-      note: note.trim(),
+      note: '',
       urgent,
+      kind,
+      data: {
+        viscosity: viscosity === '' ? undefined : Number(viscosity),
+        boothTemp: boothTemp === '' ? undefined : Number(boothTemp),
+        sprayPressure: sprayPressure === '' ? undefined : Number(sprayPressure),
+        colorChange,
+        actionTaken: actionTaken.trim() || undefined,
+      },
     })
     setTask('')
-    setNote('')
+    setActionTaken('')
     setUrgent(false)
-    setProgress(100)
-    setHours(1)
+    setColorChange(false)
+    setViscosity('')
+    setBoothTemp('')
+    setSprayPressure('')
   }
 
   return (
-    <form className="card form" onSubmit={submit} data-flow-label="new worklog">
-      <h3>New worklog</h3>
+    <form className="card form" onSubmit={submit} data-flow-label="incident report">
+      <h3>Log an incident</h3>
       <div className="grid">
         <label>
           Date
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
         <label>
-          Line
+          Booth
           <select value={line} onChange={(e) => setLine(e.target.value)}>
             <option>A</option>
             <option>B</option>
           </select>
         </label>
         <label className="wide">
-          Task
+          Type
+          <select value={kind} onChange={(e) => setKind(e.target.value)}>
+            {INCIDENT_TYPES.map((t) => (
+              <option key={t}>{t}</option>
+            ))}
+          </select>
+        </label>
+        <label className="wide wide4">
+          What happened
           <input
             value={task}
             onChange={(e) => setTask(e.target.value)}
-            placeholder="e.g. Bumper primer batch #204"
+            placeholder="e.g. Orange peel on hoods after switching to matte gray"
           />
         </label>
         <label>
-          Progress %
-          <input
-            type="number"
-            min={0}
-            max={100}
-            value={progress}
-            onChange={(e) => setProgress(Number(e.target.value))}
-          />
+          Viscosity (s)
+          <input type="number" step={0.1} value={viscosity} onChange={(e) => setViscosity(e.target.value)} placeholder="18.5" />
+        </label>
+        <label>
+          Booth temp (°C)
+          <input type="number" step={0.5} value={boothTemp} onChange={(e) => setBoothTemp(e.target.value)} placeholder="23" />
+        </label>
+        <label>
+          Spray (bar)
+          <input type="number" step={0.1} value={sprayPressure} onChange={(e) => setSprayPressure(e.target.value)} placeholder="2.4" />
         </label>
         <label>
           Hours
-          <input
-            type="number"
-            min={0}
-            step={0.5}
-            value={hours}
-            onChange={(e) => setHours(Number(e.target.value))}
-          />
+          <input type="number" min={0} step={0.5} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
         </label>
-        <label className="wide">
-          Issues / remarks
+        <label className="wide wide4">
+          Action taken
           <input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="e.g. Nozzle clogging on booth 2"
+            value={actionTaken}
+            onChange={(e) => setActionTaken(e.target.value)}
+            placeholder="e.g. Reduced viscosity to 17s, test panel sprayed"
           />
         </label>
         <label className="check">
+          <input type="checkbox" checked={colorChange} onChange={(e) => setColorChange(e.target.checked)} />
+          Right after a color change
+        </label>
+        <label className="check">
           <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
-          Urgent — needs immediate attention
+          Urgent — line stopped / needs lead now
         </label>
       </div>
       <button type="submit" className="primary">
-        Save worklog
+        Save incident log
       </button>
     </form>
   )
 }
 
-function WorklogList({ state }: { state: store.AppState }) {
+function conditions(w: store.Worklog): string {
+  return [
+    w.data.colorChange ? 'after color change' : null,
+    w.data.viscosity != null ? `viscosity ${w.data.viscosity}s` : null,
+    w.data.boothTemp != null ? `booth ${w.data.boothTemp}°C` : null,
+    w.data.sprayPressure != null ? `spray ${w.data.sprayPressure}bar` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+function IncidentList({ state }: { state: store.AppState }) {
   const mine = state.worklogs.filter((w) => w.createdBy === state.actingAs)
-  if (mine.length === 0) return <p className="empty">No worklogs yet. Write your first entry above.</p>
+  if (mine.length === 0) return <p className="empty">No incident logs yet. Log your first one above.</p>
   return (
     <div className="list">
       {mine.map((w) => (
         <div key={w.id} className={`card entry ${w.urgent ? 'urgent' : ''}`}>
           <div className="entry-head">
-            <span className="task">{w.task}</span>
+            <span className="task">
+              <span className="kind-tag">{w.kind}</span> {w.task}
+            </span>
             <span className={`status ${w.status}`}>{w.status}</span>
           </div>
           <div className="meta">
-            {w.date} · Line {w.line} · {w.progressPct}% · {w.hours}h
+            {w.date} · Booth {w.line} · {w.hours}h
+            {conditions(w) && <> · {conditions(w)}</>}
             {w.urgent && <span className="flag"> · URGENT</span>}
           </div>
-          {w.note && <div className="note">{w.note}</div>}
+          {w.data.actionTaken && <div className="note">Action: {w.data.actionTaken}</div>}
           {w.status === 'draft' && (
             <button onClick={() => void store.requestApproval(w.id, 'lee')}>
-              Request approval from Lee
+              Send to Lee for review
             </button>
           )}
         </div>
@@ -173,7 +217,7 @@ function WorklogList({ state }: { state: store.AppState }) {
 function ApprovalsInbox({ state }: { state: store.AppState }) {
   const [comments, setComments] = useState<Record<string, string>>({})
   const inbox = state.approvals.filter((a) => a.approver === state.actingAs)
-  if (inbox.length === 0) return <p className="empty">No approval requests for {state.actingAs}.</p>
+  if (inbox.length === 0) return <p className="empty">No review requests for {state.actingAs}.</p>
   return (
     <div className="list">
       {inbox.map((a) => {
@@ -181,15 +225,18 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
         return (
           <div key={a.id} className="card entry">
             <div className="entry-head">
-              <span className="task">{wl?.task ?? a.worklogId}</span>
+              <span className="task">
+                {wl && <span className="kind-tag">{wl.kind}</span>} {wl?.task ?? a.worklogId}
+              </span>
               <span className={`status ${a.status.toLowerCase()}`}>{a.status}</span>
             </div>
             <div className="meta">
               from {state.users.find((u) => u.username === a.requestedBy)?.name ?? a.requestedBy}
-              {wl ? ` · ${wl.date} · Line ${wl.line} · ${wl.progressPct}% · ${wl.hours}h` : ''}
+              {wl ? ` · ${wl.date} · Booth ${wl.line}` : ''}
+              {wl && conditions(wl) && <> · {conditions(wl)}</>}
               {wl?.urgent && <span className="flag"> · URGENT</span>}
             </div>
-            {wl?.note && <div className="note">{wl.note}</div>}
+            {wl?.data.actionTaken && <div className="note">Action: {wl.data.actionTaken}</div>}
             {a.comment && <div className="note">Comment: {a.comment}</div>}
             {a.status === 'PENDING' && (
               <div className="decide">
@@ -226,7 +273,7 @@ interface LoadedProcess {
   map: UnderstudyProcessMap
 }
 
-function ProcessList({ state }: { state: store.AppState }) {
+function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
 
   const open = async (id: string) => {
@@ -236,14 +283,14 @@ function ProcessList({ state }: { state: store.AppState }) {
 
   const follow = (p: LoadedProcess) => {
     window.Understudy.loadProcess(p.map, { id: p.id, createdBy: p.createdBy })
-    window.Understudy.log(`opened process "${p.title}" to work along it`, { processId: p.id })
+    window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
   }
 
   if (state.processes.length === 0) {
     return (
       <p className="empty">
-        No saved processes yet. Work in the app, let the agent draft a process, then press
-        “Confirm &amp; save to library” in the Understudy panel.
+        No playbooks yet. Handle an incident in the app, let the agent draft the response process,
+        then press “Confirm &amp; save to library” in the Understudy panel.
       </p>
     )
   }
@@ -269,13 +316,25 @@ function ProcessList({ state }: { state: store.AppState }) {
         <div className="card proc-detail">
           <div className="entry-head">
             <span className="task">{selected.title}</span>
-            <button className="primary" onClick={() => follow(selected)}>
-              Follow this process
-            </button>
+            <span>
+              <button className="primary" onClick={() => follow(selected)}>
+                Follow this playbook
+              </button>{' '}
+              <button
+                className="ghost"
+                data-flow-ignore
+                onClick={() => {
+                  void store.deleteProcess(selected.id)
+                  setSelected(null)
+                }}
+              >
+                Delete
+              </button>
+            </span>
           </div>
           <p className="meta">
-            Loads into the Understudy panel — work along it yourself, or ask the agent to run it for
-            you.
+            Loads into the Understudy panel — work along it yourself (check steps off), or ask the
+            agent to run it for you. Skipped steps stay visible, so nothing gets missed.
           </p>
           <ol className="proc-steps">
             {selected.map.steps.map((s) => (
@@ -302,10 +361,9 @@ function ProcessList({ state }: { state: store.AppState }) {
 
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
-  const [tab, setTab] = useState<'worklogs' | 'approvals' | 'processes'>('worklogs')
+  const [tab, setTab] = useState<'incidents' | 'approvals' | 'playbooks'>('incidents')
 
   useEffect(() => {
-    // Ensure auth state resolves even before polling kicks in.
     void store.refresh()
   }, [])
 
@@ -321,7 +379,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1>
-          LinePulse <span className="sub">shift worklog &amp; approvals</span>
+          LinePulse <span className="sub">paint shop incident &amp; response log</span>
         </h1>
         <div className="userbox">
           <span>
@@ -336,6 +394,14 @@ export default function App() {
                 </option>
               ))}
           </select>
+          <button
+            className="ghost"
+            data-flow-ignore
+            title="Clear incident logs and reviews (keeps playbooks)"
+            onClick={() => void store.resetDemoData('worklogs')}
+          >
+            Reset data
+          </button>
           <button className="ghost" onClick={() => store.logout()} data-flow-ignore>
             Sign out
           </button>
@@ -343,26 +409,26 @@ export default function App() {
       </header>
 
       <nav className="tabs">
-        <button className={tab === 'worklogs' ? 'active' : ''} onClick={() => setTab('worklogs')}>
-          My worklogs
+        <button className={tab === 'incidents' ? 'active' : ''} onClick={() => setTab('incidents')}>
+          Incidents
         </button>
         <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
-          Approvals{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
+          Reviews{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
         </button>
-        <button className={tab === 'processes' ? 'active' : ''} onClick={() => setTab('processes')}>
-          Processes{state.processes.length > 0 && <span className="pill blue">{state.processes.length}</span>}
+        <button className={tab === 'playbooks' ? 'active' : ''} onClick={() => setTab('playbooks')}>
+          Playbooks{state.processes.length > 0 && <span className="pill blue">{state.processes.length}</span>}
         </button>
       </nav>
 
       <main>
-        {tab === 'worklogs' && (
+        {tab === 'incidents' && (
           <>
-            <WorklogForm />
-            <WorklogList state={state} />
+            <IncidentForm />
+            <IncidentList state={state} />
           </>
         )}
         {tab === 'approvals' && <ApprovalsInbox state={state} />}
-        {tab === 'processes' && <ProcessList state={state} />}
+        {tab === 'playbooks' && <PlaybookList state={state} />}
       </main>
     </div>
   )

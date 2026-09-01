@@ -54,11 +54,12 @@ Chrome 149+ with `chrome://flags/#enable-webmcp-testing`) calls them directly.
 
 Two host apps are included to prove the layer is app-agnostic:
 
-- `/` — **LinePulse**, a shift worklog & approvals mini-groupware
-  (manufacturing scenario: line workers file worklogs, team leads approve,
-  and a **Processes** tab lists the shared library so anyone can follow a
-  saved process). Integrated the "rich" way: semantic logs + registered
-  actions + a process-store adapter.
+- `/` — **LinePulse**, a paint-shop incident & response log (automotive
+  manufacturing scenario: line workers log defects like orange peel with the
+  line conditions — viscosity, booth temperature, spray pressure — team leads
+  review corrective actions, and a **Playbooks** tab lists the shared library
+  so anyone can follow a proven response process). Integrated the "rich" way:
+  semantic logs + registered actions + a process-store adapter.
 - `/plain.html` — a deliberately plain, framework-free purchase-request page.
   Integrated with **one script tag** and `autoCapture: 'full'`.
 
@@ -79,14 +80,18 @@ reviewer play both sides of the flow (worker files, lead approves).
 ### Try the collaboration loop
 
 1. Open the app in ChatGPT's browser (or Chrome with the WebMCP flag) and ask
-   the agent: *"Watch what I do and turn it into a process."*
-2. As Kim (line worker): write a worklog, mark it urgent, request approval.
-   Switch to Lee (team lead) and approve it.
-3. Ask the agent to draft the process. Edit its map in the Understudy panel —
-   rename a step, fix a branch condition — and watch its follow-ups change.
-4. Press **Confirm process**, then ask the agent to *run* it (e.g. "file
-   today's worklog for booth 2 and route it for approval"). Approve each agent
-   action in the panel.
+   the agent: *"Watch how I handle this incident and turn it into a playbook."*
+2. As Kim (line worker): log an **orange peel** defect right after a color
+   change — enter viscosity, booth temp, spray pressure — mark it urgent, and
+   send it to the lead. Switch to Lee (team lead) and approve the corrective
+   action.
+3. Ask the agent to draft the response process. Edit its map in the Understudy
+   panel — rename a step, fix the branch condition (e.g. *urgent entries
+   only*) — and watch its follow-up questions change.
+4. Press **Confirm & save to library**, then open **Playbooks → Follow this
+   playbook** as a "new worker" and ask the agent to run it: safe steps
+   execute behind your approval card, sign-offs stay with the human, and
+   skipped steps stay visibly unchecked so the agent can call them out.
 
 ## WebMCP tools registered
 
@@ -96,7 +101,7 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_recent_actions` | The action journal (cursor-based). Human answers to agent questions surface here too. |
 | `get_page_state` | Host-provided business state (records, statuses). |
 | `propose_process_map` | Draw/replace the draft process map rendered in the panel. |
-| `get_process_map` | Current map including human edits + confirmed flag. |
+| `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags — the agent uses these to spot skipped steps and warn the human. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
 | `ask_user` | In-page question card; resolves with the human's answer. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |

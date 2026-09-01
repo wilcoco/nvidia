@@ -26,6 +26,9 @@ export interface Step {
   /** Which host action (if any) performs this step when the agent replays the process. */
   action?: string
   next?: BranchTarget[]
+  /** Completion state while working along a confirmed process. Auto-set when the
+   *  step's action runs successfully; the human can also check steps off in the panel. */
+  done?: boolean
 }
 
 export interface ProcessMap {

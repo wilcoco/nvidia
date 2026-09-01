@@ -92,15 +92,41 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string 
   }
 }
 
-/** Load a process someone saved earlier (already confirmed). */
+/** Load a process someone saved earlier (already confirmed). Completion state starts fresh. */
 export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
-  map = { ...loaded, confirmed: true }
+  map = { ...loaded, confirmed: true, steps: loaded.steps.map((s) => ({ ...s, done: false })) }
   record(
     'agent',
     'map',
     `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}`,
   )
   notify()
+}
+
+/** Auto-mark the first not-done step bound to this host action (agent replay path). */
+export function markActionDone(actionName: string): void {
+  if (!map?.confirmed) return
+  const step = map.steps.find((s) => s.action === actionName && !s.done)
+  if (!step) return
+  step.done = true
+  record('agent', 'map', `completed step "${step.label}"`)
+  notify()
+}
+
+/** Human checks a step off (or un-checks it) in the panel. */
+export function humanToggleStepDone(stepId: string): void {
+  if (!map) return
+  const step = map.steps.find((s) => s.id === stepId)
+  if (!step) return
+  step.done = !step.done
+  pushEdit({ stepId, field: 'done', to: String(step.done) })
+  record('user', 'map', `${step.done ? 'checked off' : 'unchecked'} step "${step.label}"`)
+  notify()
+}
+
+/** Steps of a confirmed map that are still not done (conformance view). */
+export function pendingSteps(): Step[] {
+  return map?.confirmed ? map.steps.filter((s) => !s.done) : []
 }
 
 export function editsSince(cursor = 0): MapEdit[] {

@@ -6,6 +6,14 @@ export interface UserInfo {
   role: string
 }
 
+export interface IncidentData {
+  viscosity?: number
+  boothTemp?: number
+  sprayPressure?: number
+  colorChange?: boolean
+  actionTaken?: string
+}
+
 export interface Worklog {
   id: string
   date: string
@@ -15,6 +23,8 @@ export interface Worklog {
   hours: number
   note: string
   urgent: boolean
+  kind: string
+  data: IncidentData
   status: 'draft' | 'submitted' | 'approved' | 'rejected'
   createdBy: string
 }
@@ -136,16 +146,25 @@ export interface WorklogInput {
   date: string
   line: string
   task: string
-  progressPct: number
   hours: number
   note: string
   urgent: boolean
+  kind: string
+  data: IncidentData
 }
 
 export async function createWorklog(input: WorklogInput): Promise<Worklog> {
-  const wl = await api<Worklog>('/api/worklogs', { ...input, actingAs: state.actingAs })
+  const wl = await api<Worklog>('/api/worklogs', { ...input, progressPct: 100, actingAs: state.actingAs })
+  const cond = [
+    wl.data.colorChange ? 'after color change' : null,
+    wl.data.viscosity != null ? `viscosity ${wl.data.viscosity}s` : null,
+    wl.data.boothTemp != null ? `booth ${wl.data.boothTemp}°C` : null,
+    wl.data.sprayPressure != null ? `spray ${wl.data.sprayPressure}bar` : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
   window.Understudy.log(
-    `created worklog "${wl.task}" (line ${wl.line}, ${wl.progressPct}%, ${wl.hours}h${wl.urgent ? ', URGENT' : ''})`,
+    `logged ${wl.kind} "${wl.task}" (line ${wl.line}${cond ? `, ${cond}` : ''}${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
   await refresh()
@@ -203,4 +222,19 @@ export async function listProcesses(): Promise<ProcessSummary[]> {
 
 export async function getProcess(id: string): Promise<{ id: string; title: string; map: unknown; createdBy: string }> {
   return api(`/api/processes/${id}`)
+}
+
+export async function deleteProcess(id: string): Promise<void> {
+  await fetch(`/api/processes/${id}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bearer ${getToken()}` },
+  })
+  window.Understudy.log(`deleted process ${id} from the library`)
+  await refresh()
+}
+
+export async function resetDemoData(scope: 'worklogs' | 'all'): Promise<void> {
+  await api('/api/admin/reset', { scope })
+  window.Understudy.log(`reset demo data (${scope})`)
+  await refresh()
 }

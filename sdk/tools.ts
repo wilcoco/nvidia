@@ -111,7 +111,7 @@ const tools: ToolDef[] = [
   {
     name: 'get_process_map',
     description:
-      'The current process map, including any edits the human made (renames, type changes, removed steps, branch conditions) and whether they confirmed it.',
+      'The current process map, including any edits the human made (renames, type changes, removed steps, branch conditions) and whether they confirmed it. On a confirmed map each step carries a "done" flag (auto-set when its action runs, or checked off by the human) — use it to spot skipped steps and warn the human: if a later step is done while an earlier required step is not, the process is being violated.',
     inputSchema: schema(),
     execute: async () => mapstore.getMap() ?? { exists: false },
   },
@@ -240,6 +240,7 @@ const tools: ToolDef[] = [
           return { ok: false, error: errorMsg }
         }
         journal.record('agent', 'action', `ran ${action.name}`, params)
+        mapstore.markActionDone(action.name)
         return { ok: true, result }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)

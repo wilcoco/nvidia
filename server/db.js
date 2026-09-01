@@ -87,6 +87,18 @@ function memoryBackend() {
     async getProcess(id) {
       return processes.find((p) => p.id === id) ?? null
     },
+    async deleteProcess(id) {
+      const i = processes.findIndex((p) => p.id === id)
+      if (i < 0) return false
+      processes.splice(i, 1)
+      return true
+    },
+    async resetData(scope) {
+      worklogs.length = 0
+      approvals.length = 0
+      if (scope === 'all') processes.length = 0
+      return true
+    },
   }
 }
 
@@ -109,6 +121,8 @@ async function pgBackend(databaseUrl) {
       progress_pct INT NOT NULL, hours REAL NOT NULL, note TEXT DEFAULT '',
       urgent BOOLEAN DEFAULT FALSE, status TEXT DEFAULT 'draft', created_by TEXT NOT NULL
     );
+    ALTER TABLE worklogs ADD COLUMN IF NOT EXISTS kind TEXT DEFAULT 'routine';
+    ALTER TABLE worklogs ADD COLUMN IF NOT EXISTS data JSONB DEFAULT '{}';
     CREATE TABLE IF NOT EXISTS approvals (
       id SERIAL PRIMARY KEY, worklog_id INT NOT NULL, requested_by TEXT NOT NULL,
       approver TEXT NOT NULL, status TEXT DEFAULT 'PENDING', comment TEXT,
@@ -134,6 +148,7 @@ async function pgBackend(databaseUrl) {
     id: String(r.id), date: r.date, line: r.line, task: r.task,
     progressPct: r.progress_pct, hours: r.hours, note: r.note,
     urgent: r.urgent, status: r.status, createdBy: r.created_by,
+    kind: r.kind ?? 'routine', data: r.data ?? {},
   })
   const ap = (r) => ({
     id: String(r.id), worklogId: String(r.worklog_id), requestedBy: r.requested_by,
@@ -154,9 +169,10 @@ async function pgBackend(databaseUrl) {
     },
     async createWorklog(w) {
       const { rows } = await pool.query(
-        `INSERT INTO worklogs (date, line, task, progress_pct, hours, note, urgent, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-        [w.date, w.line, w.task, w.progressPct, w.hours, w.note, w.urgent, w.createdBy],
+        `INSERT INTO worklogs (date, line, task, progress_pct, hours, note, urgent, created_by, kind, data)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        [w.date, w.line, w.task, w.progressPct, w.hours, w.note, w.urgent, w.createdBy,
+         w.kind ?? 'routine', JSON.stringify(w.data ?? {})],
       )
       return wl(rows[0])
     },
@@ -212,6 +228,15 @@ async function pgBackend(databaseUrl) {
       return r
         ? { id: String(r.id), title: r.title, map: r.map, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime() }
         : null
+    },
+    async deleteProcess(id) {
+      const { rowCount } = await pool.query('DELETE FROM processes WHERE id=$1', [id])
+      return rowCount > 0
+    },
+    async resetData(scope) {
+      await pool.query('TRUNCATE worklogs, approvals RESTART IDENTITY')
+      if (scope === 'all') await pool.query('TRUNCATE processes RESTART IDENTITY')
+      return true
     },
   }
 }

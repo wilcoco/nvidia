@@ -44,6 +44,9 @@ header button.close { background: none; border: none; color: #94a3b8; cursor: po
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 8px; }
 .empty { color: #475569; font-style: italic; }
 .step { background: #1e293b; border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; position: relative; }
+.step.done { opacity: .55; }
+.step.done .label { text-decoration: line-through; }
+.step input.chk { accent-color: #34d399; flex: none; margin: 0; }
 .step .row { display: flex; align-items: center; gap: 6px; }
 .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex: none; }
 .badge.task { background: #1d4ed8; color: #dbeafe; }
@@ -129,8 +132,16 @@ function el<K extends keyof HTMLElementTagNameMap>(
 }
 
 function renderStep(step: Step, isLast: boolean, container: HTMLElement) {
-  const card = el('div', 'step')
+  const card = el('div', `step${step.done ? ' done' : ''}`)
   const row = el('div', 'row')
+  if (mapstore.getMap()?.confirmed) {
+    const chk = el('input', 'chk') as HTMLInputElement
+    chk.type = 'checkbox'
+    chk.checked = !!step.done
+    chk.title = 'Mark this step done'
+    chk.onchange = () => mapstore.humanToggleStepDone(step.id)
+    row.appendChild(chk)
+  }
   row.appendChild(el('span', `badge ${step.type}`, step.type))
 
   const label = el('span', 'label', step.label)

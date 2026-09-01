@@ -5,7 +5,7 @@ import './styles.css'
 import * as store from './store'
 
 window.Understudy.init({
-  appName: 'LinePulse — Shift Worklog & Approvals',
+  appName: 'LinePulse — Paint Shop Incident & Response Log',
   // LinePulse emits its own semantic journal entries via Understudy.log,
   // so automatic click capture is limited to navigation.
   autoCapture: 'min',
@@ -15,9 +15,9 @@ window.Understudy.init({
       loggedInAs: s.me,
       actingAs: s.actingAs,
       users: s.users,
-      worklogs: s.worklogs,
-      approvals: s.approvals,
-      savedProcesses: s.processes,
+      incidents: s.worklogs,
+      reviews: s.approvals,
+      savedPlaybooks: s.processes,
     }
   },
   processStore: {
@@ -30,41 +30,58 @@ window.Understudy.init({
   },
   actions: [
     {
-      name: 'create_worklog',
+      name: 'log_incident',
       description:
-        'Create a draft shift worklog entry (as the active persona). Returns the new worklog including its id.',
+        'Create a paint-shop incident log entry (as the active persona): defect or equipment issue plus the line conditions it occurred under. Returns the new entry including its id.',
       params: {
         date: { type: 'string', description: 'YYYY-MM-DD', required: true },
-        line: { type: 'string', description: 'Production line, e.g. "A" or "B"', required: true },
-        task: { type: 'string', description: 'What was worked on', required: true },
-        progressPct: { type: 'number', description: '0-100', required: true },
-        hours: { type: 'number', description: 'Hours spent', required: true },
-        note: { type: 'string', description: 'Issues or remarks' },
-        urgent: { type: 'boolean', description: 'Flag for issues needing immediate attention' },
+        line: { type: 'string', description: 'Booth, "A" or "B"', required: true },
+        kind: {
+          type: 'string',
+          description:
+            'Incident type: orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault | routine log',
+          required: true,
+        },
+        task: { type: 'string', description: 'What happened, one line', required: true },
+        urgent: { type: 'boolean', description: 'Line stopped / needs the lead immediately' },
+        viscosity: { type: 'number', description: 'Paint viscosity in seconds, e.g. 18.5' },
+        boothTemp: { type: 'number', description: 'Booth temperature °C' },
+        sprayPressure: { type: 'number', description: 'Spray pressure in bar' },
+        colorChange: { type: 'boolean', description: 'Occurred right after a color change' },
+        actionTaken: { type: 'string', description: 'Corrective action taken, if any' },
+        hours: { type: 'number', description: 'Time spent (default 0.5)' },
       },
       handler: (p) =>
         store.createWorklog({
           date: String(p.date),
           line: String(p.line),
           task: String(p.task),
-          progressPct: Number(p.progressPct),
-          hours: Number(p.hours),
-          note: String(p.note ?? ''),
+          hours: Number(p.hours ?? 0.5),
+          note: '',
           urgent: Boolean(p.urgent),
+          kind: String(p.kind),
+          data: {
+            viscosity: p.viscosity === undefined ? undefined : Number(p.viscosity),
+            boothTemp: p.boothTemp === undefined ? undefined : Number(p.boothTemp),
+            sprayPressure: p.sprayPressure === undefined ? undefined : Number(p.sprayPressure),
+            colorChange: Boolean(p.colorChange),
+            actionTaken: p.actionTaken ? String(p.actionTaken) : undefined,
+          },
         }),
     },
     {
-      name: 'request_approval',
-      description: 'Submit a draft worklog for approval by the team lead.',
+      name: 'request_review',
+      description: 'Send an incident log to the team lead for review/approval.',
       params: {
-        worklogId: { type: 'string', required: true },
+        worklogId: { type: 'string', description: 'Incident log id', required: true },
         approver: { type: 'string', description: 'Approver username (default "lee")' },
       },
       handler: (p) => store.requestApproval(String(p.worklogId), String(p.approver ?? 'lee')),
     },
     {
-      name: 'approve_request',
-      description: 'Approve a pending approval request (switch persona to the approver first).',
+      name: 'approve_review',
+      description:
+        'Approve a pending review (switch persona to the approver first). Use for sign-off steps like corrective action approval or line restart.',
       params: {
         approvalId: { type: 'string', required: true },
         comment: { type: 'string' },
@@ -73,8 +90,8 @@ window.Understudy.init({
         store.decideApproval(String(p.approvalId), 'APPROVED', p.comment ? String(p.comment) : undefined),
     },
     {
-      name: 'reject_request',
-      description: 'Reject a pending approval request with a comment explaining why.',
+      name: 'reject_review',
+      description: 'Reject a pending review with a comment explaining why.',
       params: {
         approvalId: { type: 'string', required: true },
         comment: { type: 'string', required: true },

@@ -28,6 +28,8 @@ body {
 .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 12px; }
 .grid label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #475569; }
 .grid label.wide { grid-column: span 2; }
+.grid label.wide4 { grid-column: span 4; }
+.kind-tag { font-size: 10px; font-weight: 700; text-transform: uppercase; background: #e0e7ff; color: #3730a3; border-radius: 4px; padding: 2px 6px; margin-right: 6px; vertical-align: middle; }
 .grid label.check { grid-column: span 4; flex-direction: row; align-items: center; gap: 6px; font-size: 13px; }
 .grid input, .grid select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
 

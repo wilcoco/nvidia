@@ -81,10 +81,12 @@ app.post('/api/worklogs', auth, async (req, res) => {
     date: String(b.date),
     line: String(b.line),
     task: String(b.task),
-    progressPct: Number(b.progressPct ?? 0),
-    hours: Number(b.hours ?? 0),
+    progressPct: Number(b.progressPct ?? 100) || 0,
+    hours: Number(b.hours ?? 0) || 0,
     note: String(b.note ?? ''),
     urgent: Boolean(b.urgent),
+    kind: String(b.kind ?? 'routine'),
+    data: b.data && typeof b.data === 'object' ? b.data : {},
     createdBy: actor(req),
   })
   res.json(row)
@@ -131,6 +133,19 @@ app.get('/api/processes/:id', auth, async (req, res) => {
   const row = await db.getProcess(req.params.id)
   if (!row) return res.status(404).json({ error: 'process not found' })
   res.json(row)
+})
+
+app.delete('/api/processes/:id', auth, async (req, res) => {
+  const ok = await db.deleteProcess(req.params.id)
+  if (!ok) return res.status(404).json({ error: 'process not found' })
+  res.json({ ok: true })
+})
+
+// Demo housekeeping: clear worklogs+approvals ('worklogs') or everything ('all').
+app.post('/api/admin/reset', auth, async (req, res) => {
+  const scope = req.body?.scope === 'all' ? 'all' : 'worklogs'
+  await db.resetData(scope)
+  res.json({ ok: true, scope })
 })
 
 /* ---------------- static ---------------- */
