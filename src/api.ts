@@ -1,19 +1,28 @@
 const TOKEN_KEY = 'linepulse-token'
 
+// The in-memory copy is the source of truth: some embedded browsers
+// (e.g. ChatGPT's in-app browser) block localStorage writes, which would
+// otherwise lose the session right after a successful login. localStorage
+// is best-effort persistence across reloads where available.
+let memToken: string | null = null
+
 export function getToken(): string | null {
+  if (memToken) return memToken
   try {
-    return localStorage.getItem(TOKEN_KEY)
+    memToken = localStorage.getItem(TOKEN_KEY)
   } catch {
-    return null
+    /* storage unavailable */
   }
+  return memToken
 }
 
 export function setToken(token: string | null): void {
+  memToken = token
   try {
     if (token) localStorage.setItem(TOKEN_KEY, token)
     else localStorage.removeItem(TOKEN_KEY)
   } catch {
-    /* ignore */
+    /* storage unavailable — memory token still carries the session */
   }
 }
 
