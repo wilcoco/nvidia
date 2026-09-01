@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap } from './mapstore'
+import { loadSavedMap, markActionDone } from './mapstore'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -55,4 +55,10 @@ function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }
   loadSavedMap(map, meta)
 }
 
-;(window as any).Understudy = { init, log, registerAction, loadProcess }
+/** Host apps report a successful semantic action (e.g. the human saved a form),
+ *  so the matching step of a loaded process auto-completes. Call only on success. */
+function notifyAction(name: string, resultId?: string): void {
+  markActionDone(name, resultId, 'user')
+}
+
+;(window as any).Understudy = { init, log, registerAction, loadProcess, notifyAction }

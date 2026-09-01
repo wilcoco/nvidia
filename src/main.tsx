@@ -27,6 +27,14 @@ window.Understudy.init({
       const p = await store.getProcess(id)
       return { map: p.map as never, title: p.title, createdBy: p.createdBy }
     },
+    findRelevant: () => {
+      const s = store.getState()
+      return {
+        entering_now: s.draft,
+        matches: store.computeMatches(),
+        note: 'Matches require every appliesWhen condition of a playbook to hold for the current form input.',
+      }
+    },
   },
   actions: [
     {

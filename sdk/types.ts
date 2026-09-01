@@ -80,6 +80,8 @@ export interface ProcessStoreAdapter {
   save(map: ProcessMap): Promise<ProcessSummary>
   list(): Promise<ProcessSummary[]>
   load(id: string): Promise<{ map: ProcessMap; title?: string; createdBy?: string }>
+  /** Optional: match saved processes against what the human is entering right now. */
+  findRelevant?: () => Promise<unknown> | unknown
 }
 
 export interface InitOptions {

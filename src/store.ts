@@ -44,6 +44,23 @@ export interface ProcessSummary {
   title: string
   createdBy: string
   createdAt: number
+  appliesWhen?: Record<string, unknown>
+  priorityWhen?: Record<string, unknown>
+}
+
+/** What the human is entering in the incident form right now. */
+export interface DraftContext {
+  kind?: string
+  colorChange?: boolean
+  urgent?: boolean
+}
+
+export interface PlaybookMatch {
+  processId: string
+  title: string
+  createdBy: string
+  confidence: number
+  reasons: string[]
 }
 
 export interface AppState {
@@ -54,6 +71,8 @@ export interface AppState {
   worklogs: Worklog[]
   approvals: Approval[]
   processes: ProcessSummary[]
+  draft: DraftContext
+  dismissedSuggestions: string[]
 }
 
 let state: AppState = {
@@ -64,6 +83,8 @@ let state: AppState = {
   worklogs: [],
   approvals: [],
   processes: [],
+  draft: {},
+  dismissedSuggestions: [],
 }
 
 const listeners = new Set<() => void>()
@@ -167,6 +188,7 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
     `logged ${wl.kind} "${wl.task}" (line ${wl.line}${cond ? `, ${cond}` : ''}${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
+  window.Understudy.notifyAction('log_incident', wl.id)
   await refresh()
   return wl
 }
@@ -180,6 +202,7 @@ export async function requestApproval(worklogId: string, approver: string): Prom
   window.Understudy.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
     approvalId: approval.id,
   })
+  window.Understudy.notifyAction('request_review', approval.id)
   await refresh()
   return approval
 }
@@ -199,8 +222,64 @@ export async function decideApproval(
     `${decision.toLowerCase()} worklog "${wl?.task ?? decided.worklogId}"${comment ? ` — "${comment}"` : ''}`,
     { approvalId },
   )
+  window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
   await refresh()
   return decided
+}
+
+/* Contextual playbook matching (condition-based, no LLM) */
+
+export function setDraftContext(draft: DraftContext): void {
+  commit({ draft })
+}
+
+export function dismissSuggestion(processId: string, reason?: string): void {
+  commit({ dismissedSuggestions: [...state.dismissedSuggestions, processId] })
+  window.Understudy.log(
+    `dismissed suggested playbook ${processId} as not relevant${reason ? ` — ${reason}` : ''}`,
+  )
+}
+
+const FIELD_LABEL: Record<string, (v: unknown) => string> = {
+  kind: (v) => `incident type: ${v}`,
+  colorChange: () => 'right after a color change',
+  urgent: () => 'urgent line-stop condition',
+}
+
+export function computeMatches(includeDismissed = false): PlaybookMatch[] {
+  const draft = state.draft
+  const matches: PlaybookMatch[] = []
+  for (const p of state.processes) {
+    if (!p.appliesWhen || Object.keys(p.appliesWhen).length === 0) continue
+    if (!includeDismissed && state.dismissedSuggestions.includes(p.id)) continue
+    const entries = Object.entries(p.appliesWhen)
+    const matched = entries.filter(
+      ([k, v]) => (draft as Record<string, unknown>)[k] !== undefined && (draft as Record<string, unknown>)[k] === v,
+    )
+    if (matched.length < entries.length) continue // all applicability conditions must hold
+    const reasons = matched.map(([k, v]) => FIELD_LABEL[k]?.(v) ?? `${k} = ${v}`)
+    let confidence = 0.8
+    for (const [k, v] of Object.entries(p.priorityWhen ?? {})) {
+      if ((draft as Record<string, unknown>)[k] === v) {
+        confidence += 0.12
+        reasons.push(FIELD_LABEL[k]?.(v) ?? `${k} = ${v}`)
+      }
+    }
+    matches.push({
+      processId: p.id,
+      title: p.title,
+      createdBy: p.createdBy,
+      confidence: Math.min(0.99, Number(confidence.toFixed(2))),
+      reasons,
+    })
+  }
+  return matches.sort((a, b) => b.confidence - a.confidence)
+}
+
+export async function followPlaybook(processId: string): Promise<void> {
+  const p = await getProcess(processId)
+  window.Understudy.loadProcess(p.map as never, { id: p.id, createdBy: p.createdBy })
+  window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
 }
 
 /* Process library (shared across users via the server) */

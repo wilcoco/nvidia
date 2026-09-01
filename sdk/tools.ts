@@ -264,6 +264,19 @@ const tools: ToolDef[] = [
     },
   },
   {
+    name: 'find_relevant_processes',
+    description:
+      "Saved playbooks that match what the human is entering RIGHT NOW (matched on structured conditions like incident type, not guesswork), with confidence and reasons. Call it when the human starts a new piece of work. If there's a good match, explain WHY it matches and offer to load it (load_process) — suggest, never force; the human decides. No match is a normal answer.",
+    inputSchema: schema(),
+    execute: async () => {
+      const store = host.getProcessStore()
+      if (!store?.findRelevant) {
+        return { available: false, note: 'This app does not provide contextual matching. Use list_saved_processes instead.' }
+      }
+      return await store.findRelevant()
+    },
+  },
+  {
     name: 'load_process',
     description:
       'Load a saved process from the shared library into this session (it renders in the panel, already confirmed). Then replay it with run_action, following its steps and asking the human at decision points.',

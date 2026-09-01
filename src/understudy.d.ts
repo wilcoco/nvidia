@@ -36,11 +36,13 @@ interface UnderstudyApi {
       save(map: UnderstudyProcessMap): Promise<UnderstudyProcessSummary>
       list(): Promise<UnderstudyProcessSummary[]>
       load(id: string): Promise<{ map: UnderstudyProcessMap; title?: string; createdBy?: string }>
+      findRelevant?: () => unknown
     }
   }): void
   log(label: string, detail?: unknown): void
   registerAction(action: UnderstudyHostAction): void
   loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string }): void
+  notifyAction(name: string, resultId?: string): void
 }
 
 interface Window {

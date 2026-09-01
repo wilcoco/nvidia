@@ -86,7 +86,14 @@ function memoryBackend() {
       return row
     },
     async listProcesses() {
-      return processes.map(({ id, title, createdBy, createdAt }) => ({ id, title, createdBy, createdAt }))
+      return processes.map((p) => ({
+        id: p.id,
+        title: p.title,
+        createdBy: p.createdBy,
+        createdAt: p.createdAt,
+        appliesWhen: p.map?.appliesWhen,
+        priorityWhen: p.map?.priorityWhen,
+      }))
     },
     async getProcess(id) {
       return processes.find((p) => p.id === id) ?? null
@@ -232,10 +239,13 @@ async function pgBackend(databaseUrl) {
     },
     async listProcesses() {
       const { rows } = await pool.query(
-        'SELECT id, title, created_by, created_at FROM processes ORDER BY id DESC LIMIT 100',
+        `SELECT id, title, created_by, created_at,
+                map->'appliesWhen' AS applies_when, map->'priorityWhen' AS priority_when
+         FROM processes ORDER BY id DESC LIMIT 100`,
       )
       return rows.map((r) => ({
         id: String(r.id), title: r.title, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime(),
+        appliesWhen: r.applies_when ?? undefined, priorityWhen: r.priority_when ?? undefined,
       }))
     },
     async getProcess(id) {

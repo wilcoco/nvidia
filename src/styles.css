@@ -75,3 +75,7 @@ button.ghost { border: none; background: none; color: #94a3b8; }
 .decide { display: flex; gap: 8px; margin-top: 8px; }
 .decide input { flex: 1; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; }
 .empty { color: #94a3b8; font-style: italic; }
+
+.suggestion { border: 2px solid #1d4ed8; background: #eff6ff; margin-bottom: 14px; }
+.suggestion .confidence { font-size: 12px; font-weight: 700; color: #1d4ed8; }
+.suggestion-title { font-weight: 600; margin: 2px 0 4px; }

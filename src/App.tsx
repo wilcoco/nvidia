@@ -62,6 +62,34 @@ function Login() {
   )
 }
 
+function SuggestionCard() {
+  const matches = store.computeMatches()
+  if (matches.length === 0) return null
+  const m = matches[0]
+  return (
+    <div className="card suggestion">
+      <div className="entry-head">
+        <span className="task">📋 Related playbook found</span>
+        <span className="confidence">{Math.round(m.confidence * 100)}% match</span>
+      </div>
+      <div className="suggestion-title">{m.title}</div>
+      <div className="meta">Matched because: {m.reasons.join(' · ')}</div>
+      <div className="decide">
+        <button className="primary" onClick={() => void store.followPlaybook(m.processId)}>
+          Follow this playbook
+        </button>
+        <button
+          className="ghost"
+          data-flow-ignore
+          onClick={() => store.dismissSuggestion(m.processId, 'not relevant to this incident')}
+        >
+          Not relevant
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function IncidentForm() {
   const [date, setDate] = useState(today())
   const [line, setLine] = useState('A')
@@ -74,6 +102,12 @@ function IncidentForm() {
   const [actionTaken, setActionTaken] = useState('')
   const [hours, setHours] = useState(0.5)
   const [urgent, setUrgent] = useState(false)
+
+  // Keep the live draft context in the store so playbook matching (and the
+  // agent, via find_relevant_processes) sees what is being entered right now.
+  useEffect(() => {
+    store.setDraftContext({ kind, colorChange, urgent })
+  }, [kind, colorChange, urgent])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -282,10 +316,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
     setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as UnderstudyProcessMap })
   }
 
-  const follow = (p: LoadedProcess) => {
-    window.Understudy.loadProcess(p.map, { id: p.id, createdBy: p.createdBy })
-    window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
-  }
+  const follow = (p: LoadedProcess) => void store.followPlaybook(p.id)
 
   if (state.processes.length === 0) {
     return (
@@ -424,6 +455,7 @@ export default function App() {
       <main>
         {tab === 'incidents' && (
           <>
+            <SuggestionCard />
             <IncidentForm />
             <IncidentList state={state} />
           </>

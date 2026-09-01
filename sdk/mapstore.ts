@@ -108,13 +108,18 @@ export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy
 }
 
 /** Auto-mark the first not-done step bound to this host action (agent replay path). */
-export function markActionDone(actionName: string, resultId?: string): void {
+export function markActionDone(
+  actionName: string,
+  resultId?: string,
+  by: 'user' | 'agent' = 'agent',
+): void {
   if (!map?.confirmed) return
   const step = map.steps.find((s) => s.action === actionName && !s.done)
   if (!step) return
   step.done = true
+  delete step.naReason
   if (resultId) step.resultId = resultId
-  record('agent', 'map', `completed step "${step.label}"`)
+  record(by, 'map', `completed step "${step.label}"`)
   notify()
 }
 
