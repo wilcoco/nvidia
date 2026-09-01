@@ -54,7 +54,7 @@ Chrome 149+ with `chrome://flags/#enable-webmcp-testing`) calls them directly.
 
 Two host apps are included to prove the layer is app-agnostic:
 
-- `/` — **LinePulse**, a paint-shop incident & response log (automotive
+- `/` — **the Understudy demo workspace**, a paint-shop incident & response log (automotive
   manufacturing scenario: line workers log defects like orange peel with the
   line conditions — viscosity, booth temperature, spray pressure — team leads
   review corrective actions, and a **Playbooks** tab lists the shared library
@@ -63,7 +63,7 @@ Two host apps are included to prove the layer is app-agnostic:
 - `/plain.html` — a deliberately plain, framework-free purchase-request page.
   Integrated with **one script tag** and `autoCapture: 'full'`.
 
-All demo data is fictional. LinePulse uses a small Express + Postgres backend
+All demo data is fictional. The demo workspace uses a small Express + Postgres backend
 so worklogs, approvals, and the process library are shared across users.
 
 **Reviewer accounts** (shown on the login screen as well):
@@ -108,10 +108,13 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags. |
 | `get_process_progress` | Run-state of the loaded process: done / next-up / skipped steps, plus a suggested next action — the missed-step coach. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
-| `ask_user` | In-page question card; resolves with the human's answer. |
+| `update_step` | Refine one step in place — the agent writes the human's explained judgment rules into step notes. |
+| `ask_user` | In-page question card; resolves with the human's answer. Options can carry a `run` binding that executes an action on the human's click. |
+| `resolve_deviation` | Mark a skipped step completed-outside-the-app or not-applicable, with a reason. |
+| `find_relevant_processes` | Playbooks matching what the human is entering right now, with confidence and reasons. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |
-| `load_process` | Load a saved process into the session for replay. |
-| `run_action` | Execute a host action (replay), gated by an in-page human approval card. |
+| `load_process` | Load a saved process for a new run; work already done this session is auto-linked as done. |
+| `run_action` | Execute a host action behind an in-page approval card. Refuses to jump past required undone steps ("Process violation prevented") unless the human explicitly overrides. |
 
 ## Attach Understudy to your own app
 
@@ -175,7 +178,7 @@ sdk/        Understudy itself (TypeScript → bundled to a single understudy.js)
   asks.ts     agent→human questions & action-approval gates
   panel.ts    the in-page side panel (shadow DOM)
   tools.ts    WebMCP tool definitions & registration
-src/        LinePulse demo host app (React)
+src/        paint-shop demo workspace (React)
 server/     Express API + Postgres/in-memory storage (auth, worklogs, approvals, process library)
 public/plain.html   second host app (vanilla, one-script-tag attach)
 ```

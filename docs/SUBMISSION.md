@@ -61,7 +61,7 @@ through the declarative attribute API.
   machine (done / next / skipped / blocked / conditional / not-applicable),
   branch resolution against live data, pre-execution process guard,
   session-history retro-linking, and 15 WebMCP tools.
-- **LinePulse** (React + Vite): the demo workspace — a paint-shop incident &
+- **Demo workspace** (React + Vite): a paint-shop incident &
   response log with reviews and a shared playbook library.
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,
   playbook library with versioning, and persistent run records.

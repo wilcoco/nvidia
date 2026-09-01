@@ -38,8 +38,8 @@ function Login() {
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
         <h1>
-          LinePulse{' '}
-          <span className="sub">demo workspace powered by 🎭 Understudy</span>
+          🎭 Understudy{' '}
+          <span className="sub">paint shop incident demo</span>
         </h1>
         <p className="hint">
           Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
@@ -498,8 +498,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1>
-          LinePulse{' '}
-          <span className="sub">paint shop incident log — demo workspace powered by 🎭 Understudy</span>
+          🎭 Understudy{' '}
+          <span className="sub">paint shop incident demo workspace</span>
         </h1>
         <div className="userbox">
           <span>

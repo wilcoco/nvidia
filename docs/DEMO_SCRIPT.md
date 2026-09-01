@@ -2,7 +2,7 @@
 
 **Environment**: ChatGPT's browser (WebMCP enabled), signed in as `judge`.
 Before recording press **Start fresh demo** (playbooks are kept).
-Screen layout: LinePulse app left, Understudy panel right, ChatGPT visible.
+Screen layout: demo app left, Understudy panel right, ChatGPT visible.
 
 **The one thing this video must prove** (this is the winning scene, not the
 compliance features): *the human corrects the agent's understanding of the
@@ -17,7 +17,7 @@ process, and the agent's behavior changes because of it.*
 > This is Understudy: a drop-in layer that lets an AI agent learn how your
 > experts actually work — on the same page, through WebMCP."
 
-*Screen: LinePulse open, Understudy panel on the right, ChatGPT alongside.
+*Screen: the demo workspace open, Understudy panel on the right, ChatGPT alongside.
 Briefly hover the "WebMCP connected" dot and ChatGPT's Site tools list (15
 tools).*
 
@@ -99,7 +99,7 @@ incident. Then final approval card → Approve → "✓ Playbook run complete".*
 *Quick cuts: Playbooks tab (run history strip, version badges) →
 plain.html with its one script tag (view-source flash) → the tools list.*
 
-> "LinePulse is just the demo workspace. Understudy itself is one script tag —
+> "The paint-shop app is just a demo workspace. Understudy itself is one script tag —
 > fifteen WebMCP tools, an action journal, and a live process panel that any
 > web app can adopt. Your team already knows how the work is done.
 > Understudy is how the agent learns it. You did it once — the agent can

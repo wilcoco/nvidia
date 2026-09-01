@@ -5,8 +5,8 @@ import './styles.css'
 import * as store from './store'
 
 window.Understudy.init({
-  appName: 'LinePulse — Paint Shop Incident & Response Log',
-  // LinePulse emits its own semantic journal entries via Understudy.log,
+  appName: 'Understudy — Paint Shop Incident Demo',
+  // The demo app emits its own semantic journal entries via Understudy.log,
   // so automatic click capture is limited to navigation.
   autoCapture: 'min',
   stateProvider: () => {
