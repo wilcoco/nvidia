@@ -43,6 +43,9 @@ const BUILTIN_ACTIONS: Record<string, HostAction> = {
         String(p.reason),
         p.evidence ? String(p.evidence) : undefined,
         'user',
+        p.measurements && typeof p.measurements === 'object'
+          ? (p.measurements as Record<string, unknown>)
+          : undefined,
       ),
   },
   resolve_deviation: {

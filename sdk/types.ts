@@ -14,6 +14,11 @@ export interface ActionEntry {
 export interface BranchTarget {
   to: string
   condition?: string
+  /** Machine-checkable pass criteria for this edge, e.g.
+   *  { axisTemperature: { lt: 55 }, alarmActive: { eq: false }, dryCyclesPassed: { gte: 3 } }.
+   *  resolve_decision verifies supplied measurements against these — a branch
+   *  whose criteria are violated is refused server-side. */
+  criteria?: Record<string, Record<string, number | string | boolean>>
 }
 
 export type StepType = 'task' | 'decision' | 'approval'

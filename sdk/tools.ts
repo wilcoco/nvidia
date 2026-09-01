@@ -41,6 +41,11 @@ const STEP_SCHEMA = {
         properties: {
           to: { type: 'string', description: 'id of the next step' },
           condition: { type: 'string', description: 'When this edge is taken, e.g. "urgent == true"' },
+          criteria: {
+            type: 'object',
+            description:
+              'Machine-checkable pass criteria from the sign-off interview, e.g. {"axisTemperature": {"lt": 55}, "alarmActive": {"eq": false}, "dryCyclesPassed": {"gte": 3}}. resolve_decision verifies measurements against these server-side — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
+          },
         },
         required: ['to'],
       },
@@ -350,6 +355,7 @@ const tools: ToolDef[] = [
         }))
       const ready = view.find((s) => s.status === 'ready')
       const blocked = view.find((s) => s.status === 'blocked')
+      const gate = mapstore.pendingDecision()
       const branchingSteps = map.steps
         .filter((s) => (s.next?.length ?? 0) > 1)
         .map((s) => ({
@@ -382,7 +388,19 @@ const tools: ToolDef[] = [
         not_applicable: map.steps
           .filter((s) => s.naReason && !s.done)
           .map((s) => ({ id: s.id, label: s.label, reason: s.naReason })),
-        suggestedAction: ready?.action ? { name: ready.action } : null,
+        awaiting_decision: gate
+          ? {
+              id: gate.id,
+              label: gate.label,
+              branches: gate.next,
+              note: 'This decision must be resolved (resolve_decision) before anything after it can run.',
+            }
+          : null,
+        suggestedAction: gate
+          ? { name: 'resolve_decision', params: { stepId: gate.id } }
+          : ready?.action
+            ? { name: ready.action }
+            : null,
         branch_conditions: map.steps
           .filter((s) => (s.next?.length ?? 0) > 1)
           .map((s) => ({ at: s.label, branches: s.next })),
@@ -392,13 +410,17 @@ const tools: ToolDef[] = [
   {
     name: 'resolve_decision',
     description:
-      'Record the outcome of a branching step: which edge was taken, why, and on what evidence. REQUIRED before moving past a step with conditional branches — and never choose a branch the evidence contradicts (e.g. do not take the "pass" branch while a measured value still violates the approval criteria in the step notes; ask the human instead). Choosing a loop-back branch (e.g. "verification failed → back to maintenance") automatically re-opens those steps. Prefer offering the choice to the human as run-bound ask_user options.',
+      'Record the outcome of a branching step: which edge was taken and why. REQUIRED before moving past a step with branches — get_process_progress will not offer anything beyond an unresolved decision. If the chosen edge carries criteria, you MUST pass structured measurements ({"axisTemperature": 52, "alarmActive": false, "dryCyclesPassed": 3}); the engine verifies them and REFUSES the branch on any violation (evidence_conflict) — then ask the human whether the measurements are wrong or whether to take the failure branch, never how to override. Choosing a loop-back branch re-opens those steps.',
     inputSchema: schema(
       {
         stepId: { type: 'string' },
         branchTo: { type: 'string' },
         reason: { type: 'string' },
-        evidence: { type: 'string' },
+        evidence: { type: 'string', description: 'Free-text context (optional)' },
+        measurements: {
+          type: 'object',
+          description: 'Structured measured values checked against the edge criteria, e.g. {"axisTemperature": 52, "vibrationPresent": false, "dryCyclesPassed": 3}',
+        },
       },
       ['stepId', 'branchTo', 'reason'],
     ),
@@ -408,6 +430,7 @@ const tools: ToolDef[] = [
         branchTo: args.branchTo,
         reason: args.reason,
         evidence: args.evidence,
+        measurements: args.measurements,
       }),
   },
   {

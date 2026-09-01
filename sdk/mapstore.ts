@@ -210,20 +210,68 @@ export function agentUpdateStep(
 
 /** Record which branch a branching step took (and why); choosing a loop-back
  *  re-opens the loop body so those steps run again. */
+const OPS: Record<string, (m: number, v: number) => boolean> = {
+  lt: (m, v) => m < v,
+  lte: (m, v) => m <= v,
+  gt: (m, v) => m > v,
+  gte: (m, v) => m >= v,
+}
+
 export function resolveDecision(
   stepId: string,
   branchTo: string,
   reason: string,
   evidence?: string,
   by: 'user' | 'agent' = 'user',
+  measurements?: Record<string, unknown>,
 ): { ok: boolean; error?: string; reopened?: string[] } {
   if (!map) return { ok: false, error: 'no process is loaded' }
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const edge = step.next?.find((e) => e.to === branchTo)
   if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branchTo}"` }
+
+  // Safety: a branch with machine-checkable criteria is verified HERE, not
+  // trusted to the caller. Violated criteria refuse the branch outright —
+  // the right follow-up is "are the measurements wrong, or is this the
+  // failure branch?", never "override anyway".
+  if (edge.criteria && Object.keys(edge.criteria).length > 0) {
+    const violated: string[] = []
+    const missing: string[] = []
+    for (const [key, rule] of Object.entries(edge.criteria)) {
+      const m = measurements?.[key]
+      if (m === undefined || m === null) {
+        missing.push(key)
+        continue
+      }
+      for (const [op, target] of Object.entries(rule)) {
+        if (op === 'eq') {
+          if (m !== target) violated.push(`${key} must equal ${target} (got ${m})`)
+        } else if (op === 'ne') {
+          if (m === target) violated.push(`${key} must not equal ${target}`)
+        } else if (OPS[op]) {
+          if (typeof m !== 'number' || !OPS[op](m, Number(target))) {
+            violated.push(`${key} must be ${op} ${target} (got ${m})`)
+          }
+        }
+      }
+    }
+    if (missing.length > 0) {
+      return {
+        ok: false,
+        error: `evidence_conflict: this branch requires measurements for ${missing.join(', ')} — supply them in "measurements" (structured values, not prose).`,
+      }
+    }
+    if (violated.length > 0) {
+      record(by, 'map', `REFUSED branch at "${step.label}" → "${branchTo}": ${violated.join('; ')}`, measurements)
+      return {
+        ok: false,
+        error: `evidence_conflict: the measurements violate this branch's criteria — ${violated.join('; ')}. Ask the human whether the measurements are wrong or whether to take the failure branch instead. Do not override.`,
+      }
+    }
+  }
   if (!map.decisions) map.decisions = []
-  map.decisions.push({ stepId, to: branchTo, reason, evidence, ts: Date.now() })
+  map.decisions.push({ stepId, to: branchTo, reason, evidence: evidence ?? (measurements ? JSON.stringify(measurements) : undefined), ts: Date.now() })
   record(
     by,
     'map',
@@ -367,12 +415,18 @@ export function prerequisiteGap(actionName: string): { target: string; missing: 
   const target = map.steps.find((s) => s.action === actionName && !s.done)
   if (!target) return null
   const statuses = progress()
+  const order = new Map(map.steps.map((s, i) => [s.id, i]))
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   const targetIdx = actionable.findIndex((s) => s.id === target.id)
   const missing = actionable
     .slice(0, targetIdx)
     .filter((s) => ['ready', 'skipped', 'pending', 'blocked'].includes(statuses.get(s.id) ?? ''))
-  return missing.length ? { target: target.label, missing: missing.map((s) => s.label) } : null
+    .map((s) => s.label)
+  const gate = lastPendingDecision
+  if (gate && (order.get(gate.id) ?? 0) < (order.get(target.id) ?? 0)) {
+    missing.push(`unresolved decision "${gate.label}" (resolve_decision first)`)
+  }
+  return missing.length ? { target: target.label, missing } : null
 }
 
 export type StepStatus =
@@ -459,10 +513,26 @@ function conditionalSteps(steps: Step[]): Map<string, string[]> {
  * 'skipped'     = a required step still not done although a later step already ran (a deviation)
  * 'conditional' = on a branch whose condition is not yet decided — not required (yet)
  */
+let lastPendingDecision: Step | null = null
+
+/** A branching step whose outcome must be resolved before the run can move past it. */
+export function pendingDecision(): Step | null {
+  progress()
+  return lastPendingDecision
+}
+
+function forwardResolved(d: Step, order: Map<string, number>): boolean {
+  const decs = map?.decisions?.filter((x) => x.stepId === d.id) ?? []
+  if (decs.length === 0) return false
+  const last = decs[decs.length - 1]
+  return (order.get(last.to) ?? 0) > (order.get(d.id) ?? 0)
+}
+
 export function progress(
   preconditionFor?: (actionName: string) => string | null,
 ): Map<string, StepStatus> {
   const statuses = new Map<string, StepStatus>()
+  lastPendingDecision = null
   if (!map?.confirmed) return statuses
   const conditionalMap = conditionalSteps(map.steps)
   const resolver = host.getBranchResolver()
@@ -471,21 +541,43 @@ export function progress(
       .filter(([, conditions]) => !(resolver && conditions.some((c) => resolver(c) === true)))
       .map(([id]) => id),
   )
+  const order = new Map(map.steps.map((s, i) => [s.id, i]))
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   // Not-applicable steps count as handled for ordering purposes.
   const lastHandledIdx = actionable.reduce((acc, s, i) => (s.done || s.naReason ? i : acc), -1)
+  // Any step with 2+ outgoing edges needs its outcome resolved — including the
+  // common fail-loops-back / pass-goes-forward shape (1 forward + 1 back edge).
+  const hasBranching = (s: Step) => (s.next?.length ?? 0) >= 2
   let gateAssigned = false
-  actionable.forEach((s, i) => {
+  let aIdx = -1
+  for (const s of map.steps) {
+    if (s.type === 'decision') {
+      // An unresolved decision whose predecessors are handled IS the gate:
+      // nothing after it may become ready until resolve_decision picks an edge.
+      if (hasBranching(s) && !gateAssigned && !forwardResolved(s, order)) {
+        statuses.set(s.id, 'ready')
+        lastPendingDecision = s
+        gateAssigned = true
+      }
+      continue
+    }
+    aIdx++
     if (s.done) statuses.set(s.id, 'done')
     else if (s.naReason) statuses.set(s.id, 'not_applicable')
     else if (conditional.has(s.id)) statuses.set(s.id, 'conditional')
-    else if (i < lastHandledIdx) statuses.set(s.id, 'skipped')
+    else if (aIdx < lastHandledIdx) statuses.set(s.id, 'skipped')
     else if (!gateAssigned) {
       const reason = s.action && preconditionFor ? preconditionFor(s.action) : null
       statuses.set(s.id, reason ? 'blocked' : 'ready')
       gateAssigned = true
     } else statuses.set(s.id, 'pending')
-  })
+    // A completed TASK that branches also needs its outcome resolved before
+    // anything later runs (e.g. verification done — passed or failed?).
+    if ((s.done || s.naReason) && hasBranching(s) && !gateAssigned && !forwardResolved(s, order)) {
+      lastPendingDecision = s
+      gateAssigned = true
+    }
+  }
   return statuses
 }
 
