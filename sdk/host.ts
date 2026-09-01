@@ -3,6 +3,14 @@ import type { HostAction, ProcessStoreAdapter } from './types'
 let appName = document.title || 'Web app'
 let stateProvider: (() => unknown) | null = null
 let processStore: ProcessStoreAdapter | null = null
+let branchResolver: ((condition: string) => boolean | undefined) | null = null
+
+export function setBranchResolver(fn: (condition: string) => boolean | undefined): void {
+  branchResolver = fn
+}
+export function getBranchResolver(): ((condition: string) => boolean | undefined) | null {
+  return branchResolver
+}
 const actions = new Map<string, HostAction>()
 
 export function setProcessStore(store: ProcessStoreAdapter): void {

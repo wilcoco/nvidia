@@ -309,7 +309,7 @@ function render() {
             // the agent the real outcome instead of just the button label.
             b.disabled = true
             b.textContent = `${o.label}…`
-            const outcome = await runHostAction(o.run.name, o.run.params ?? {}, { humanInitiated: true })
+            const outcome = await runHostAction(o.run.name, o.run.params ?? {}, { humanInitiated: true, force: true })
             ask.resolve(
               outcome.ok
                 ? `${o.label} — executed ${o.run.name} successfully`

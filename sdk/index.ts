@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, markActionDone } from './mapstore'
+import { loadSavedMap, recordActionSuccess } from './mapstore'
 import { startRunTracking } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
@@ -26,6 +26,7 @@ function init(opts: InitOptions = {}): void {
   if (opts.appName) host.setAppName(opts.appName)
   if (opts.stateProvider) host.setStateProvider(opts.stateProvider)
   if (opts.processStore) host.setProcessStore(opts.processStore)
+  if (opts.branchResolver) host.setBranchResolver(opts.branchResolver)
   for (const action of opts.actions ?? []) host.registerAction(action)
 
   const boot = () => {
@@ -60,7 +61,7 @@ function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }
 /** Host apps report a successful semantic action (e.g. the human saved a form),
  *  so the matching step of a loaded process auto-completes. Call only on success. */
 function notifyAction(name: string, resultId?: string): void {
-  markActionDone(name, resultId, 'user')
+  recordActionSuccess(name, resultId, 'user')
 }
 
 ;(window as any).Understudy = { init, log, registerAction, loadProcess, notifyAction }

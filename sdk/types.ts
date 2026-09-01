@@ -98,4 +98,7 @@ export interface InitOptions {
   stateProvider?: () => unknown
   actions?: HostAction[]
   processStore?: ProcessStoreAdapter
+  /** Resolve a branch condition against live app state: true = branch active
+   *  (its steps are required), false = not taken, undefined = still unknown. */
+  branchResolver?: (condition: string) => boolean | undefined
 }

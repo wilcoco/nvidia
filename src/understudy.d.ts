@@ -43,6 +43,7 @@ interface UnderstudyApi {
         payload: { steps: unknown[]; status?: 'active' | 'completed'; deviations?: number },
       ) => Promise<unknown>
     }
+    branchResolver?: (condition: string) => boolean | undefined
   }): void
   log(label: string, detail?: unknown): void
   registerAction(action: UnderstudyHostAction): void

@@ -57,7 +57,7 @@ export function preconditionFor(actionName: string): string | null {
 export async function runHostAction(
   name: string,
   raw: Record<string, unknown>,
-  opts: { humanInitiated?: boolean } = {},
+  opts: { humanInitiated?: boolean; force?: boolean } = {},
 ): Promise<RunOutcome> {
   const action = resolveAction(name)
   if (!action) {
@@ -96,6 +96,22 @@ export async function runHostAction(
     }
   }
 
+  // Guard: refuse to jump past required steps of the loaded process unless the
+  // human explicitly agreed (force). Fail BEFORE anything runs, so the agent can
+  // warn first and offer to complete or excuse the missing steps.
+  const force = opts.force === true || params.force === true
+  delete params.force
+  if (!force) {
+    const gap = mapstore.prerequisiteGap(name)
+    if (gap) {
+      return {
+        ok: false,
+        error: `Process violation prevented: running ${name} now would reach "${gap.target}" while earlier required steps are not done: ${gap.missing.join('; ')}.`,
+        note: 'Warn the human. Offer run-bound ask_user options to complete or excuse (resolve_deviation) the missing steps — or, only after the human explicitly agrees to proceed anyway, retry with force: true.',
+      }
+    }
+  }
+
   // A human clicking a run-bound option IS the consent for a state-only
   // builtin like resolve_deviation; real host actions still show the
   // approval card so the human sees the exact params before they run.
@@ -126,7 +142,9 @@ export async function runHostAction(
       result && typeof result === 'object' && 'id' in (result as Record<string, unknown>)
         ? String((result as Record<string, unknown>).id)
         : undefined
-    mapstore.markActionDone(action.name, resultId)
+    if (!(action.name in BUILTIN_ACTIONS)) {
+      mapstore.recordActionSuccess(action.name, resultId, actor)
+    }
     return { ok: true, result }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

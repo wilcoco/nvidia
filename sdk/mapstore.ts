@@ -1,5 +1,6 @@
 import type { MapEdit, ProcessMap, Step, StepType } from './types'
 import { record } from './journal'
+import * as host from './host'
 
 type Listener = () => void
 
@@ -99,12 +100,44 @@ export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy
     confirmed: true,
     steps: loaded.steps.map((s) => ({ ...s, done: false, naReason: undefined, resultId: undefined })),
   }
+  // Retroactively link work already done this session: each successful action
+  // completes the first matching step, in the order it actually happened.
+  let linked = 0
+  for (const ev of actionHistory) {
+    const step = map.steps.find((s) => s.action === ev.action && !s.done)
+    if (step) {
+      step.done = true
+      if (ev.resultId) step.resultId = ev.resultId
+      linked++
+    }
+  }
   record(
     'agent',
     'map',
-    `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}`,
+    `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}` +
+      (linked ? ` — linked ${linked} already-completed step(s)` : ''),
   )
   notify()
+}
+
+/** Session history of successful semantic actions — replayed onto maps loaded later,
+ *  so work done BEFORE a playbook was opened still counts. */
+interface ActionEvent {
+  action: string
+  resultId?: string
+  ts: number
+}
+const actionHistory: ActionEvent[] = []
+
+/** Single completion path for human UI work and agent run_action alike. */
+export function recordActionSuccess(
+  actionName: string,
+  resultId?: string,
+  by: 'user' | 'agent' = 'user',
+): void {
+  actionHistory.push({ action: actionName, resultId, ts: Date.now() })
+  if (actionHistory.length > 100) actionHistory.shift()
+  markActionDone(actionName, resultId, by)
 }
 
 /** Auto-mark the first not-done step bound to this host action (agent replay path). */
@@ -163,6 +196,20 @@ export function humanToggleStepDone(stepId: string): void {
   notify()
 }
 
+/** Would running this action now jump past required, not-yet-done steps? */
+export function prerequisiteGap(actionName: string): { target: string; missing: string[] } | null {
+  if (!map?.confirmed) return null
+  const target = map.steps.find((s) => s.action === actionName && !s.done)
+  if (!target) return null
+  const statuses = progress()
+  const actionable = map.steps.filter((s) => s.type !== 'decision')
+  const targetIdx = actionable.findIndex((s) => s.id === target.id)
+  const missing = actionable
+    .slice(0, targetIdx)
+    .filter((s) => ['ready', 'skipped', 'pending', 'blocked'].includes(statuses.get(s.id) ?? ''))
+  return missing.length ? { target: target.label, missing: missing.map((s) => s.label) } : null
+}
+
 export type StepStatus =
   | 'done'
   | 'ready'
@@ -195,24 +242,35 @@ export function resolveDeviation(
   return { stepId, label: step.label, resolution }
 }
 
-/** Steps that sit on only some branches out of a decision — they may legitimately
- *  never run, so they are never called 'skipped' until they actually happen. */
-function conditionalStepIds(steps: Step[]): Set<string> {
+/** Steps that sit on only some branches out of a decision, with the conditions
+ *  that would activate them. They may legitimately never run, so they are never
+ *  called 'skipped' — unless the host's branchResolver confirms their branch is
+ *  the active one, which promotes them to required. */
+function conditionalSteps(steps: Step[]): Map<string, string[]> {
   const byId = new Map(steps.map((s) => [s.id, s]))
   const reach = (from: string, acc: Set<string>) => {
     if (acc.has(from)) return
     acc.add(from)
     for (const e of byId.get(from)?.next ?? []) reach(e.to, acc)
   }
-  const conditional = new Set<string>()
+  const conditional = new Map<string, string[]>()
   for (const d of steps.filter((s) => (s.next?.length ?? 0) > 1)) {
     const perBranch = d.next!.map((e) => {
       const set = new Set<string>()
       reach(e.to, set)
-      return set
+      return { condition: e.condition, set }
     })
-    const common = perBranch.reduce((a, b) => new Set([...a].filter((x) => b.has(x))))
-    for (const set of perBranch) for (const id of set) if (!common.has(id)) conditional.add(id)
+    const common = perBranch
+      .map((b) => b.set)
+      .reduce((a, b) => new Set([...a].filter((x) => b.has(x))))
+    for (const b of perBranch) {
+      for (const id of b.set) {
+        if (common.has(id)) continue
+        const conditions = conditional.get(id) ?? []
+        if (b.condition) conditions.push(b.condition)
+        conditional.set(id, conditions)
+      }
+    }
   }
   return conditional
 }
@@ -230,7 +288,13 @@ export function progress(
 ): Map<string, StepStatus> {
   const statuses = new Map<string, StepStatus>()
   if (!map?.confirmed) return statuses
-  const conditional = conditionalStepIds(map.steps)
+  const conditionalMap = conditionalSteps(map.steps)
+  const resolver = host.getBranchResolver()
+  const conditional = new Set(
+    [...conditionalMap.entries()]
+      .filter(([, conditions]) => !(resolver && conditions.some((c) => resolver(c) === true)))
+      .map(([id]) => id),
+  )
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   // Not-applicable steps count as handled for ordering purposes.
   const lastHandledIdx = actionable.reduce((acc, s, i) => (s.done || s.naReason ? i : acc), -1)

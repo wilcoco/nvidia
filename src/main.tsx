@@ -38,6 +38,16 @@ window.Understudy.init({
     startRun: (processId, map) => store.startRun(processId, map),
     updateRun: (runId, payload) => store.updateRun(runId, payload),
   },
+  // Resolve playbook branch conditions against live data: the urgency branch
+  // becomes required once an actually-urgent incident exists in this run.
+  branchResolver: (condition) => {
+    const c = condition.toLowerCase()
+    if (c.includes('urgent')) {
+      const latest = store.getState().worklogs[0]
+      return latest ? Boolean(latest.urgent) : undefined
+    }
+    return undefined
+  },
   actions: [
     {
       name: 'log_incident',
