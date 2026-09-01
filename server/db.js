@@ -36,6 +36,7 @@ function memoryBackend() {
   const worklogs = []
   const approvals = []
   const processes = []
+  const runs = []
   const secret = crypto.randomBytes(16).toString('hex')
 
   return {
@@ -107,8 +108,29 @@ function memoryBackend() {
     async resetData(scope) {
       worklogs.length = 0
       approvals.length = 0
+      runs.length = 0
       if (scope === 'all') processes.length = 0
       return true
+    },
+    async startRun(r) {
+      const row = {
+        id: String(seq++), processId: r.processId, title: r.title, startedBy: r.startedBy,
+        startedAt: Date.now(), updatedAt: Date.now(), status: 'active', steps: r.steps ?? [], deviations: 0,
+      }
+      runs.unshift(row)
+      return row
+    },
+    async updateRun(id, patch) {
+      const run = runs.find((x) => x.id === id)
+      if (!run) return null
+      if (patch.steps) run.steps = patch.steps
+      if (patch.status) run.status = patch.status
+      if (patch.deviations !== undefined) run.deviations = patch.deviations
+      run.updatedAt = Date.now()
+      return run
+    },
+    async listRuns(processId) {
+      return runs.filter((r) => !processId || r.processId === processId)
     },
   }
 }
@@ -145,6 +167,17 @@ async function pgBackend(databaseUrl) {
     );
     CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY, value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS process_runs (
+      id SERIAL PRIMARY KEY,
+      process_id INT NOT NULL,
+      title TEXT NOT NULL,
+      started_by TEXT NOT NULL,
+      started_at TIMESTAMPTZ DEFAULT now(),
+      updated_at TIMESTAMPTZ DEFAULT now(),
+      status TEXT DEFAULT 'active',
+      steps JSONB NOT NULL DEFAULT '[]',
+      deviations INT DEFAULT 0
     );
   `)
 
@@ -260,10 +293,52 @@ async function pgBackend(databaseUrl) {
       return rowCount > 0
     },
     async resetData(scope) {
-      await pool.query('TRUNCATE worklogs, approvals RESTART IDENTITY')
+      await pool.query('TRUNCATE worklogs, approvals, process_runs RESTART IDENTITY')
       if (scope === 'all') await pool.query('TRUNCATE processes RESTART IDENTITY')
       return true
     },
+    async startRun(r) {
+      const { rows } = await pool.query(
+        `INSERT INTO process_runs (process_id, title, started_by, steps) VALUES ($1,$2,$3,$4) RETURNING *`,
+        [Number(r.processId), r.title, r.startedBy, JSON.stringify(r.steps ?? [])],
+      )
+      return runRow(rows[0])
+    },
+    async updateRun(id, patch) {
+      const { rows } = await pool.query(
+        `UPDATE process_runs SET
+           steps = COALESCE($2, steps),
+           status = COALESCE($3, status),
+           deviations = COALESCE($4, deviations),
+           updated_at = now()
+         WHERE id=$1 RETURNING *`,
+        [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null, patch.deviations ?? null],
+      )
+      return rows[0] ? runRow(rows[0]) : null
+    },
+    async listRuns(processId) {
+      const { rows } = await pool.query(
+        processId
+          ? `SELECT * FROM process_runs WHERE process_id=$1 ORDER BY id DESC LIMIT 50`
+          : `SELECT * FROM process_runs ORDER BY id DESC LIMIT 50`,
+        processId ? [Number(processId)] : [],
+      )
+      return rows.map(runRow)
+    },
+  }
+}
+
+function runRow(r) {
+  return {
+    id: String(r.id),
+    processId: String(r.process_id),
+    title: r.title,
+    startedBy: r.started_by,
+    startedAt: new Date(r.started_at).getTime(),
+    updatedAt: new Date(r.updated_at).getTime(),
+    status: r.status,
+    steps: r.steps ?? [],
+    deviations: r.deviations ?? 0,
   }
 }
 

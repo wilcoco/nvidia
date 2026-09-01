@@ -3,6 +3,7 @@ import * as mapstore from './mapstore'
 import * as asksStore from './asks'
 import * as host from './host'
 import { runHostAction, preconditionFor } from './runner'
+import { isRunComplete } from './runsync'
 import { isAutoApprove, setAutoApprove } from './settings'
 import type { Step } from './types'
 
@@ -75,6 +76,7 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .confirm-bar button { background: #059669; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
 .confirmed { color: #34d399; font-weight: 600; font-size: 12px; }
+.run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .card { background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 .card .q { color: #f1f5f9; margin-bottom: 8px; }
@@ -347,6 +349,9 @@ function render() {
     map.steps.forEach((s, i) =>
       renderStep(s, i === map.steps.length - 1, mapSection, statuses.get(s.id)),
     )
+    if (map.confirmed && isRunComplete()) {
+      mapSection.appendChild(el('div', 'run-complete', '✓ Playbook run complete — all required steps handled'))
+    }
     const bar = el('div', 'confirm-bar')
     if (map.confirmed) {
       bar.appendChild(el('span', 'confirmed', '✓ Confirmed — ready for the agent to run'))

@@ -303,6 +303,45 @@ export async function getProcess(id: string): Promise<{ id: string; title: strin
   return api(`/api/processes/${id}`)
 }
 
+/* Run records: one per execution of a playbook */
+
+export interface RunStep {
+  id: string
+  label: string
+  type: string
+  action?: string
+  status?: string
+  resultId?: string
+  naReason?: string
+}
+
+export interface ProcessRun {
+  id: string
+  processId: string
+  title: string
+  startedBy: string
+  startedAt: number
+  updatedAt: number
+  status: 'active' | 'completed'
+  steps: RunStep[]
+  deviations: number
+}
+
+export async function startRun(processId: string, map: { title: string }): Promise<{ id: string }> {
+  return api<ProcessRun>('/api/runs', { processId, title: map.title, actingAs: state.actingAs })
+}
+
+export async function updateRun(
+  runId: string,
+  payload: { steps: unknown[]; status?: string; deviations?: number },
+): Promise<void> {
+  await api(`/api/runs/${runId}`, payload)
+}
+
+export async function listRuns(processId?: string): Promise<ProcessRun[]> {
+  return api<ProcessRun[]>(`/api/runs${processId ? `?processId=${processId}` : ''}`)
+}
+
 export async function deleteProcess(id: string): Promise<void> {
   await fetch(`/api/processes/${id}`, {
     method: 'DELETE',

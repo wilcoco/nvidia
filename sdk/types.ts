@@ -82,6 +82,12 @@ export interface ProcessStoreAdapter {
   load(id: string): Promise<{ map: ProcessMap; title?: string; createdBy?: string }>
   /** Optional: match saved processes against what the human is entering right now. */
   findRelevant?: () => Promise<unknown> | unknown
+  /** Optional run persistence: one record per execution of a playbook. */
+  startRun?: (processId: string, map: ProcessMap) => Promise<{ id: string }>
+  updateRun?: (
+    runId: string,
+    payload: { steps: unknown[]; status?: 'active' | 'completed'; deviations?: number },
+  ) => Promise<unknown>
 }
 
 export interface InitOptions {

@@ -308,12 +308,49 @@ interface LoadedProcess {
   map: UnderstudyProcessMap
 }
 
+const STATUS_ICON: Record<string, string> = {
+  done: '✅',
+  not_applicable: '⚪',
+  skipped: '🔴',
+  ready: '🟡',
+  blocked: '🟠',
+  pending: '▫️',
+}
+
+function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
+  if (runs.length === 0) return <p className="empty">Not run yet.</p>
+  return (
+    <div className="run-history">
+      {runs.map((r) => (
+        <div key={r.id} className="run-row">
+          <div className="meta">
+            Run #{r.id} · by {r.startedBy} · {new Date(r.startedAt).toLocaleString()} ·{' '}
+            <span className={`status ${r.status === 'completed' ? 'approved' : 'submitted'}`}>
+              {r.status}
+            </span>
+            {r.deviations > 0 && <span className="flag"> · {r.deviations} deviation(s)</span>}
+          </div>
+          <div className="run-steps">
+            {r.steps.map((s) => (
+              <span key={s.id} title={`${s.label}: ${s.status}${s.naReason ? ` (${s.naReason})` : ''}`}>
+                {STATUS_ICON[s.status ?? 'pending'] ?? '▫️'}
+              </span>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
+  const [runs, setRuns] = useState<store.ProcessRun[]>([])
 
   const open = async (id: string) => {
     const p = await store.getProcess(id)
     setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as UnderstudyProcessMap })
+    setRuns(await store.listRuns(id))
   }
 
   const follow = (p: LoadedProcess) => void store.followPlaybook(p.id)
@@ -385,6 +422,8 @@ function PlaybookList({ state }: { state: store.AppState }) {
               </li>
             ))}
           </ol>
+          <h4 className="run-h">Run history</h4>
+          <RunHistory runs={runs} />
         </div>
       )}
     </div>

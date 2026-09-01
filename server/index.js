@@ -142,6 +142,35 @@ app.delete('/api/processes/:id', auth, async (req, res) => {
   res.json({ ok: true })
 })
 
+/* Process runs: one row per execution of a playbook, updated as steps progress. */
+
+app.post('/api/runs', auth, async (req, res) => {
+  const { processId, title, steps } = req.body ?? {}
+  if (!processId || !title) return res.status(400).json({ error: 'processId and title are required' })
+  const run = await db.startRun({
+    processId: String(processId),
+    title: String(title),
+    startedBy: actor(req),
+    steps: Array.isArray(steps) ? steps : [],
+  })
+  res.json(run)
+})
+
+app.post('/api/runs/:id', auth, async (req, res) => {
+  const b = req.body ?? {}
+  const run = await db.updateRun(req.params.id, {
+    steps: Array.isArray(b.steps) ? b.steps : undefined,
+    status: typeof b.status === 'string' ? b.status : undefined,
+    deviations: typeof b.deviations === 'number' ? b.deviations : undefined,
+  })
+  if (!run) return res.status(404).json({ error: 'run not found' })
+  res.json(run)
+})
+
+app.get('/api/runs', auth, async (req, res) => {
+  res.json(await db.listRuns(req.query.processId ? String(req.query.processId) : undefined))
+})
+
 // Demo housekeeping: clear worklogs+approvals ('worklogs') or everything ('all').
 app.post('/api/admin/reset', auth, async (req, res) => {
   const scope = req.body?.scope === 'all' ? 'all' : 'worklogs'

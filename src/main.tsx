@@ -35,6 +35,8 @@ window.Understudy.init({
         note: 'Matches require every appliesWhen condition of a playbook to hold for the current form input.',
       }
     },
+    startRun: (processId, map) => store.startRun(processId, map),
+    updateRun: (runId, payload) => store.updateRun(runId, payload),
   },
   actions: [
     {

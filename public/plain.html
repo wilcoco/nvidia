@@ -25,7 +25,11 @@
     <p class="tag">A deliberately plain, unrelated app — no build step, no framework, different styling.
        Understudy is attached with one script tag and still journals the work, so an agent can
        structure it into a process here too.</p>
-    <form id="pr-form" data-flow-label="purchase request form">
+    <!-- WebMCP declarative API: the form itself is exposed as a tool via attributes,
+         alongside the imperative registerTool() calls made by understudy.js. -->
+    <form id="pr-form" data-flow-label="purchase request form"
+          toolname="submit_purchase_request"
+          tooldescription="Submit a purchase request with item, quantity and priority">
       <label>Item <input name="item" required placeholder="e.g. cutting oil 20L" /></label>
       <label>Quantity <input name="qty" type="number" value="1" min="1" /></label>
       <label>Priority

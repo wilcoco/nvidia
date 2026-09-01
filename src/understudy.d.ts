@@ -37,6 +37,11 @@ interface UnderstudyApi {
       list(): Promise<UnderstudyProcessSummary[]>
       load(id: string): Promise<{ map: UnderstudyProcessMap; title?: string; createdBy?: string }>
       findRelevant?: () => unknown
+      startRun?: (processId: string, map: UnderstudyProcessMap) => Promise<{ id: string }>
+      updateRun?: (
+        runId: string,
+        payload: { steps: unknown[]; status?: 'active' | 'completed'; deviations?: number },
+      ) => Promise<unknown>
     }
   }): void
   log(label: string, detail?: unknown): void

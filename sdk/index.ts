@@ -15,6 +15,7 @@ import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
 import { loadSavedMap, markActionDone } from './mapstore'
+import { startRunTracking } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -53,6 +54,7 @@ function registerAction(action: HostAction): void {
 /** Host apps can push a saved process into the panel (e.g. from a process-list screen). */
 function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
   loadSavedMap(map, meta)
+  if (meta?.id) startRunTracking(meta.id)
 }
 
 /** Host apps report a successful semantic action (e.g. the human saved a form),

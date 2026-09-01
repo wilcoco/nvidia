@@ -4,6 +4,7 @@ import * as host from './host'
 import { askUser, type AskOption } from './asks'
 import { setWebmcpStatus } from './panel'
 import { runHostAction, preconditionFor } from './runner'
+import { startRunTracking } from './runsync'
 import type { ProcessMap } from './types'
 
 interface ToolDef {
@@ -287,6 +288,7 @@ const tools: ToolDef[] = [
       try {
         const { map, createdBy } = await store.load(String(args.id))
         mapstore.loadSavedMap(map, { id: String(args.id), createdBy })
+        startRunTracking(String(args.id))
         return { ok: true, map }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
