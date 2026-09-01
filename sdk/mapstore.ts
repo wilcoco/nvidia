@@ -124,9 +124,29 @@ export function humanToggleStepDone(stepId: string): void {
   notify()
 }
 
-/** Steps of a confirmed map that are still not done (conformance view). */
-export function pendingSteps(): Step[] {
-  return map?.confirmed ? map.steps.filter((s) => !s.done) : []
+export type StepStatus = 'done' | 'ready' | 'skipped' | 'pending'
+
+/**
+ * Run-state of a confirmed map, derived on demand.
+ * Decision steps are routing, not work, so they carry no status of their own.
+ * 'ready' = the next step whose turn it is (guide, not a nag);
+ * 'skipped' = still not done although a later step already ran (a deviation).
+ */
+export function progress(): Map<string, StepStatus> {
+  const statuses = new Map<string, StepStatus>()
+  if (!map?.confirmed) return statuses
+  const actionable = map.steps.filter((s) => s.type !== 'decision')
+  const lastDoneIdx = actionable.reduce((acc, s, i) => (s.done ? i : acc), -1)
+  let readyAssigned = false
+  actionable.forEach((s, i) => {
+    if (s.done) statuses.set(s.id, 'done')
+    else if (i < lastDoneIdx) statuses.set(s.id, 'skipped')
+    else if (!readyAssigned) {
+      statuses.set(s.id, 'ready')
+      readyAssigned = true
+    } else statuses.set(s.id, 'pending')
+  })
+  return statuses
 }
 
 export function editsSince(cursor = 0): MapEdit[] {

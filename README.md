@@ -89,9 +89,13 @@ reviewer play both sides of the flow (worker files, lead approves).
    panel — rename a step, fix the branch condition (e.g. *urgent entries
    only*) — and watch its follow-up questions change.
 4. Press **Confirm & save to library**, then open **Playbooks → Follow this
-   playbook** as a "new worker" and ask the agent to run it: safe steps
-   execute behind your approval card, sign-offs stay with the human, and
-   skipped steps stay visibly unchecked so the agent can call them out.
+   playbook** as a "new worker". The map now guides the run in real time:
+   the next required step glows yellow, and a step you jumped past turns
+   red — page-side, instantly, no agent call needed. Ask the agent and it
+   reads the same state via `get_process_progress`, then *coaches* rather
+   than polices: "This urgent entry moved forward without supervisor
+   approval — want me to request it from Lee now?" One click on its
+   approval card, and the step goes green.
 
 ## WebMCP tools registered
 
@@ -101,7 +105,8 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_recent_actions` | The action journal (cursor-based). Human answers to agent questions surface here too. |
 | `get_page_state` | Host-provided business state (records, statuses). |
 | `propose_process_map` | Draw/replace the draft process map rendered in the panel. |
-| `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags — the agent uses these to spot skipped steps and warn the human. |
+| `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags. |
+| `get_process_progress` | Run-state of the loaded process: done / next-up / skipped steps, plus a suggested next action — the missed-step coach. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
 | `ask_user` | In-page question card; resolves with the human's answer. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |

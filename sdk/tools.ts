@@ -57,7 +57,7 @@ const tools: ToolDef[] = [
       app: host.getAppName(),
       url: location.href,
       how_this_works:
-        'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action following the map, step by step.',
+        'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it.',
       available_actions: host.listActions(),
       process_map_exists: mapstore.getMap() !== null,
       process_map_confirmed: mapstore.getMap()?.confirmed ?? false,
@@ -142,6 +142,35 @@ const tools: ToolDef[] = [
       const options = Array.isArray(args.options) ? args.options.map(String) : undefined
       const answer = await askUser(String(args.question), options)
       return { answer }
+    },
+  },
+  {
+    name: 'get_process_progress',
+    description:
+      "Run-state of the confirmed process: which steps are done, which single step is 'ready' (its turn now — a guide, not a violation), and which are 'skipped' (still not done although a later step already ran — a deviation worth raising). Includes a suggested next action when the ready step is bound to one. Caveats: steps on an untaken branch may legitimately never run — check the branch conditions and the page state before calling something skipped, and when unsure ask the human instead of asserting. You are a coach here, not an enforcer: propose the fix (e.g. offer to run the missed step via run_action) and let the human decide.",
+    inputSchema: schema(),
+    execute: async () => {
+      const map = mapstore.getMap()
+      if (!map?.confirmed) {
+        return { active: false, note: 'No confirmed process is loaded — nothing to track.' }
+      }
+      const statuses = mapstore.progress()
+      const view = map.steps
+        .filter((s) => s.type !== 'decision')
+        .map((s) => ({ id: s.id, label: s.label, action: s.action, status: statuses.get(s.id) }))
+      const ready = view.find((s) => s.status === 'ready')
+      return {
+        active: true,
+        process: map.title,
+        steps: view,
+        completed: view.filter((s) => s.status === 'done').map((s) => s.label),
+        ready: ready ?? null,
+        skipped: view.filter((s) => s.status === 'skipped'),
+        suggestedAction: ready?.action ? { name: ready.action } : null,
+        branch_conditions: map.steps
+          .filter((s) => (s.next?.length ?? 0) > 1)
+          .map((s) => ({ at: s.label, branches: s.next })),
+      }
     },
   },
   {

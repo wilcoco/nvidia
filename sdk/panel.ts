@@ -44,9 +44,14 @@ header button.close { background: none; border: none; color: #94a3b8; cursor: po
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 8px; }
 .empty { color: #475569; font-style: italic; }
 .step { background: #1e293b; border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; position: relative; }
-.step.done { opacity: .55; }
+.step.done { opacity: .55; border-left: 3px solid #34d399; }
 .step.done .label { text-decoration: line-through; }
+.step.ready { border-left: 3px solid #fbbf24; }
+.step.skipped { border-left: 3px solid #ef4444; }
 .step input.chk { accent-color: #34d399; flex: none; margin: 0; }
+.chip { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; flex: none; }
+.chip.ready { background: #fbbf24; color: #451a03; }
+.chip.skipped { background: #ef4444; color: #fff; }
 .step .row { display: flex; align-items: center; gap: 6px; }
 .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex: none; }
 .badge.task { background: #1d4ed8; color: #dbeafe; }
@@ -131,10 +136,15 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node
 }
 
-function renderStep(step: Step, isLast: boolean, container: HTMLElement) {
-  const card = el('div', `step${step.done ? ' done' : ''}`)
+function renderStep(
+  step: Step,
+  isLast: boolean,
+  container: HTMLElement,
+  status?: mapstore.StepStatus,
+) {
+  const card = el('div', `step${status ? ` ${status}` : ''}`)
   const row = el('div', 'row')
-  if (mapstore.getMap()?.confirmed) {
+  if (mapstore.getMap()?.confirmed && step.type !== 'decision') {
     const chk = el('input', 'chk') as HTMLInputElement
     chk.type = 'checkbox'
     chk.checked = !!step.done
@@ -143,6 +153,8 @@ function renderStep(step: Step, isLast: boolean, container: HTMLElement) {
     row.appendChild(chk)
   }
   row.appendChild(el('span', `badge ${step.type}`, step.type))
+  if (status === 'ready') row.appendChild(el('span', 'chip ready', 'NEXT'))
+  if (status === 'skipped') row.appendChild(el('span', 'chip skipped', 'SKIPPED'))
 
   const label = el('span', 'label', step.label)
   label.title = 'Click to rename'
@@ -296,7 +308,10 @@ function render() {
     )
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
-    map.steps.forEach((s, i) => renderStep(s, i === map.steps.length - 1, mapSection))
+    const statuses = mapstore.progress()
+    map.steps.forEach((s, i) =>
+      renderStep(s, i === map.steps.length - 1, mapSection, statuses.get(s.id)),
+    )
     const bar = el('div', 'confirm-bar')
     if (map.confirmed) {
       bar.appendChild(el('span', 'confirmed', '✓ Confirmed — ready for the agent to run'))
