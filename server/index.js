@@ -39,8 +39,11 @@ function readToken(token) {
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body ?? {}
-  const user = await db.getUser(String(username ?? '').toLowerCase())
-  if (!user || !verifyPassword(user, String(password ?? ''))) {
+  // Embedded-browser credential dialogs sometimes autocapitalize or add
+  // whitespace — normalize defensively (demo accounts only).
+  const user = await db.getUser(String(username ?? '').trim().toLowerCase())
+  const pw = String(password ?? '').trim()
+  if (!user || !(verifyPassword(user, pw) || verifyPassword(user, pw.charAt(0).toLowerCase() + pw.slice(1)))) {
     return res.status(401).json({ error: 'Invalid username or password' })
   }
   res.json({
