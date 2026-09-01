@@ -203,7 +203,7 @@ const tools: ToolDef[] = [
         note:
           gaps.length === 0
             ? 'No open gaps — the interview is complete for this map.'
-            : 'Ask the 2-3 most important questions via ask_user — in your own words, using this app\'s domain language, not the generic suggested_question text. The human may also just edit the map directly (watch get_map_edits).',
+            : 'Ask the 2-3 most important questions via ask_user — in your own words, using this app\'s domain language, not the generic fallback_question text. The human may also just edit the map directly (watch get_map_edits).',
       }
     },
   },

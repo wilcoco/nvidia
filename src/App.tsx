@@ -5,14 +5,8 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-const INCIDENT_TYPES = [
-  'routine log',
-  'orange peel',
-  'sagging / runs',
-  'dust inclusion',
-  'color mismatch',
-  'equipment fault',
-]
+const GENERAL_TYPES = ['routine log']
+const PAINT_DEMO_TYPES = ['orange peel', 'sagging / runs', 'dust inclusion', 'color mismatch', 'equipment fault']
 
 function Login() {
   // Pre-filled with the reviewer account so judges can sign in with one click.
@@ -199,9 +193,14 @@ function IncidentForm() {
         <label className="wide">
           Type
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {INCIDENT_TYPES.map((t) => (
+            {GENERAL_TYPES.map((t) => (
               <option key={t}>{t}</option>
             ))}
+            <optgroup label="paint-shop demo scenario">
+              {PAINT_DEMO_TYPES.map((t) => (
+                <option key={t}>{t}</option>
+              ))}
+            </optgroup>
           </select>
         </label>
         <label className="wide wide4">

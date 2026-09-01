@@ -60,11 +60,11 @@ window.Understudy.init({
         'Create a work log entry (as the active persona): what was done or observed, its category, and any structured values. When a playbook with a fields contract is loaded, pass those fields as additional params — they are stored on the entry. Returns the new entry including its id.',
       params: {
         date: { type: 'string', description: 'YYYY-MM-DD', required: true },
-        line: { type: 'string', description: 'Area, "A" or "B"', required: true },
+        area: { type: 'string', description: 'Work area, "A" or "B"', required: true },
         kind: {
           type: 'string',
           description:
-            'Category: routine log fits any general work; this demo workspace also ships paint-shop defect categories (orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault)',
+            "Category: 'routine log' fits any general work (default). The paint-shop defect categories exist only for this workspace's demo scenario.",
           required: true,
         },
         task: { type: 'string', description: 'What was done or observed, one line', required: true },
@@ -74,11 +74,11 @@ window.Understudy.init({
       handler: (p) => {
         // Domain-specific values (a loaded playbook's fields contract, or any
         // structured readings) arrive as extra params and are stored on the entry.
-        const known = new Set(['date', 'line', 'kind', 'task', 'urgent', 'hours'])
+        const known = new Set(['date', 'area', 'line', 'kind', 'task', 'urgent', 'hours'])
         const extras = Object.fromEntries(Object.entries(p).filter(([k]) => !known.has(k)))
         return store.createWorklog({
           date: String(p.date),
-          line: String(p.line),
+          line: String(p.area ?? p.line ?? 'A'),
           task: String(p.task),
           hours: Number(p.hours ?? 0.5),
           note: '',
