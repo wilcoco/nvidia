@@ -1,8 +1,16 @@
-import type { HostAction } from './types'
+import type { HostAction, ProcessStoreAdapter } from './types'
 
 let appName = document.title || 'Web app'
 let stateProvider: (() => unknown) | null = null
+let processStore: ProcessStoreAdapter | null = null
 const actions = new Map<string, HostAction>()
+
+export function setProcessStore(store: ProcessStoreAdapter): void {
+  processStore = store
+}
+export function getProcessStore(): ProcessStoreAdapter | null {
+  return processStore
+}
 
 export function setAppName(name: string): void {
   appName = name

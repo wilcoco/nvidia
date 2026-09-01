@@ -14,7 +14,8 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import type { HostAction, InitOptions } from './types'
+import { loadSavedMap } from './mapstore'
+import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
 
@@ -23,6 +24,7 @@ function init(opts: InitOptions = {}): void {
   initialized = true
   if (opts.appName) host.setAppName(opts.appName)
   if (opts.stateProvider) host.setStateProvider(opts.stateProvider)
+  if (opts.processStore) host.setProcessStore(opts.processStore)
   for (const action of opts.actions ?? []) host.registerAction(action)
 
   const boot = () => {
@@ -48,4 +50,9 @@ function registerAction(action: HostAction): void {
   host.registerAction(action)
 }
 
-;(window as any).FlowCatch = { init, log, registerAction }
+/** Host apps can push a saved process into the panel (e.g. from a process-list screen). */
+function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
+  loadSavedMap(map, meta)
+}
+
+;(window as any).FlowCatch = { init, log, registerAction, loadProcess }

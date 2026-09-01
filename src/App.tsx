@@ -1,9 +1,55 @@
-import { useState, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import * as store from './store'
-import { USERS } from './store'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
+}
+
+function Login() {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      await store.login(username.trim().toLowerCase(), password)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="login-wrap">
+      <form className="card login" onSubmit={submit}>
+        <h1>
+          LinePulse <span className="sub">shift worklog &amp; approvals</span>
+        </h1>
+        <p className="hint">
+          Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
+          <code>lee</code> / <code>linepulse</code> (team lead), <code>judge</code> /{' '}
+          <code>webmcp2026</code> (reviewer)
+        </p>
+        <label>
+          Username
+          <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+        </label>
+        <label>
+          Password
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </label>
+        {error && <p className="error">{error}</p>}
+        <button className="primary" disabled={busy}>
+          {busy ? 'Signing in…' : 'Sign in'}
+        </button>
+      </form>
+    </div>
+  )
 }
 
 function WorklogForm() {
@@ -15,10 +61,18 @@ function WorklogForm() {
   const [note, setNote] = useState('')
   const [urgent, setUrgent] = useState(false)
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!task.trim()) return
-    store.createWorklog({ date, line, task: task.trim(), progressPct: progress, hours, note: note.trim(), urgent })
+    await store.createWorklog({
+      date,
+      line,
+      task: task.trim(),
+      progressPct: progress,
+      hours,
+      note: note.trim(),
+      urgent,
+    })
     setTask('')
     setNote('')
     setUrgent(false)
@@ -90,7 +144,7 @@ function WorklogForm() {
 }
 
 function WorklogList({ state }: { state: store.AppState }) {
-  const mine = state.worklogs.filter((w) => w.createdBy === state.currentUser)
+  const mine = state.worklogs.filter((w) => w.createdBy === state.actingAs)
   if (mine.length === 0) return <p className="empty">No worklogs yet. Write your first entry above.</p>
   return (
     <div className="list">
@@ -106,7 +160,7 @@ function WorklogList({ state }: { state: store.AppState }) {
           </div>
           {w.note && <div className="note">{w.note}</div>}
           {w.status === 'draft' && (
-            <button onClick={() => store.requestApproval(w.id, 'lee')}>
+            <button onClick={() => void store.requestApproval(w.id, 'lee')}>
               Request approval from Lee
             </button>
           )}
@@ -118,8 +172,8 @@ function WorklogList({ state }: { state: store.AppState }) {
 
 function ApprovalsInbox({ state }: { state: store.AppState }) {
   const [comments, setComments] = useState<Record<string, string>>({})
-  const inbox = state.approvals.filter((a) => a.approver === state.currentUser)
-  if (inbox.length === 0) return <p className="empty">No approval requests.</p>
+  const inbox = state.approvals.filter((a) => a.approver === state.actingAs)
+  if (inbox.length === 0) return <p className="empty">No approval requests for {state.actingAs}.</p>
   return (
     <div className="list">
       {inbox.map((a) => {
@@ -131,8 +185,8 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               <span className={`status ${a.status.toLowerCase()}`}>{a.status}</span>
             </div>
             <div className="meta">
-              from {USERS.find((u) => u.id === a.requestedBy)?.name ?? a.requestedBy} ·{' '}
-              {wl ? `${wl.date} · Line ${wl.line} · ${wl.progressPct}% · ${wl.hours}h` : ''}
+              from {state.users.find((u) => u.username === a.requestedBy)?.name ?? a.requestedBy}
+              {wl ? ` · ${wl.date} · Line ${wl.line} · ${wl.progressPct}% · ${wl.hours}h` : ''}
               {wl?.urgent && <span className="flag"> · URGENT</span>}
             </div>
             {wl?.note && <div className="note">{wl.note}</div>}
@@ -146,13 +200,13 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
                 />
                 <button
                   className="primary"
-                  onClick={() => store.decideApproval(a.id, 'APPROVED', comments[a.id] || undefined)}
+                  onClick={() => void store.decideApproval(a.id, 'APPROVED', comments[a.id] || undefined)}
                 >
                   Approve
                 </button>
                 <button
                   className="danger"
-                  onClick={() => store.decideApproval(a.id, 'REJECTED', comments[a.id] || 'rejected')}
+                  onClick={() => void store.decideApproval(a.id, 'REJECTED', comments[a.id] || 'rejected')}
                 >
                   Reject
                 </button>
@@ -165,12 +219,102 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
   )
 }
 
+interface LoadedProcess {
+  id: string
+  title: string
+  createdBy: string
+  map: FlowCatchProcessMap
+}
+
+function ProcessList({ state }: { state: store.AppState }) {
+  const [selected, setSelected] = useState<LoadedProcess | null>(null)
+
+  const open = async (id: string) => {
+    const p = await store.getProcess(id)
+    setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as FlowCatchProcessMap })
+  }
+
+  const follow = (p: LoadedProcess) => {
+    window.FlowCatch.loadProcess(p.map, { id: p.id, createdBy: p.createdBy })
+    window.FlowCatch.log(`opened process "${p.title}" to work along it`, { processId: p.id })
+  }
+
+  if (state.processes.length === 0) {
+    return (
+      <p className="empty">
+        No saved processes yet. Work in the app, let the agent draft a process, then press
+        “Confirm &amp; save to library” in the FlowCatch panel.
+      </p>
+    )
+  }
+
+  return (
+    <div className="proc-layout">
+      <div className="list">
+        {state.processes.map((p) => (
+          <button
+            key={p.id}
+            className={`card proc-item ${selected?.id === p.id ? 'selected' : ''}`}
+            onClick={() => void open(p.id)}
+          >
+            <span className="task">{p.title}</span>
+            <span className="meta">
+              by {state.users.find((u) => u.username === p.createdBy)?.name ?? p.createdBy} ·{' '}
+              {new Date(p.createdAt).toLocaleDateString()}
+            </span>
+          </button>
+        ))}
+      </div>
+      {selected && (
+        <div className="card proc-detail">
+          <div className="entry-head">
+            <span className="task">{selected.title}</span>
+            <button className="primary" onClick={() => follow(selected)}>
+              Follow this process
+            </button>
+          </div>
+          <p className="meta">
+            Loads into the FlowCatch panel — work along it yourself, or ask the agent to run it for
+            you.
+          </p>
+          <ol className="proc-steps">
+            {selected.map.steps.map((s) => (
+              <li key={s.id}>
+                <span className={`badge-inline ${s.type}`}>{s.type}</span> {s.label}
+                {s.next && s.next.length > 1 && (
+                  <ul>
+                    {s.next.map((b) => (
+                      <li key={b.to} className="meta">
+                        → {selected.map.steps.find((t) => t.id === b.to)?.label ?? b.to}
+                        {b.condition ? ` — if ${b.condition}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            ))}
+          </ol>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
-  const [tab, setTab] = useState<'worklogs' | 'approvals'>('worklogs')
-  const user = USERS.find((u) => u.id === state.currentUser)!
+  const [tab, setTab] = useState<'worklogs' | 'approvals' | 'processes'>('worklogs')
+
+  useEffect(() => {
+    // Ensure auth state resolves even before polling kicks in.
+    void store.refresh()
+  }, [])
+
+  if (!state.authChecked) return null
+  if (!state.me) return <Login />
+
+  const acting = state.users.find((u) => u.username === state.actingAs)
   const pendingForMe = state.approvals.filter(
-    (a) => a.approver === state.currentUser && a.status === 'PENDING',
+    (a) => a.approver === state.actingAs && a.status === 'PENDING',
   ).length
 
   return (
@@ -181,17 +325,19 @@ export default function App() {
         </h1>
         <div className="userbox">
           <span>
-            {user.name} · {user.role}
+            Signed in: {state.me.name} · acting as {acting?.name ?? state.actingAs}
           </span>
-          <select value={state.currentUser} onChange={(e) => store.switchUser(e.target.value)}>
-            {USERS.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.role})
-              </option>
-            ))}
+          <select value={state.actingAs} onChange={(e) => store.switchActingAs(e.target.value)}>
+            {state.users
+              .filter((u) => u.username !== 'judge')
+              .map((u) => (
+                <option key={u.username} value={u.username}>
+                  {u.name} ({u.role})
+                </option>
+              ))}
           </select>
-          <button className="ghost" onClick={() => store.resetDemo()} data-flow-ignore>
-            Reset demo
+          <button className="ghost" onClick={() => store.logout()} data-flow-ignore>
+            Sign out
           </button>
         </div>
       </header>
@@ -203,17 +349,20 @@ export default function App() {
         <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
           Approvals{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
         </button>
+        <button className={tab === 'processes' ? 'active' : ''} onClick={() => setTab('processes')}>
+          Processes{state.processes.length > 0 && <span className="pill blue">{state.processes.length}</span>}
+        </button>
       </nav>
 
       <main>
-        {tab === 'worklogs' ? (
+        {tab === 'worklogs' && (
           <>
             <WorklogForm />
             <WorklogList state={state} />
           </>
-        ) : (
-          <ApprovalsInbox state={state} />
         )}
+        {tab === 'approvals' && <ApprovalsInbox state={state} />}
+        {tab === 'processes' && <ProcessList state={state} />}
       </main>
     </div>
   )

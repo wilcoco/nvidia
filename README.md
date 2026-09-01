@@ -17,9 +17,22 @@ agent-readable, agent-operable workspace. Add one script tag, and:
    process using the same page's actions, with a human approval gate on every
    step (or auto-approve, if the human enables it).
 
+5. **Processes become shared assets.** A confirmed process is saved to a
+   team-wide library — anyone (or their agent) can pull up a process a
+   colleague refined and work along it.
+
 Company processes live in people's habits, not in documents. FlowCatch turns
 **doing** into **documentation** into **automation** — without anyone ever
 writing a process down.
+
+The point is not "AI automates your work" — recorders, task miners, and
+computer-use agents already chase that, all of them turn-taking: the human
+records, then the tool takes over. FlowCatch's claim is different:
+**automation becomes something the human and the agent do together, at the
+same time, on the same screen.** The human keeps working while the map grows
+beside them; the human touches the map and the agent's next question changes.
+That simultaneity is exactly what WebMCP makes possible — and what nothing
+else provides.
 
 ## Why WebMCP
 
@@ -42,13 +55,26 @@ Chrome 149+ with `chrome://flags/#enable-webmcp-testing`) calls them directly.
 Two host apps are included to prove the layer is app-agnostic:
 
 - `/` — **LinePulse**, a shift worklog & approvals mini-groupware
-  (manufacturing scenario: line workers file worklogs, team leads approve).
-  Integrated the "rich" way: semantic logs + registered actions.
+  (manufacturing scenario: line workers file worklogs, team leads approve,
+  and a **Processes** tab lists the shared library so anyone can follow a
+  saved process). Integrated the "rich" way: semantic logs + registered
+  actions + a process-store adapter.
 - `/plain.html` — a deliberately plain, framework-free purchase-request page.
   Integrated with **one script tag** and `autoCapture: 'full'`.
 
-All demo data is fictional and lives in `localStorage` (no backend, no
-accounts — reviewers need no credentials).
+All demo data is fictional. LinePulse uses a small Express + Postgres backend
+so worklogs, approvals, and the process library are shared across users.
+
+**Reviewer accounts** (shown on the login screen as well):
+
+| Username | Password | Role |
+| --- | --- | --- |
+| `judge` | `webmcp2026` | Reviewer (acts through the personas below) |
+| `kim` | `linepulse` | Line worker |
+| `lee` | `linepulse` | Team lead |
+
+One login is enough: the persona switcher in the top bar lets a single
+reviewer play both sides of the flow (worker files, lead approves).
 
 ### Try the collaboration loop
 
@@ -73,6 +99,8 @@ accounts — reviewers need no credentials).
 | `get_process_map` | Current map including human edits + confirmed flag. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
 | `ask_user` | In-page question card; resolves with the human's answer. |
+| `list_saved_processes` | Shared process library — including processes other people confirmed. |
+| `load_process` | Load a saved process into the session for replay. |
 | `run_action` | Execute a host action (replay), gated by an in-page human approval card. |
 
 ## Attach FlowCatch to your own app
@@ -102,9 +130,25 @@ panel styles cannot collide.
 
 ```bash
 npm install
-npm run dev        # builds sdk → public/flowcatch.js, starts Vite on :5173
+npm run dev:server # API on :8787 (in-memory store when DATABASE_URL is unset)
+npm run dev        # builds sdk → public/flowcatch.js, starts Vite on :5173 (proxies /api)
 npm run build      # production build to dist/
+npm start          # serves dist/ + API from one process (production mode)
 ```
+
+## Deploy (Railway)
+
+1. New Project → **Deploy from GitHub repo** → this repository. Nixpacks runs
+   `npm install && npm run build` and starts `npm start` automatically.
+2. **+ New → Database → Add PostgreSQL** in the same project, and give the
+   service the `DATABASE_URL` variable (Railway offers the reference:
+   `${{Postgres.DATABASE_URL}}`). Tables and demo accounts are created
+   automatically on first boot.
+3. Optionally set `SESSION_SECRET` (any random string) so logins survive
+   redeploys. **Settings → Networking → Generate Domain** for the public URL.
+
+Without `DATABASE_URL` the server still runs with an in-memory store, so
+nothing else is required to try it.
 
 To exercise the tools without an agent, open the console:
 `__flowcatch.call('describe_workspace')`,
@@ -122,6 +166,7 @@ sdk/        FlowCatch itself (TypeScript → bundled to a single flowcatch.js)
   panel.ts    the in-page side panel (shadow DOM)
   tools.ts    WebMCP tool definitions & registration
 src/        LinePulse demo host app (React)
+server/     Express API + Postgres/in-memory storage (auth, worklogs, approvals, process library)
 public/plain.html   second host app (vanilla, one-script-tag attach)
 ```
 

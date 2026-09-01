@@ -1,3 +1,11 @@
+import { api, ApiError, setToken, getToken } from './api'
+
+export interface UserInfo {
+  username: string
+  name: string
+  role: string
+}
+
 export interface Worklog {
   id: string
   date: string
@@ -21,39 +29,37 @@ export interface Approval {
   ts: number
 }
 
+export interface ProcessSummary {
+  id: string
+  title: string
+  createdBy: string
+  createdAt: number
+}
+
 export interface AppState {
-  currentUser: string
+  me: UserInfo | null
+  authChecked: boolean
+  actingAs: string
+  users: UserInfo[]
   worklogs: Worklog[]
   approvals: Approval[]
+  processes: ProcessSummary[]
 }
 
-export const USERS = [
-  { id: 'kim', name: 'Kim', role: 'Line worker' },
-  { id: 'lee', name: 'Lee', role: 'Team lead' },
-] as const
-
-const KEY = 'linepulse-state-v1'
-
-function load(): AppState {
-  try {
-    const raw = localStorage.getItem(KEY)
-    if (raw) return JSON.parse(raw) as AppState
-  } catch {
-    /* corrupted or unavailable storage — start fresh */
-  }
-  return { currentUser: 'kim', worklogs: [], approvals: [] }
+let state: AppState = {
+  me: null,
+  authChecked: false,
+  actingAs: '',
+  users: [],
+  worklogs: [],
+  approvals: [],
+  processes: [],
 }
 
-let state: AppState = load()
 const listeners = new Set<() => void>()
 
-function commit(next: AppState) {
-  state = next
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state))
-  } catch {
-    /* ignore */
-  }
+function commit(patch: Partial<AppState>) {
+  state = { ...state, ...patch }
   listeners.forEach((fn) => fn())
 }
 
@@ -66,13 +72,62 @@ export function subscribe(fn: () => void): () => void {
   return () => listeners.delete(fn)
 }
 
-let seq = Date.now() % 100000
-const nextId = (prefix: string) => `${prefix}-${(seq++).toString(36)}`
+interface ServerState {
+  me: UserInfo
+  users: UserInfo[]
+  worklogs: Worklog[]
+  approvals: Approval[]
+  processes: ProcessSummary[]
+}
 
-export function switchUser(userId: string): void {
-  if (!USERS.some((u) => u.id === userId)) return
-  commit({ ...state, currentUser: userId })
-  window.FlowCatch.log(`switched user to ${userId}`)
+export async function refresh(): Promise<void> {
+  if (!getToken()) {
+    commit({ authChecked: true, me: null })
+    return
+  }
+  try {
+    const s = await api<ServerState>('/api/state')
+    commit({
+      authChecked: true,
+      me: s.me,
+      // The judge account is a reviewer identity; it acts through the demo personas.
+      actingAs: state.actingAs || (s.me.username === 'judge' ? 'kim' : s.me.username),
+      users: s.users,
+      worklogs: s.worklogs,
+      approvals: s.approvals,
+      processes: s.processes,
+    })
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      setToken(null)
+      commit({ authChecked: true, me: null })
+    }
+  }
+}
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+export function startPolling(): void {
+  void refresh()
+  if (!pollTimer) pollTimer = setInterval(() => void refresh(), 5000)
+}
+
+export async function login(username: string, password: string): Promise<void> {
+  const res = await api<{ token: string; user: UserInfo }>('/api/auth/login', { username, password })
+  setToken(res.token)
+  commit({ me: res.user, actingAs: res.user.username })
+  window.FlowCatch.log(`logged in as ${res.user.name} (${res.user.role})`)
+  await refresh()
+}
+
+export function logout(): void {
+  setToken(null)
+  commit({ me: null })
+}
+
+export function switchActingAs(username: string): void {
+  commit({ actingAs: username })
+  window.FlowCatch.log(`switched active persona to ${username}`)
 }
 
 export interface WorklogInput {
@@ -85,71 +140,65 @@ export interface WorklogInput {
   urgent: boolean
 }
 
-export function createWorklog(input: WorklogInput): Worklog {
-  const wl: Worklog = {
-    id: nextId('wl'),
-    ...input,
-    status: 'draft',
-    createdBy: state.currentUser,
-  }
-  commit({ ...state, worklogs: [wl, ...state.worklogs] })
+export async function createWorklog(input: WorklogInput): Promise<Worklog> {
+  const wl = await api<Worklog>('/api/worklogs', { ...input, actingAs: state.actingAs })
   window.FlowCatch.log(
     `created worklog "${wl.task}" (line ${wl.line}, ${wl.progressPct}%, ${wl.hours}h${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
+  await refresh()
   return wl
 }
 
-export function requestApproval(worklogId: string, approver: string): Approval | { error: string } {
-  const wl = state.worklogs.find((w) => w.id === worklogId)
-  if (!wl) return { error: `worklog ${worklogId} not found` }
-  if (wl.status !== 'draft') return { error: `worklog is already ${wl.status}` }
-  const approval: Approval = {
-    id: nextId('ap'),
-    worklogId,
-    requestedBy: state.currentUser,
+export async function requestApproval(worklogId: string, approver: string): Promise<Approval> {
+  const approval = await api<Approval>(`/api/worklogs/${worklogId}/submit`, {
     approver,
-    status: 'PENDING',
-    ts: Date.now(),
-  }
-  commit({
-    ...state,
-    worklogs: state.worklogs.map((w) => (w.id === worklogId ? { ...w, status: 'submitted' } : w)),
-    approvals: [approval, ...state.approvals],
+    actingAs: state.actingAs,
   })
-  window.FlowCatch.log(`requested approval for "${wl.task}" from ${approver}`, {
+  const wl = state.worklogs.find((w) => w.id === worklogId)
+  window.FlowCatch.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
     approvalId: approval.id,
   })
+  await refresh()
   return approval
 }
 
-export function decideApproval(
+export async function decideApproval(
   approvalId: string,
   decision: 'APPROVED' | 'REJECTED',
   comment?: string,
-): Approval | { error: string } {
-  const ap = state.approvals.find((a) => a.id === approvalId)
-  if (!ap) return { error: `approval ${approvalId} not found` }
-  if (ap.status !== 'PENDING') return { error: `approval is already ${ap.status}` }
-  const decided: Approval = { ...ap, status: decision, comment }
-  commit({
-    ...state,
-    approvals: state.approvals.map((a) => (a.id === approvalId ? decided : a)),
-    worklogs: state.worklogs.map((w) =>
-      w.id === ap.worklogId
-        ? { ...w, status: decision === 'APPROVED' ? 'approved' : 'rejected' }
-        : w,
-    ),
+): Promise<Approval> {
+  const decided = await api<Approval>(`/api/approvals/${approvalId}/decide`, {
+    decision,
+    comment,
+    actingAs: state.actingAs,
   })
-  const wl = state.worklogs.find((w) => w.id === ap.worklogId)
+  const wl = state.worklogs.find((w) => w.id === decided.worklogId)
   window.FlowCatch.log(
-    `${decision.toLowerCase()} worklog "${wl?.task ?? ap.worklogId}"${comment ? ` — "${comment}"` : ''}`,
+    `${decision.toLowerCase()} worklog "${wl?.task ?? decided.worklogId}"${comment ? ` — "${comment}"` : ''}`,
     { approvalId },
   )
+  await refresh()
   return decided
 }
 
-export function resetDemo(): void {
-  commit({ currentUser: 'kim', worklogs: [], approvals: [] })
-  window.FlowCatch.log('reset demo data')
+/* Process library (shared across users via the server) */
+
+export async function saveProcess(map: { title: string; steps: unknown[] }): Promise<ProcessSummary> {
+  const saved = await api<ProcessSummary>('/api/processes', {
+    title: map.title,
+    map,
+    actingAs: state.actingAs,
+  })
+  window.FlowCatch.log(`saved process "${saved.title}" to the shared library`, { processId: saved.id })
+  await refresh()
+  return saved
+}
+
+export async function listProcesses(): Promise<ProcessSummary[]> {
+  return api<ProcessSummary[]>('/api/processes')
+}
+
+export async function getProcess(id: string): Promise<{ id: string; title: string; map: unknown; createdBy: string }> {
+  return api(`/api/processes/${id}`)
 }

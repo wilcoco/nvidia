@@ -6,11 +6,15 @@
   "scripts": {
     "build:sdk": "esbuild sdk/index.ts --bundle --format=iife --outfile=public/flowcatch.js",
     "dev": "npm run build:sdk && vite",
+    "dev:server": "node server/index.js",
     "build": "npm run build:sdk && vite build",
     "check": "tsc --noEmit",
+    "start": "node server/index.js",
     "preview": "vite preview"
   },
   "dependencies": {
+    "express": "^4.21.1",
+    "pg": "^8.13.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

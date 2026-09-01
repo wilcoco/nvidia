@@ -1,6 +1,7 @@
 import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as asksStore from './asks'
+import * as host from './host'
 import type { Step } from './types'
 
 const HOST_ID = 'flowcatch-panel-host'
@@ -108,10 +109,12 @@ export function mountPanel(): void {
 function scheduleRender() {
   if (renderQueued) return
   renderQueued = true
-  requestAnimationFrame(() => {
+  // setTimeout, not requestAnimationFrame: rAF never fires in hidden tabs,
+  // which would freeze the panel while an agent works in the background.
+  setTimeout(() => {
     renderQueued = false
     render()
-  })
+  }, 0)
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -287,8 +290,10 @@ function render() {
     if (map.confirmed) {
       bar.appendChild(el('span', 'confirmed', '✓ Confirmed — ready for the agent to run'))
     } else {
-      const btn = el('button', undefined, 'Confirm process')
-      btn.onclick = () => mapstore.humanConfirmMap()
+      const store = host.getProcessStore()
+      const btn = el('button', undefined, store ? 'Confirm & save to library' : 'Confirm process')
+      btn.onclick = () =>
+        mapstore.humanConfirmMap(store ? (m) => store.save(m) : undefined)
       bar.appendChild(btn)
     }
     mapSection.appendChild(bar)

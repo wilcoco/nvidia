@@ -61,6 +61,7 @@ const tools: ToolDef[] = [
       available_actions: host.listActions(),
       process_map_exists: mapstore.getMap() !== null,
       process_map_confirmed: mapstore.getMap()?.confirmed ?? false,
+      process_library_available: host.getProcessStore() !== null,
       journal_entries: journal.all().length,
     }),
   },
@@ -141,6 +142,34 @@ const tools: ToolDef[] = [
       const options = Array.isArray(args.options) ? args.options.map(String) : undefined
       const answer = await askUser(String(args.question), options)
       return { answer }
+    },
+  },
+  {
+    name: 'list_saved_processes',
+    description:
+      'Processes previously confirmed and saved to the shared library — including ones other people created. Use load_process to bring one into this session and replay it.',
+    inputSchema: schema(),
+    execute: async () => {
+      const store = host.getProcessStore()
+      if (!store) return { available: false, note: 'This app has no shared process library.' }
+      return { processes: await store.list() }
+    },
+  },
+  {
+    name: 'load_process',
+    description:
+      'Load a saved process from the shared library into this session (it renders in the panel, already confirmed). Then replay it with run_action, following its steps and asking the human at decision points.',
+    inputSchema: schema({ id: { type: 'string', description: 'Process id from list_saved_processes' } }, ['id']),
+    execute: async (args) => {
+      const store = host.getProcessStore()
+      if (!store) return { ok: false, error: 'This app has no shared process library.' }
+      try {
+        const { map, createdBy } = await store.load(String(args.id))
+        mapstore.loadSavedMap(map, { id: String(args.id), createdBy })
+        return { ok: true, map }
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     },
   },
   {

@@ -78,11 +78,28 @@ export function humanRemoveStep(stepId: string): void {
   notify()
 }
 
-export function humanConfirmMap(): void {
+export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string }>): void {
   if (!map) return
   map.confirmed = true
   pushEdit({ field: 'confirmed', to: 'true' })
   record('user', 'map', `confirmed process "${map.title}"`)
+  notify()
+  if (saver) {
+    const current = map
+    saver(current)
+      .then((saved) => record('user', 'map', `saved "${current.title}" to the shared process library (id ${saved.id})`))
+      .catch((err) => record('user', 'map', `saving "${current.title}" failed: ${err instanceof Error ? err.message : err}`))
+  }
+}
+
+/** Load a process someone saved earlier (already confirmed). */
+export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
+  map = { ...loaded, confirmed: true }
+  record(
+    'agent',
+    'map',
+    `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}`,
+  )
   notify()
 }
 

@@ -1,0 +1,228 @@
+// Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
+import crypto from 'node:crypto'
+
+function hashPassword(password, salt) {
+  return crypto.scryptSync(password, salt, 32).toString('hex')
+}
+
+const SEED_USERS = [
+  { username: 'kim', name: 'Kim', role: 'Line worker', password: 'linepulse' },
+  { username: 'lee', name: 'Lee', role: 'Team lead', password: 'linepulse' },
+  { username: 'judge', name: 'Judge', role: 'Guest reviewer', password: 'webmcp2026' },
+]
+
+function seedRows() {
+  return SEED_USERS.map((u) => {
+    const salt = crypto.randomBytes(8).toString('hex')
+    return { ...u, salt, passHash: hashPassword(u.password, salt) }
+  })
+}
+
+export function verifyPassword(user, password) {
+  return (
+    user &&
+    crypto.timingSafeEqual(
+      Buffer.from(user.passHash, 'hex'),
+      Buffer.from(hashPassword(password, user.salt), 'hex'),
+    )
+  )
+}
+
+/* ---------------- in-memory backend (no DATABASE_URL) ---------------- */
+
+function memoryBackend() {
+  const users = seedRows()
+  let seq = 1
+  const worklogs = []
+  const approvals = []
+  const processes = []
+
+  return {
+    kind: 'memory',
+    async getUser(username) {
+      return users.find((u) => u.username === username) ?? null
+    },
+    async listUsers() {
+      return users.map(({ username, name, role }) => ({ username, name, role }))
+    },
+    async createWorklog(w) {
+      const row = { id: String(seq++), ...w, status: 'draft' }
+      worklogs.unshift(row)
+      return row
+    },
+    async listWorklogs() {
+      return worklogs
+    },
+    async setWorklogStatus(id, status) {
+      const w = worklogs.find((x) => x.id === id)
+      if (w) w.status = status
+      return w ?? null
+    },
+    async createApproval(a) {
+      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now() }
+      approvals.unshift(row)
+      return row
+    },
+    async listApprovals() {
+      return approvals
+    },
+    async getApproval(id) {
+      return approvals.find((a) => a.id === id) ?? null
+    },
+    async decideApproval(id, status, comment) {
+      const a = approvals.find((x) => x.id === id)
+      if (!a) return null
+      a.status = status
+      a.comment = comment
+      return a
+    },
+    async saveProcess(p) {
+      const row = { id: String(seq++), ...p, createdAt: Date.now() }
+      processes.unshift(row)
+      return row
+    },
+    async listProcesses() {
+      return processes.map(({ id, title, createdBy, createdAt }) => ({ id, title, createdBy, createdAt }))
+    },
+    async getProcess(id) {
+      return processes.find((p) => p.id === id) ?? null
+    },
+  }
+}
+
+/* ---------------- Postgres backend (Railway) ---------------- */
+
+async function pgBackend(databaseUrl) {
+  const { default: pg } = await import('pg')
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    ssl: databaseUrl.includes('railway') ? { rejectUnauthorized: false } : undefined,
+  })
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      username TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
+      pass_hash TEXT NOT NULL, salt TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS worklogs (
+      id SERIAL PRIMARY KEY, date TEXT NOT NULL, line TEXT NOT NULL, task TEXT NOT NULL,
+      progress_pct INT NOT NULL, hours REAL NOT NULL, note TEXT DEFAULT '',
+      urgent BOOLEAN DEFAULT FALSE, status TEXT DEFAULT 'draft', created_by TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS approvals (
+      id SERIAL PRIMARY KEY, worklog_id INT NOT NULL, requested_by TEXT NOT NULL,
+      approver TEXT NOT NULL, status TEXT DEFAULT 'PENDING', comment TEXT,
+      ts TIMESTAMPTZ DEFAULT now()
+    );
+    CREATE TABLE IF NOT EXISTS processes (
+      id SERIAL PRIMARY KEY, title TEXT NOT NULL, map JSONB NOT NULL,
+      created_by TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT now()
+    );
+  `)
+
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
+  if (rows[0].n === 0) {
+    for (const u of seedRows()) {
+      await pool.query(
+        'INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5)',
+        [u.username, u.name, u.role, u.passHash, u.salt],
+      )
+    }
+  }
+
+  const wl = (r) => ({
+    id: String(r.id), date: r.date, line: r.line, task: r.task,
+    progressPct: r.progress_pct, hours: r.hours, note: r.note,
+    urgent: r.urgent, status: r.status, createdBy: r.created_by,
+  })
+  const ap = (r) => ({
+    id: String(r.id), worklogId: String(r.worklog_id), requestedBy: r.requested_by,
+    approver: r.approver, status: r.status, comment: r.comment ?? undefined,
+    ts: new Date(r.ts).getTime(),
+  })
+
+  return {
+    kind: 'postgres',
+    async getUser(username) {
+      const { rows } = await pool.query('SELECT * FROM users WHERE username=$1', [username])
+      const r = rows[0]
+      return r ? { username: r.username, name: r.name, role: r.role, passHash: r.pass_hash, salt: r.salt } : null
+    },
+    async listUsers() {
+      const { rows } = await pool.query('SELECT username, name, role FROM users ORDER BY username')
+      return rows
+    },
+    async createWorklog(w) {
+      const { rows } = await pool.query(
+        `INSERT INTO worklogs (date, line, task, progress_pct, hours, note, urgent, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [w.date, w.line, w.task, w.progressPct, w.hours, w.note, w.urgent, w.createdBy],
+      )
+      return wl(rows[0])
+    },
+    async listWorklogs() {
+      const { rows } = await pool.query('SELECT * FROM worklogs ORDER BY id DESC LIMIT 200')
+      return rows.map(wl)
+    },
+    async setWorklogStatus(id, status) {
+      const { rows } = await pool.query('UPDATE worklogs SET status=$2 WHERE id=$1 RETURNING *', [id, status])
+      return rows[0] ? wl(rows[0]) : null
+    },
+    async createApproval(a) {
+      const { rows } = await pool.query(
+        `INSERT INTO approvals (worklog_id, requested_by, approver) VALUES ($1,$2,$3) RETURNING *`,
+        [a.worklogId, a.requestedBy, a.approver],
+      )
+      return ap(rows[0])
+    },
+    async listApprovals() {
+      const { rows } = await pool.query('SELECT * FROM approvals ORDER BY id DESC LIMIT 200')
+      return rows.map(ap)
+    },
+    async getApproval(id) {
+      const { rows } = await pool.query('SELECT * FROM approvals WHERE id=$1', [id])
+      return rows[0] ? ap(rows[0]) : null
+    },
+    async decideApproval(id, status, comment) {
+      const { rows } = await pool.query(
+        'UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 RETURNING *',
+        [id, status, comment ?? null],
+      )
+      return rows[0] ? ap(rows[0]) : null
+    },
+    async saveProcess(p) {
+      const { rows } = await pool.query(
+        'INSERT INTO processes (title, map, created_by) VALUES ($1,$2,$3) RETURNING id, title, created_by, created_at',
+        [p.title, JSON.stringify(p.map), p.createdBy],
+      )
+      const r = rows[0]
+      return { id: String(r.id), title: r.title, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime() }
+    },
+    async listProcesses() {
+      const { rows } = await pool.query(
+        'SELECT id, title, created_by, created_at FROM processes ORDER BY id DESC LIMIT 100',
+      )
+      return rows.map((r) => ({
+        id: String(r.id), title: r.title, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime(),
+      }))
+    },
+    async getProcess(id) {
+      const { rows } = await pool.query('SELECT * FROM processes WHERE id=$1', [id])
+      const r = rows[0]
+      return r
+        ? { id: String(r.id), title: r.title, map: r.map, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime() }
+        : null
+    },
+  }
+}
+
+export async function createDb() {
+  const url = process.env.DATABASE_URL
+  if (url) {
+    const db = await pgBackend(url)
+    console.log('[db] using Postgres')
+    return db
+  }
+  console.log('[db] DATABASE_URL not set — using in-memory store (dev mode)')
+  return memoryBackend()
+}

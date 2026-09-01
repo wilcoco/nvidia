@@ -57,6 +57,20 @@ export interface HostAction {
   handler: (params: Record<string, unknown>) => unknown | Promise<unknown>
 }
 
+export interface ProcessSummary {
+  id: string
+  title: string
+  createdBy?: string
+  createdAt?: number
+}
+
+/** Host-provided persistence so confirmed processes can be shared across users. */
+export interface ProcessStoreAdapter {
+  save(map: ProcessMap): Promise<ProcessSummary>
+  list(): Promise<ProcessSummary[]>
+  load(id: string): Promise<{ map: ProcessMap; title?: string; createdBy?: string }>
+}
+
 export interface InitOptions {
   appName?: string
   /** 'full' captures clicks/submits/changes automatically; 'min' captures navigation only
@@ -64,4 +78,5 @@ export interface InitOptions {
   autoCapture?: 'full' | 'min' | 'off'
   stateProvider?: () => unknown
   actions?: HostAction[]
+  processStore?: ProcessStoreAdapter
 }
