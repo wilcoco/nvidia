@@ -106,7 +106,7 @@ const tools: ToolDef[] = [
         applies_when: {
           type: 'object',
           description:
-            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Add finer keys when the human names them (equipment, subsystem, symptom), and ALWAYS a \"keywords\" array of 3-6 distinctive words from the work itself (e.g. {\"kind\": \"routine log\", \"keywords\": [\"filter\", \"pressure\", \"replacement\"], \"equipment\": \"booth-filter\"}) — a generic kind alone (routine log) scores only ~30% and will not surface as a suggestion; keywords matched in the live text are what raise it. Without applies_when the playbook can never be auto-suggested to the next worker.",
+            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry — find_relevant_processes' entering_now shows which keys this app matches on. Add finer keys when the human names them (equipment, subsystem, symptom), and ALWAYS a \"keywords\" array of 3-6 distinctive words from the work itself (e.g. {\"kind\": \"routine log\", \"keywords\": [\"filter\", \"pressure\", \"replacement\"], \"equipment\": \"booth-filter\"}) — a generic kind alone (routine log) scores only ~30% and will not surface as a suggestion; keywords matched in the live text are what raise it. Without applies_when the playbook can never be auto-suggested to the next worker.",
         },
         priority_when: {
           type: 'object',
@@ -193,7 +193,7 @@ const tools: ToolDef[] = [
   {
     name: 'get_map_gaps',
     description:
-      "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
+      "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. IMPORTANT: phrase each question YOURSELF in this app's own domain language — you know the domain from describe_workspace, the journal and the entry text; suggested_question is a generic fallback, not copy to show the human. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
     inputSchema: schema(),
     execute: async () => {
       if (!mapstore.getMap()) return { gaps: [], note: 'No map yet — propose one first.' }
@@ -203,14 +203,14 @@ const tools: ToolDef[] = [
         note:
           gaps.length === 0
             ? 'No open gaps — the interview is complete for this map.'
-            : 'Ask the 2-3 most important questions via ask_user; the human may also just edit the map directly (watch get_map_edits).',
+            : 'Ask the 2-3 most important questions via ask_user — in your own words, using this app\'s domain language, not the generic suggested_question text. The human may also just edit the map directly (watch get_map_edits).',
       }
     },
   },
   {
     name: 'update_step',
     description:
-      "Refine a single step of the current map in place — no need to re-propose the whole map. Its main purpose is knowledge capture: when the human explains a judgment ('we lower viscosity to 17s when it reads over 18 after a color change'), write that rule into the step's detail so the playbook carries the expertise, and tell the human you did. Can also fix a label, bind an action, or set a branch condition.",
+      "Refine a single step of the current map in place — no need to re-propose the whole map. Its main purpose is knowledge capture: when the human explains a judgment rule or threshold, write it into the step's detail so the playbook carries the expertise, and tell the human you did. Can also fix a label, bind an action, or set a branch condition.",
     inputSchema: schema(
       {
         stepId: { type: 'string' },
@@ -267,7 +267,7 @@ const tools: ToolDef[] = [
   {
     name: 'ask_user',
     description:
-      'Show the human a question card inside the page and wait for their answer. Use it to fill gaps the journal cannot answer: branch conditions, whether a skipped step was optional, who approves what. Prefer concrete options over open questions. An option may carry a "run" binding — then choosing it EXECUTES that host action on the spot (validation and approval gate included) and you receive the real outcome, not just the button label. Use a run-bound option when proposing to fix a skipped step, e.g. {"label": "Request approval from Lee now", "run": {"name": "request_review", "params": {"worklogId": "4"}}}.',
+      'Show the human a question card inside the page and wait for their answer. Use it to fill gaps the journal cannot answer: branch conditions, whether a skipped step was optional, who approves what. Prefer concrete options over open questions. An option may carry a "run" binding — then choosing it EXECUTES that host action on the spot (validation and approval gate included) and you receive the real outcome, not just the button label. Use a run-bound option when proposing to fix a skipped step, e.g. {"label": "Run the missing step now", "run": {"name": "<a host action from describe_workspace>", "params": {...}}}.',
     inputSchema: schema(
       {
         question: { type: 'string' },
@@ -449,7 +449,7 @@ const tools: ToolDef[] = [
   {
     name: 'resolve_deviation',
     description:
-      'Resolve a skipped or pending step without running its action: mark it "completed" (it was done outside the app) or "not_applicable" for this run, with a reason. Prefer offering this to the human as a run-bound ask_user option — e.g. {"label": "Mark not applicable", "run": {"name": "resolve_deviation", "params": {"stepId": "s1", "resolution": "not_applicable", "reason": "not required for this incident"}}} — so their click applies it directly.',
+      'Resolve a skipped or pending step without running its action: mark it "completed" (it was done outside the app) or "not_applicable" for this run, with a reason. Prefer offering this to the human as a run-bound ask_user option — e.g. {"label": "Mark not applicable", "run": {"name": "resolve_deviation", "params": {"stepId": "s1", "resolution": "not_applicable", "reason": "not required in this run"}}} — so their click applies it directly.',
     inputSchema: schema(
       {
         stepId: { type: 'string', description: 'Step id from get_process_progress' },
