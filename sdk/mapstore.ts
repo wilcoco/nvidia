@@ -178,7 +178,7 @@ export function markActionDone(
 export function agentUpdateStep(
   stepId: string,
   patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean },
-  branch?: { to: string; condition: string },
+  branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
 ): { ok: boolean; error?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
   const step = map.steps.find((s) => s.id === stepId)
@@ -199,8 +199,14 @@ export function agentUpdateStep(
   if (branch) {
     const edge = step.next?.find((b) => b.to === branch.to)
     if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branch.to}"` }
-    edge.condition = branch.condition
-    changed.push(`condition→${branch.to}`)
+    if (branch.condition !== undefined) {
+      edge.condition = branch.condition
+      changed.push(`condition→${branch.to}`)
+    }
+    if (branch.criteria !== undefined) {
+      edge.criteria = branch.criteria
+      changed.push(`criteria→${branch.to}`)
+    }
   }
   if (changed.length === 0) return { ok: true, step }
   record('agent', 'map', `updated step "${step.label}" (${changed.join(', ')})`)
@@ -329,6 +335,7 @@ export interface MapGap {
     | 'replay_binding'
     | 'required_context'
     | 'precursors'
+    | 'pass_criteria'
   stepId?: string
   step?: string
   suggested_question?: string
@@ -404,6 +411,22 @@ export function mapGaps(): MapGap[] {
       step: s.label,
       note: 'No host action bound. If a matching host action exists (see describe_workspace), bind it via update_step; if the step is inherently manual, mark it update_step {humanOnly: true} so this stops being flagged.',
     })
+  }
+  // Branch edges that go FORWARD but carry no machine-checkable criteria:
+  // the engine cannot refuse a wrong pass-choice without them.
+  const orderIdx = new Map(map.steps.map((s, i) => [s.id, i]))
+  for (const s of map.steps.filter((x) => (x.next?.length ?? 0) >= 2)) {
+    for (const e of s.next ?? []) {
+      const isForward = (orderIdx.get(e.to) ?? 0) > (orderIdx.get(s.id) ?? 0)
+      if (isForward && (!e.criteria || Object.keys(e.criteria).length === 0)) {
+        gaps.push({
+          kind: 'pass_criteria',
+          stepId: s.id,
+          step: s.label,
+          note: `The pass edge "${s.label}" → "${map.steps.find((t) => t.id === e.to)?.label ?? e.to}" has no machine-checkable criteria — the engine cannot refuse a wrong pass-choice. If the human stated thresholds (e.g. "under 55°C, 3 clean cycles, no leak"), encode them now via update_step {stepId, branch_to, branch_criteria: {...}}. If none were stated, ask via ask_user.`,
+        })
+      }
+    }
   }
   const resolved = new Set(map.resolvedGaps ?? [])
   return gaps.filter((g) => !resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind))

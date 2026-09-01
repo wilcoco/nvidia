@@ -56,6 +56,8 @@ export interface DraftContext {
   kind?: string
   colorChange?: boolean
   urgent?: boolean
+  /** Live "what happened" text — matched against playbook keywords. */
+  task?: string
   /** True once the human actually started describing the incident. */
   hasInput?: boolean
 }
@@ -65,6 +67,8 @@ export interface PlaybookMatch {
   title: string
   createdBy: string
   confidence: number
+  /** 'strong' shows as a suggestion card; 'candidate' is agent-visible only. */
+  tier: 'strong' | 'candidate'
   reasons: string[]
   version: number
 }
@@ -281,26 +285,48 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   for (const p of latest.values()) {
     if (!p.appliesWhen || Object.keys(p.appliesWhen).length === 0) continue
     if (!includeDismissed && state.dismissedSuggestions.includes(p.id)) continue
-    const entries = Object.entries(p.appliesWhen)
+    const aw = { ...p.appliesWhen } as Record<string, unknown>
+    const keywords = Array.isArray(aw.keywords) ? (aw.keywords as string[]) : null
+    delete aw.keywords
     const d = draft as Record<string, unknown>
     // Keys the form knows about must hold; finer agent-authored keys the form
-    // cannot supply (equipment, subsystem, …) are tolerated, not blocking.
+    // cannot supply (equipment, subsystem, processFamily, …) are tolerated.
+    const entries = Object.entries(aw)
     const knowable = entries.filter(([k]) => d[k] !== undefined)
     const matched = knowable.filter(([k, v]) => d[k] === v)
-    if (knowable.length === 0 || matched.length < knowable.length) continue
+    if (matched.length < knowable.length) continue
     const reasons = matched.map(([k, v]) => FIELD_LABEL[k]?.(v) ?? `${k} = ${v}`)
-    let confidence = 0.8
+
+    // Tiered confidence: a shared work-log KIND alone is only a weak hint
+    // ('routine log' covers cleaning, stocktaking, handovers, …). Specific
+    // defect kinds carry more signal; keywords in the live text and extra
+    // structured conditions are what raise a match into suggestion territory.
+    let confidence = 0
+    const kindMatched = matched.some(([k]) => k === 'kind')
+    if (kindMatched) confidence += draft.kind === 'routine log' ? 0.3 : 0.55
+    confidence += matched.filter(([k]) => k !== 'kind').length * 0.2
+    if (keywords && keywords.length) {
+      const text = (draft.task ?? '').toLowerCase()
+      const hit = keywords.filter((w) => text.includes(String(w).toLowerCase()))
+      if (hit.length > 0) {
+        confidence += 0.35 * (hit.length / keywords.length)
+        reasons.push(`mentions: ${hit.join(', ')}`)
+      }
+    }
+    if (matched.length === 0 && !(keywords && (draft.task ?? '').length)) continue
     for (const [k, v] of Object.entries(p.priorityWhen ?? {})) {
-      if ((draft as Record<string, unknown>)[k] === v) {
-        confidence += 0.12
+      if (d[k] === v) {
+        confidence += 0.1
         reasons.push(FIELD_LABEL[k]?.(v) ?? `${k} = ${v}`)
       }
     }
+    if (confidence < 0.25) continue
     matches.push({
       processId: p.id,
       title: p.title,
       createdBy: p.createdBy,
-      confidence: Math.min(0.99, Number(confidence.toFixed(2))),
+      confidence: Math.min(0.95, Number(confidence.toFixed(2))),
+      tier: confidence >= 0.5 ? 'strong' : 'candidate',
       reasons,
       version: p.version || 1,
     })
@@ -327,8 +353,17 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
     .filter((p) => p.appliesWhen)
     .sort((a, b) => (b.version || 1) - (a.version || 1))[0]
   const latest = state.worklogs[0]
+  const STOP = new Set(['the','and','with','from','after','before','during','this','that','have','has','was','were','been','still','while','when','onto','into','over'])
+  const derivedKeywords = latest
+    ? [...new Set(latest.task.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/)
+        .filter((w) => w.length > 3 && !STOP.has(w)))].slice(0, 6)
+    : []
   const derivedApplies = latest
-    ? { kind: latest.kind, ...(latest.data.colorChange ? { colorChange: true } : {}) }
+    ? {
+        kind: latest.kind,
+        ...(latest.data.colorChange ? { colorChange: true } : {}),
+        ...(derivedKeywords.length ? { keywords: derivedKeywords } : {}),
+      }
     : undefined
   const derivedPriority = latest?.urgent ? { urgent: true } : undefined
   const mapWithMeta = map as Record<string, unknown>

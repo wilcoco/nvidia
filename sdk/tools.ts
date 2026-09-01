@@ -106,7 +106,7 @@ const tools: ToolDef[] = [
         applies_when: {
           type: 'object',
           description:
-            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Add finer keys when the human names them (equipment, subsystem, symptom — e.g. {\"kind\": \"equipment fault\", \"subsystem\": \"axis-2\"}); unknown keys are tolerated by matching but sharpen it where the app can supply them. Without applies_when the playbook can never be auto-suggested to the next worker.",
+            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Add finer keys when the human names them (equipment, subsystem, symptom), and ALWAYS a \"keywords\" array of 3-6 distinctive words from the work itself (e.g. {\"kind\": \"routine log\", \"keywords\": [\"filter\", \"pressure\", \"replacement\"], \"equipment\": \"booth-filter\"}) — a generic kind alone (routine log) scores only ~30% and will not surface as a suggestion; keywords matched in the live text are what raise it. Without applies_when the playbook can never be auto-suggested to the next worker.",
         },
         priority_when: {
           type: 'object',
@@ -218,6 +218,11 @@ const tools: ToolDef[] = [
         action: { type: 'string', description: 'Host action bound to this step for replay' },
         branch_to: { type: 'string', description: 'Target step id of an existing edge to update' },
         branch_condition: { type: 'string', description: 'New condition for that edge' },
+        branch_criteria: {
+          type: 'object',
+          description:
+            'Machine-checkable criteria for that edge, e.g. {"postPressure": {"gte": 120, "lte": 160}, "sealLeak": {"eq": false}} — resolve_decision then verifies measurements against them server-side. ALWAYS encode thresholds the human states.',
+        },
         humanOnly: {
           type: 'boolean',
           description: 'Mark the step as inherently manual (no host action can perform it); clears any action binding',
@@ -234,8 +239,15 @@ const tools: ToolDef[] = [
           action: args.action === undefined ? undefined : String(args.action),
           humanOnly: args.humanOnly === undefined ? undefined : args.humanOnly === true,
         },
-        args.branch_to && args.branch_condition
-          ? { to: String(args.branch_to), condition: String(args.branch_condition) }
+        args.branch_to && (args.branch_condition || args.branch_criteria)
+          ? {
+              to: String(args.branch_to),
+              condition: args.branch_condition === undefined ? undefined : String(args.branch_condition),
+              criteria:
+                args.branch_criteria && typeof args.branch_criteria === 'object'
+                  ? (args.branch_criteria as Record<string, Record<string, number | string | boolean>>)
+                  : undefined,
+            }
           : undefined,
       ),
   },
@@ -466,7 +478,7 @@ const tools: ToolDef[] = [
   {
     name: 'find_relevant_processes',
     description:
-      "Saved playbooks that match what the human is entering RIGHT NOW (matched on structured conditions like incident type, not guesswork), with confidence and reasons. Call it when the human starts a new piece of work. If there's a good match, explain WHY it matches and offer to load it (load_process) — suggest, never force; the human decides. No match is a normal answer.",
+      "Saved playbooks that match what the human is entering RIGHT NOW, tiered: 'strong' matches (structured conditions plus keywords from the live text) also appear as an on-page card; 'candidate' matches (e.g. only the generic work-log kind matches) are shown to you alone — mention a candidate only if the text genuinely supports it. Explain WHY a match applies and offer load_process — suggest, never force. No match is a normal answer and often the moment to create a playbook.",
     inputSchema: schema(),
     execute: async () => {
       const store = host.getProcessStore()

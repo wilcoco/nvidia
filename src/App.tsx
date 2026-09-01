@@ -64,7 +64,7 @@ function Login() {
 }
 
 function SuggestionCard() {
-  const matches = store.computeMatches().slice(0, 2)
+  const matches = store.computeMatches().filter((m) => m.tier === 'strong').slice(0, 2)
   if (matches.length === 0) return null
   return (
     <div className="card suggestion">
@@ -136,6 +136,7 @@ function IncidentForm() {
       kind,
       colorChange,
       urgent,
+      task,
       hasInput: task.trim().length > 0 || colorChange || urgent,
     })
   }, [kind, colorChange, urgent, task])
