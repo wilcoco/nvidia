@@ -217,7 +217,7 @@ function renderStep(
     detail.onclick = () => {
       const input = el('input', 'detail-edit') as HTMLInputElement
       input.value = step.detail ?? ''
-      input.placeholder = 'e.g. reduce viscosity to 17s when >18 after a color change'
+      input.placeholder = 'the rule or threshold that guides this step…'
       card.replaceChild(input, detail)
       input.focus()
       const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())

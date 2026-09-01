@@ -365,7 +365,7 @@ export function mapGaps(): MapGap[] {
       kind: 'before',
       stepId: first.id,
       step: first.label,
-      suggested_question: `Before "${first.label}" — is there anything that must happen first (stopping the line, notifying someone, a check)?`,
+      suggested_question: `Before "${first.label}" — is there anything that must happen first (a safety or prerequisite step, notifying someone, a check)?`,
     })
     gaps.push({
       kind: 'required_context',
@@ -377,7 +377,7 @@ export function mapGaps(): MapGap[] {
       kind: 'precursors',
       stepId: first.id,
       step: first.label,
-      suggested_question: `Are there warning signs that usually precede this situation — things an experienced operator would notice early? I'll record them so the playbook helps people catch it sooner.`,
+      suggested_question: `Are there early signs that usually precede this situation — things an experienced person would notice before it becomes a problem? I'll record them so the playbook helps people catch it sooner.`,
     })
   }
   const last = map.steps.find((s) => !s.next || s.next.length === 0)
@@ -386,7 +386,7 @@ export function mapGaps(): MapGap[] {
       kind: 'after',
       stepId: last.id,
       step: last.label,
-      suggested_question: `After "${last.label}" — does anything follow (a report, cleanup, verification, restart)?`,
+      suggested_question: `After "${last.label}" — does anything follow (a report, a verification, a hand-off, a follow-up task)?`,
     })
   }
   for (const d of map.steps) {
