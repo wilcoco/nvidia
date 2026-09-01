@@ -6,8 +6,8 @@ function hashPassword(password, salt) {
 }
 
 const SEED_USERS = [
-  { username: 'kim', name: 'Kim', role: 'Line worker', password: 'linepulse' },
-  { username: 'lee', name: 'Lee', role: 'Team lead', password: 'linepulse' },
+  { username: 'kim', name: 'Kim', role: 'Contributor', password: 'linepulse' },
+  { username: 'lee', name: 'Lee', role: 'Reviewer', password: 'linepulse' },
   { username: 'judge', name: 'Judge', role: 'Guest reviewer', password: 'webmcp2026' },
 ]
 
@@ -188,6 +188,9 @@ async function pgBackend(databaseUrl) {
     );
   `)
 
+  // Keep display roles in sync with the current neutral naming (idempotent).
+  await pool.query(`UPDATE users SET role='Contributor' WHERE username='kim' AND role<>'Contributor'`)
+  await pool.query(`UPDATE users SET role='Reviewer' WHERE username='lee' AND role<>'Reviewer'`)
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
   if (rows[0].n === 0) {
     for (const u of seedRows()) {

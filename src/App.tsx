@@ -6,12 +6,12 @@ function today(): string {
 }
 
 const INCIDENT_TYPES = [
+  'routine log',
   'orange peel',
   'sagging / runs',
   'dust inclusion',
   'color mismatch',
   'equipment fault',
-  'routine log',
 ]
 
 function Login() {
@@ -39,7 +39,7 @@ function Login() {
       <form className="card login" onSubmit={submit}>
         <h1>
           🎭 Understudy{' '}
-          <span className="sub">paint shop incident demo</span>
+          <span className="sub">work log demo</span>
         </h1>
         <p className="hint">
           Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
@@ -103,7 +103,7 @@ function SuggestionCard() {
 function IncidentForm() {
   const [date, setDate] = useState(today())
   const [line, setLine] = useState('A')
-  const [kind, setKind] = useState('orange peel')
+  const [kind, setKind] = useState('routine log')
   const [task, setTask] = useState('')
   const [viscosity, setViscosity] = useState('')
   const [boothTemp, setBoothTemp] = useState('')
@@ -190,7 +190,7 @@ function IncidentForm() {
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
         </label>
         <label>
-          Booth
+          Area
           <select value={line} onChange={(e) => setLine(e.target.value)}>
             <option>A</option>
             <option>B</option>
@@ -285,7 +285,7 @@ function IncidentForm() {
         )}
         <label className="check">
           <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
-          Urgent — line stopped / needs lead now
+          Urgent — blocked / needs reviewer now
         </label>
       </div>
       <button type="submit" className="primary">
@@ -361,7 +361,7 @@ function IncidentList({ state }: { state: store.AppState }) {
             <span className={`status ${w.status}`}>{w.status}</span>
           </div>
           <div className="meta">
-            {w.date} · Booth {w.line} · {w.hours}h
+            {w.date} · Area {w.line} · {w.hours}h
             {conditions(w) && <> · {conditions(w)}</>}
             {w.urgent && <span className="flag"> · URGENT</span>}
           </div>
@@ -405,7 +405,7 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
             </div>
             <div className="meta">
               from {state.users.find((u) => u.username === a.requestedBy)?.name ?? a.requestedBy}
-              {wl ? ` · ${wl.date} · Booth ${wl.line}` : ''}
+              {wl ? ` · ${wl.date} · Area ${wl.line}` : ''}
               {wl && conditions(wl) && <> · {conditions(wl)}</>}
               {wl?.urgent && <span className="flag"> · URGENT</span>}
             </div>
@@ -604,7 +604,7 @@ export default function App() {
       <header className="topbar">
         <h1>
           🎭 Understudy{' '}
-          <span className="sub">paint shop incident demo workspace</span>
+          <span className="sub">work log demo workspace</span>
         </h1>
         <div className="userbox">
           <span>

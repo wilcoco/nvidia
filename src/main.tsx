@@ -5,7 +5,7 @@ import './styles.css'
 import * as store from './store'
 
 window.Understudy.init({
-  appName: 'Understudy — Paint Shop Incident Demo',
+  appName: 'Understudy — Work Log Demo Workspace',
   // The demo app emits its own semantic journal entries via Understudy.log,
   // so automatic click capture is limited to navigation.
   autoCapture: 'min',
@@ -38,7 +38,7 @@ window.Understudy.init({
     startRun: (processId, map) => store.startRun(processId, map),
     updateRun: (runId, payload) => store.updateRun(runId, payload),
     saveVerification: (measurements, meta) => {
-      const produced = meta.producedIds.find((p) => p.action === 'log_incident')
+      const produced = meta.producedIds.find((p) => p.action === 'log_work_item')
       const target = produced?.id ?? store.getState().worklogs[0]?.id
       if (target) return store.saveVerification(target, measurements)
     },
@@ -55,20 +55,20 @@ window.Understudy.init({
   },
   actions: [
     {
-      name: 'log_incident',
+      name: 'log_work_item',
       description:
-        'Create a paint-shop incident log entry (as the active persona): defect or equipment issue plus the line conditions it occurred under. Returns the new entry including its id.',
+        'Create a work log entry (as the active persona): what was done or observed, its category, and any structured readings/values. Returns the new entry including its id.',
       params: {
         date: { type: 'string', description: 'YYYY-MM-DD', required: true },
-        line: { type: 'string', description: 'Booth, "A" or "B"', required: true },
+        line: { type: 'string', description: 'Area, "A" or "B"', required: true },
         kind: {
           type: 'string',
           description:
-            'Incident type: orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault | routine log',
+            'Category: routine log | orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault (this demo workspace ships paint-shop categories; routine log fits any general work)',
           required: true,
         },
-        task: { type: 'string', description: 'What happened, one line', required: true },
-        urgent: { type: 'boolean', description: 'Line stopped / needs the lead immediately' },
+        task: { type: 'string', description: 'What was done or observed, one line', required: true },
+        urgent: { type: 'boolean', description: 'Blocked / needs the reviewer immediately' },
         viscosity: { type: 'number', description: 'Paint viscosity in seconds, e.g. 18.5' },
         boothTemp: { type: 'number', description: 'Booth temperature °C' },
         sprayPressure: { type: 'number', description: 'Spray pressure in bar' },
@@ -104,15 +104,15 @@ window.Understudy.init({
       },
     },
     {
-      name: 'record_corrective_action',
+      name: 'record_step_result',
       description:
-        'Attach the corrective action (and its result) to an EXISTING incident log — use this for "apply corrective action" steps instead of creating a new incident.',
+        'Attach a step\'s result (what was done and its outcome) to an EXISTING work log entry — use this for fix/remediation/completion steps instead of creating a new entry.',
       params: {
-        worklogId: { type: 'string', description: 'The incident being corrected', required: true },
-        actionTaken: { type: 'string', description: 'What was done, e.g. "reduced viscosity to 17s"', required: true },
-        result: { type: 'string', description: 'Outcome, e.g. "test panel clean"' },
-        viscosity: { type: 'number', description: 'New viscosity after adjustment' },
-        testPanelResult: { type: 'string', description: 'pass | fail | notes' },
+        worklogId: { type: 'string', description: 'The entry being updated', required: true },
+        actionTaken: { type: 'string', description: 'What was done for this step', required: true },
+        result: { type: 'string', description: 'Outcome/verification summary' },
+        viscosity: { type: 'number', description: '(paint demo) new viscosity after adjustment' },
+        testPanelResult: { type: 'string', description: '(paint demo) pass | fail | notes' },
       },
       handler: (p) =>
         store.recordCorrectiveAction(String(p.worklogId), {
@@ -122,25 +122,25 @@ window.Understudy.init({
           testPanelResult: p.testPanelResult ? String(p.testPanelResult) : undefined,
         }),
       precondition: () =>
-        store.getState().worklogs.length > 0 ? null : 'no incident log exists yet — log the incident first',
+        store.getState().worklogs.length > 0 ? null : 'no work log entry exists yet — log the work item first',
     },
     {
       name: 'request_review',
-      description: 'Send an incident log to the team lead for review/approval.',
+      description: 'Send a work log entry to the reviewer for approval.',
       params: {
-        worklogId: { type: 'string', description: 'Incident log id', required: true },
+        worklogId: { type: 'string', description: 'Work log entry id', required: true },
         approver: { type: 'string', description: 'Approver username (default "lee")' },
       },
       handler: (p) => store.requestApproval(String(p.worklogId), String(p.approver ?? 'lee')),
       precondition: () =>
         store.getState().worklogs.some((w) => w.status === 'draft')
           ? null
-          : 'no draft incident log to send — log the incident first',
+          : 'no draft entry to send — log the work item first',
     },
     {
       name: 'approve_review',
       description:
-        'Approve a pending review (switch persona to the approver first). Use for sign-off steps like corrective action approval or line restart.',
+        'Approve a pending review (switch persona to the reviewer first). Use for sign-off steps.',
       params: {
         approvalId: { type: 'string', required: true },
         comment: { type: 'string' },
@@ -168,7 +168,7 @@ window.Understudy.init({
     {
       name: 'switch_persona',
       description:
-        'Switch the active demo persona (kim = line worker, lee = team lead) so one reviewer can play both sides.',
+        'Switch the active demo persona (kim = contributor, lee = reviewer) so one person can play both sides.',
       params: { username: { type: 'string', required: true } },
       handler: (p) => {
         store.switchActingAs(String(p.username))

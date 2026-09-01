@@ -202,7 +202,7 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
     `logged ${wl.kind} "${wl.task}" (line ${wl.line}${cond ? `, ${cond}` : ''}${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
-  window.Understudy.notifyAction('log_incident', wl.id)
+  window.Understudy.notifyAction('log_work_item', wl.id)
   await refresh()
   return wl
 }
@@ -250,7 +250,7 @@ export async function recordCorrectiveAction(
     `recorded corrective action on incident #${worklogId} — "${input.actionTaken}"`,
     { worklogId },
   )
-  window.Understudy.notifyAction('record_corrective_action', worklogId)
+  window.Understudy.notifyAction('record_step_result', worklogId)
   await refresh()
   return wl
 }

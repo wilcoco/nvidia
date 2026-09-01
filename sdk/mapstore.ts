@@ -118,14 +118,20 @@ export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy
     confirmed: true,
     steps: loaded.steps.map((s) => ({ ...s, done: false, naReason: undefined, resultId: undefined })),
   }
-  // Retroactively link work already done this session: each successful action
-  // completes the first matching step, in the order it actually happened.
+  // Retroactively link work done just before this playbook was opened —
+  // but ONLY events no other run has consumed, and only recent ones.
+  // Without both guards, finishing one playbook and loading another would
+  // wrongly re-attach the previous run's records to the new process.
+  const RETRO_WINDOW_MS = 30 * 60_000
+  const cutoff = Date.now() - RETRO_WINDOW_MS
   let linked = 0
   for (const ev of actionHistory) {
+    if (ev.consumed || ev.ts < cutoff) continue
     const step = map.steps.find((s) => s.action === ev.action && !s.done)
     if (step) {
       step.done = true
       if (ev.resultId) step.resultId = ev.resultId
+      ev.consumed = true
       linked++
     }
   }
@@ -144,6 +150,9 @@ interface ActionEvent {
   action: string
   resultId?: string
   ts: number
+  /** Set once this event completed a step of some run — it must never be
+   *  linked again, or one run's work would bleed into the next playbook. */
+  consumed?: boolean
 }
 const actionHistory: ActionEvent[] = []
 
@@ -153,9 +162,10 @@ export function recordActionSuccess(
   resultId?: string,
   by: 'user' | 'agent' = 'user',
 ): void {
-  actionHistory.push({ action: actionName, resultId, ts: Date.now() })
+  const ev: ActionEvent = { action: actionName, resultId, ts: Date.now() }
+  actionHistory.push(ev)
   if (actionHistory.length > 100) actionHistory.shift()
-  markActionDone(actionName, resultId, by)
+  if (markActionDone(actionName, resultId, by)) ev.consumed = true
 }
 
 /** Auto-mark the first not-done step bound to this host action (agent replay path). */
@@ -163,15 +173,16 @@ export function markActionDone(
   actionName: string,
   resultId?: string,
   by: 'user' | 'agent' = 'agent',
-): void {
-  if (!map?.confirmed) return
+): Step | null {
+  if (!map?.confirmed) return null
   const step = map.steps.find((s) => s.action === actionName && !s.done)
-  if (!step) return
+  if (!step) return null
   step.done = true
   delete step.naReason
   if (resultId) step.resultId = resultId
   record(by, 'map', `completed step "${step.label}"`)
   notify()
+  return step
 }
 
 /** Agent refines a single step in place (e.g. writing captured judgment into its note). */
