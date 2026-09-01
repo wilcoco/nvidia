@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess } from './mapstore'
+import { loadSavedMap, recordActionSuccess, getMap, subscribe as subscribeMap } from './mapstore'
 import { startRunTracking } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
@@ -64,4 +64,18 @@ function notifyAction(name: string, resultId?: string): void {
   recordActionSuccess(name, resultId, 'user')
 }
 
-;(window as any).Understudy = { init, log, registerAction, loadProcess, notifyAction }
+/** Host apps can read the currently loaded/drafted map (e.g. to render its data-contract fields). */
+function getLoadedProcess(): ProcessMap | null {
+  return getMap()
+}
+
+// Let host apps react to map changes (dynamic field forms, etc.).
+subscribeMap(() => {
+  try {
+    window.dispatchEvent(new CustomEvent('understudy:mapchange'))
+  } catch {
+    /* ignore */
+  }
+})
+
+;(window as any).Understudy = { init, log, registerAction, loadProcess, notifyAction, getLoadedProcess }

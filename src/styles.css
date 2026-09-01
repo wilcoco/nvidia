@@ -88,3 +88,10 @@ button.ghost { border: none; background: none; color: #94a3b8; }
 .suggestion-item { border-top: 1px solid #dbeafe; padding-top: 8px; margin-top: 8px; }
 .suggestion-item:first-of-type { border-top: none; margin-top: 0; }
 .version-tag { font-size: 10px; font-weight: 700; background: #f1f5f9; color: #64748b; border-radius: 4px; padding: 1px 5px; vertical-align: middle; }
+
+.playbook-fields { grid-column: span 4; border: 1px dashed #93c5fd; background: #eff6ff; border-radius: 8px; padding: 10px 12px; }
+.pf-title { font-size: 12px; font-weight: 700; color: #1d4ed8; margin-bottom: 8px; }
+.pf-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pf-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #475569; }
+.pf-grid label.check { flex-direction: row; align-items: center; gap: 6px; }
+.pf-grid input { padding: 5px 7px; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 13px; }

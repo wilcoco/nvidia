@@ -1,3 +1,7 @@
+// Agent→human questions and action-approval gates.
+// Async by design: agent tool calls must return IMMEDIATELY (agent runtimes
+// time tool calls out in ~20s), so cards return a pending id and the agent
+// polls get_question_result / get_action_result.
 import { record } from './journal'
 
 type Listener = () => void
@@ -5,29 +9,42 @@ type Listener = () => void
 export interface AskOption {
   label: string
   /** When set, choosing this option also executes the host action (through the
-   *  normal validation/approval pipeline) and the agent receives the outcome. */
+   *  normal validation pipeline) and the agent receives the outcome. */
   run?: { name: string; params?: Record<string, unknown> }
 }
 
 export interface PendingAsk {
-  id: number
+  id: string
   question: string
   options?: AskOption[]
   allowText: boolean
-  resolve: (answer: string) => void
+  /** Gap this question resolves once answered (kind[:stepId]). */
+  resolvesGap?: string
 }
 
 export interface PendingApproval {
-  id: number
+  id: string
   actionName: string
   params: Record<string, unknown>
-  resolve: (approved: boolean) => void
+  /** Runs the action once the human approves; produces the stored outcome. */
+  continuation: () => Promise<unknown>
 }
 
-let nextId = 1
+export type QuestionResult =
+  | { status: 'pending'; question: string }
+  | { status: 'answered'; question: string; answer: string }
+export type ActionResult =
+  | { status: 'pending_approval'; action: string }
+  | { status: 'denied'; action: string }
+  | { status: 'complete'; action: string; outcome: unknown }
+
+let seq = 1
 export const asks: PendingAsk[] = []
 export const approvals: PendingApproval[] = []
+const questionResults = new Map<string, QuestionResult>()
+const actionResults = new Map<string, ActionResult>()
 const listeners = new Set<Listener>()
+const gapResolvers = new Set<(gapKey: string) => void>()
 
 function notify() {
   listeners.forEach((fn) => fn())
@@ -38,65 +55,74 @@ export function subscribe(fn: Listener): () => void {
   return () => listeners.delete(fn)
 }
 
-const ANSWER_TIMEOUT_MS = 110_000
-
-/** Agent asks the human a question; resolves with the answer, or a timeout marker. */
-export function askUser(question: string, options?: AskOption[], allowText = true): Promise<string> {
-  record('agent', 'app', `asked: ${question}`)
-  return new Promise((resolve) => {
-    const ask: PendingAsk = {
-      id: nextId++,
-      question,
-      options,
-      allowText,
-      resolve: (answer) => {
-        remove()
-        record('user', 'answer', answer, { question })
-        resolve(answer)
-      },
-    }
-    const timer = setTimeout(() => {
-      remove()
-      resolve('[no answer yet — the question is still shown to the user; call get_recent_actions later to see their answer]')
-    }, ANSWER_TIMEOUT_MS)
-    const remove = () => {
-      clearTimeout(timer)
-      const i = asks.indexOf(ask)
-      if (i >= 0) asks.splice(i, 1)
-      notify()
-    }
-    asks.push(ask)
-    notify()
-  })
+/** mapstore hooks in to mark gaps resolved without an import cycle. */
+export function onGapResolved(fn: (gapKey: string) => void): void {
+  gapResolvers.add(fn)
 }
 
-/** Ask the human to approve an agent-initiated action. */
+/** Show a question card; returns immediately with the question id. */
+export function askUser(
+  question: string,
+  options?: AskOption[],
+  allowText = true,
+  resolvesGap?: string,
+): string {
+  const id = `q${seq++}`
+  asks.push({ id, question, options, allowText, resolvesGap })
+  questionResults.set(id, { status: 'pending', question })
+  record('agent', 'app', `asked: ${question}`, { questionId: id })
+  notify()
+  return id
+}
+
+/** Panel calls this when the human answers (option label, run outcome, or free text). */
+export function answerAsk(id: string, answer: string): void {
+  const idx = asks.findIndex((a) => a.id === id)
+  if (idx < 0) return
+  const ask = asks[idx]
+  asks.splice(idx, 1)
+  questionResults.set(id, { status: 'answered', question: ask.question, answer })
+  record('user', 'answer', answer, { question: ask.question, questionId: id })
+  if (ask.resolvesGap) gapResolvers.forEach((fn) => fn(ask.resolvesGap!))
+  notify()
+}
+
+export function getQuestionResult(id: string): QuestionResult | { status: 'unknown' } {
+  return questionResults.get(id) ?? { status: 'unknown' }
+}
+
+/** Show an approval card for an agent-initiated action; returns the approval id. */
 export function requestApproval(
   actionName: string,
   params: Record<string, unknown>,
-): Promise<boolean> {
-  return new Promise((resolve) => {
-    const req: PendingApproval = {
-      id: nextId++,
-      actionName,
-      params,
-      resolve: (approved) => {
-        remove()
-        record('user', 'answer', approved ? `approved agent action ${actionName}` : `denied agent action ${actionName}`)
-        resolve(approved)
-      },
-    }
-    const timer = setTimeout(() => {
-      remove()
-      resolve(false)
-    }, ANSWER_TIMEOUT_MS)
-    const remove = () => {
-      clearTimeout(timer)
-      const i = approvals.indexOf(req)
-      if (i >= 0) approvals.splice(i, 1)
-      notify()
-    }
-    approvals.push(req)
+  continuation: () => Promise<unknown>,
+): string {
+  const id = `a${seq++}`
+  approvals.push({ id, actionName, params, continuation })
+  actionResults.set(id, { status: 'pending_approval', action: actionName })
+  notify()
+  return id
+}
+
+/** Panel calls this on Approve/Deny. Approve executes the action and stores its outcome. */
+export async function decideApprovalCard(id: string, approved: boolean): Promise<void> {
+  const idx = approvals.findIndex((a) => a.id === id)
+  if (idx < 0) return
+  const req = approvals[idx]
+  approvals.splice(idx, 1)
+  notify()
+  if (!approved) {
+    actionResults.set(id, { status: 'denied', action: req.actionName })
+    record('user', 'answer', `denied agent action ${req.actionName}`, { actionId: id })
     notify()
-  })
+    return
+  }
+  record('user', 'answer', `approved agent action ${req.actionName}`, { actionId: id })
+  const outcome = await req.continuation()
+  actionResults.set(id, { status: 'complete', action: req.actionName, outcome })
+  notify()
+}
+
+export function getActionResult(id: string): ActionResult | { status: 'unknown' } {
+  return actionResults.get(id) ?? { status: 'unknown' }
 }

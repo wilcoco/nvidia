@@ -6,6 +6,14 @@ interface UnderstudyHostAction {
   precondition?: () => string | null
 }
 
+interface UnderstudyFieldDef {
+  key: string
+  label?: string
+  type: 'number' | 'string' | 'boolean'
+  unit?: string
+  required?: boolean
+}
+
 interface UnderstudyProcessMap {
   title: string
   steps: Array<{
@@ -14,9 +22,14 @@ interface UnderstudyProcessMap {
     type: 'task' | 'decision' | 'approval'
     detail?: string
     action?: string
+    humanOnly?: boolean
     next?: Array<{ to: string; condition?: string }>
   }>
   confirmed?: boolean
+  fields?: UnderstudyFieldDef[]
+  appliesWhen?: Record<string, unknown>
+  priorityWhen?: Record<string, unknown>
+  sourceWorklogId?: string
 }
 
 interface UnderstudyProcessSummary {
@@ -49,6 +62,7 @@ interface UnderstudyApi {
   registerAction(action: UnderstudyHostAction): void
   loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string }): void
   notifyAction(name: string, resultId?: string): void
+  getLoadedProcess(): UnderstudyProcessMap | null
 }
 
 interface Window {

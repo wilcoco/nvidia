@@ -318,19 +318,26 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
   // Saving a map under an existing title creates the next version of that playbook.
   const prior = state.processes.filter((p) => p.title === map.title)
   const version = prior.length ? Math.max(...prior.map((p) => p.version || 1)) + 1 : 1
-  // A revision inherits applicability conditions from the newest prior
-  // version that has them, unless the new map sets its own.
+  // Applicability conditions: agent-provided > inherited from prior version >
+  // derived from the entry that triggered this playbook — a playbook without
+  // appliesWhen can never be auto-suggested, so never save one silently.
   const donor = prior
     .filter((p) => p.appliesWhen)
     .sort((a, b) => (b.version || 1) - (a.version || 1))[0]
+  const latest = state.worklogs[0]
+  const derivedApplies = latest
+    ? { kind: latest.kind, ...(latest.data.colorChange ? { colorChange: true } : {}) }
+    : undefined
+  const derivedPriority = latest?.urgent ? { urgent: true } : undefined
   const mapWithMeta = map as Record<string, unknown>
   const saved = await api<ProcessSummary>('/api/processes', {
     title: map.title,
     map: {
       ...map,
       version,
-      appliesWhen: mapWithMeta.appliesWhen ?? donor?.appliesWhen,
-      priorityWhen: mapWithMeta.priorityWhen ?? donor?.priorityWhen,
+      appliesWhen: mapWithMeta.appliesWhen ?? donor?.appliesWhen ?? derivedApplies,
+      priorityWhen: mapWithMeta.priorityWhen ?? donor?.priorityWhen ?? derivedPriority,
+      sourceWorklogId: mapWithMeta.sourceWorklogId ?? latest?.id,
     },
     actingAs: state.actingAs,
   })

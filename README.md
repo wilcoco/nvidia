@@ -110,7 +110,10 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
 | `get_map_gaps` | The interview agenda: what the map does not yet know — missing before/after steps, undecided branches, no sign-off, steps without judgment rules. |
 | `update_step` | Refine one step in place — the agent writes the human's explained judgment rules into step notes. |
-| `ask_user` | In-page question card; resolves with the human's answer. Options can carry a `run` binding that executes an action on the human's click. |
+| `ask_user` | Shows a question card and returns a pending id immediately (humans take longer than tool timeouts). Options can carry a `run` binding that executes an action on the human's click. |
+| `get_question_result` | Poll a question: pending, or answered with the human's answer. |
+| `get_action_result` | Poll a gated run_action: pending, denied, or complete with the result. |
+| `update_map_fields` | Set the playbook's data contract — typed fields (from the variables interview) rendered as a form for the next worker. |
 | `resolve_deviation` | Mark a skipped step completed-outside-the-app or not-applicable, with a reason. |
 | `find_relevant_processes` | Playbooks matching what the human is entering right now, with confidence and reasons. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |

@@ -1,6 +1,18 @@
-import type { MapEdit, ProcessMap, Step, StepType } from './types'
+import type { FieldDef, MapEdit, ProcessMap, Step, StepType } from './types'
 import { record } from './journal'
 import * as host from './host'
+import { onGapResolved } from './asks'
+
+onGapResolved((gapKey) => markGapResolved(gapKey))
+
+export function markGapResolved(gapKey: string): void {
+  if (!map) return
+  if (!map.resolvedGaps) map.resolvedGaps = []
+  if (!map.resolvedGaps.includes(gapKey)) {
+    map.resolvedGaps.push(gapKey)
+    notify()
+  }
+}
 
 type Listener = () => void
 
@@ -159,7 +171,7 @@ export function markActionDone(
 /** Agent refines a single step in place (e.g. writing captured judgment into its note). */
 export function agentUpdateStep(
   stepId: string,
-  patch: { label?: string; detail?: string; action?: string },
+  patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean },
   branch?: { to: string; condition: string },
 ): { ok: boolean; error?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
@@ -173,6 +185,11 @@ export function agentUpdateStep(
       changed.push(field)
     }
   }
+  if (patch.humanOnly !== undefined && patch.humanOnly !== step.humanOnly) {
+    step.humanOnly = patch.humanOnly
+    if (patch.humanOnly) delete step.action
+    changed.push('humanOnly')
+  }
   if (branch) {
     const edge = step.next?.find((b) => b.to === branch.to)
     if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branch.to}"` }
@@ -183,6 +200,17 @@ export function agentUpdateStep(
   record('agent', 'map', `updated step "${step.label}" (${changed.join(', ')})`)
   notify()
   return { ok: true, step }
+}
+
+/** Set/replace the playbook's data contract (from the required_context interview). */
+export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string; fields?: FieldDef[] } {
+  if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
+  if (!Array.isArray(fields)) return { ok: false, error: 'fields must be an array' }
+  map.fields = fields
+  markGapResolved('required_context')
+  record('agent', 'map', `defined the playbook's data contract (${fields.map((f) => f.key).join(', ')})`)
+  notify()
+  return { ok: true, fields }
 }
 
 /** Human checks a step off (or un-checks it) in the panel. */
@@ -274,15 +302,16 @@ export function mapGaps(): MapGap[] {
       suggested_question: `What rule or threshold guides "${s.label}"? What would an expert check, and when would they deviate?`,
     })
   }
-  for (const s of actionable.filter((x) => !x.action)) {
+  for (const s of actionable.filter((x) => !x.action && !x.humanOnly)) {
     gaps.push({
       kind: 'replay_binding',
       stepId: s.id,
       step: s.label,
-      note: 'No host action bound — the agent cannot replay this step. If a matching action exists (see describe_workspace), bind it via update_step; otherwise it stays a human-only step.',
+      note: 'No host action bound. If a matching host action exists (see describe_workspace), bind it via update_step; if the step is inherently manual, mark it update_step {humanOnly: true} so this stops being flagged.',
     })
   }
-  return gaps
+  const resolved = new Set(map.resolvedGaps ?? [])
+  return gaps.filter((g) => !resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind))
 }
 
 /** Would running this action now jump past required, not-yet-done steps? */

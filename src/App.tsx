@@ -112,6 +112,22 @@ function IncidentForm() {
   const [actionTaken, setActionTaken] = useState('')
   const [hours, setHours] = useState(0.5)
   const [urgent, setUrgent] = useState(false)
+  // The loaded playbook's data contract (defined via interview) renders as a
+  // dynamic section of this form.
+  const [playbookFields, setPlaybookFields] = useState<UnderstudyFieldDef[]>([])
+  const [playbookTitle, setPlaybookTitle] = useState('')
+  const [fieldValues, setFieldValues] = useState<Record<string, string | boolean>>({})
+
+  useEffect(() => {
+    const read = () => {
+      const m = window.Understudy.getLoadedProcess?.()
+      setPlaybookFields(m?.fields?.length ? m.fields : [])
+      setPlaybookTitle(m?.fields?.length ? m.title : '')
+    }
+    read()
+    window.addEventListener('understudy:mapchange', read)
+    return () => window.removeEventListener('understudy:mapchange', read)
+  }, [])
 
   // Keep the live draft context in the store so playbook matching (and the
   // agent, via find_relevant_processes) sees what is being entered right now.
@@ -141,8 +157,19 @@ function IncidentForm() {
         sprayPressure: sprayPressure === '' ? undefined : Number(sprayPressure),
         colorChange,
         actionTaken: actionTaken.trim() || undefined,
+        ...Object.fromEntries(
+          playbookFields
+            .map((f) => {
+              const v = fieldValues[f.key]
+              if (f.type === 'boolean') return [f.key, Boolean(v)]
+              if (v === undefined || v === '') return [f.key, undefined]
+              return [f.key, f.type === 'number' ? Number(v) : String(v)]
+            })
+            .filter(([, v]) => v !== undefined),
+        ),
       },
     })
+    setFieldValues({})
     setTask('')
     setActionTaken('')
     setUrgent(false)
@@ -155,7 +182,7 @@ function IncidentForm() {
   const isRoutine = kind === 'routine log'
   return (
     <form className="card form" onSubmit={submit} data-flow-label="incident report">
-      <h3>{isRoutine ? 'Log your work' : 'Log an incident'}</h3>
+      <h3>Write a work log</h3>
       <div className="grid">
         <label>
           Date
@@ -208,6 +235,37 @@ function IncidentForm() {
           Hours
           <input type="number" min={0} step={0.5} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
         </label>
+        {playbookFields.length > 0 && (
+          <div className="wide wide4 playbook-fields">
+            <div className="pf-title">📋 {playbookTitle} — required data</div>
+            <div className="pf-grid">
+              {playbookFields.map((f) =>
+                f.type === 'boolean' ? (
+                  <label key={f.key} className="check">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(fieldValues[f.key])}
+                      onChange={(e) => setFieldValues({ ...fieldValues, [f.key]: e.target.checked })}
+                    />
+                    {f.label ?? f.key}
+                  </label>
+                ) : (
+                  <label key={f.key}>
+                    {f.label ?? f.key}
+                    {f.unit ? ` (${f.unit})` : ''}
+                    {f.required ? ' *' : ''}
+                    <input
+                      type={f.type === 'number' ? 'number' : 'text'}
+                      step={f.type === 'number' ? 'any' : undefined}
+                      value={String(fieldValues[f.key] ?? '')}
+                      onChange={(e) => setFieldValues({ ...fieldValues, [f.key]: e.target.value })}
+                    />
+                  </label>
+                ),
+              )}
+            </div>
+          </div>
+        )}
         {!isRoutine && (
         <label className="wide wide4">
           Action taken

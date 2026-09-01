@@ -34,13 +34,35 @@ export interface Step {
   resultId?: string
   /** Set when the step was explicitly resolved as not applicable for this run. */
   naReason?: string
+  /** Inherently manual step — no host action can perform it; the human checks it off. */
+  humanOnly?: boolean
+}
+
+/** One field of a playbook's data contract — captured via interview, rendered
+ *  as a dynamic form when the playbook is followed. */
+export interface FieldDef {
+  key: string
+  label?: string
+  type: 'number' | 'string' | 'boolean'
+  unit?: string
+  required?: boolean
 }
 
 export interface ProcessMap {
   title: string
   steps: Step[]
+  /** The playbook's own data contract: what must be captured when following it. */
+  fields?: FieldDef[]
   entry?: string
   confirmed?: boolean
+  /** Conditions under which this playbook applies (used for auto-suggestion). */
+  appliesWhen?: Record<string, unknown>
+  priorityWhen?: Record<string, unknown>
+  /** The work entry that triggered creating this playbook. */
+  sourceWorklogId?: string
+  /** Interview gaps the human already answered (kind[:stepId]) — not re-asked. */
+  resolvedGaps?: string[]
+  version?: number
 }
 
 export interface MapEdit {

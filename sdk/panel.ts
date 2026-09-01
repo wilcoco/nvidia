@@ -2,7 +2,7 @@ import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as asksStore from './asks'
 import * as host from './host'
-import { runHostAction, preconditionFor } from './runner'
+import { runAsHuman, preconditionFor } from './runner'
 import { isRunComplete } from './runsync'
 import { isAutoApprove, setAutoApprove } from './settings'
 import type { Step } from './types'
@@ -69,6 +69,9 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .step .detail-empty { color: #475569; font-style: italic; }
 .step input.detail-edit { width: 100%; background: #0f172a; color: #fff; border: 1px solid #3b82f6; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-top: 3px; }
 .step .action-tag { color: #38bdf8; font-size: 10px; margin-top: 2px; }
+.step .human-tag { color: #a5b4fc; }
+.map-fields { color: #94a3b8; font-size: 11px; margin: -4px 0 8px; }
+.map-fields b { color: #cbd5e1; font-weight: 600; }
 .step button.del { background: none; border: none; color: #475569; cursor: pointer; flex: none; }
 .step button.del:hover { color: #f87171; }
 .step select { background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; font-size: 10px; }
@@ -228,6 +231,7 @@ function renderStep(
   }
   if (step.naReason) card.appendChild(el('div', 'detail', `N/A: ${step.naReason}`))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
+  if (step.humanOnly) card.appendChild(el('div', 'action-tag human-tag', '👤 human step'))
   if (status === 'blocked' && step.action) {
     const reason = preconditionFor(step.action)
     if (reason) card.appendChild(el('div', 'blocked-reason', `⛔ ${reason}`))
@@ -302,18 +306,19 @@ function render() {
           const b = el('button', undefined, o.label)
           b.onclick = async () => {
             if (!o.run) {
-              ask.resolve(o.label)
+              asksStore.answerAsk(ask.id, o.label)
               return
             }
-            // Executable option: actually run the bound host action, then hand
-            // the agent the real outcome instead of just the button label.
+            // Executable option: the click is the consent — run the bound host
+            // action now and hand the agent the real outcome.
             b.disabled = true
             b.textContent = `${o.label}…`
-            const outcome = await runHostAction(o.run.name, o.run.params ?? {}, { humanInitiated: true, force: true })
-            ask.resolve(
+            const outcome = await runAsHuman(o.run.name, o.run.params ?? {})
+            asksStore.answerAsk(
+              ask.id,
               outcome.ok
                 ? `${o.label} — executed ${o.run.name} successfully`
-                : `${o.label} — ${o.run.name} did not run (${outcome.denied ? 'denied by the human' : outcome.error})`,
+                : `${o.label} — ${o.run.name} did not run (${outcome.error})`,
             )
           }
           opts.appendChild(b)
@@ -324,7 +329,7 @@ function render() {
         const input = el('input', 'freetext') as HTMLInputElement
         input.placeholder = 'Type an answer and press Enter…'
         input.onkeydown = (e) => {
-          if (e.key === 'Enter' && input.value.trim()) ask.resolve(input.value.trim())
+          if (e.key === 'Enter' && input.value.trim()) asksStore.answerAsk(ask.id, input.value.trim())
         }
         card.appendChild(input)
       }
@@ -343,9 +348,9 @@ function render() {
       card.appendChild(el('div', 'params', JSON.stringify(req.params, null, 1)))
       const yn = el('div', 'yn')
       const yes = el('button', 'yes', 'Approve')
-      yes.onclick = () => req.resolve(true)
+      yes.onclick = () => void asksStore.decideApprovalCard(req.id, true)
       const no = el('button', 'no', 'Deny')
-      no.onclick = () => req.resolve(false)
+      no.onclick = () => void asksStore.decideApprovalCard(req.id, false)
       yn.appendChild(yes)
       yn.appendChild(no)
       card.appendChild(yn)
@@ -364,6 +369,17 @@ function render() {
     )
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
+    if (map.fields?.length) {
+      const f = el('div', 'map-fields')
+      f.innerHTML = ''
+      f.appendChild(el('b', undefined, 'Captures: '))
+      f.appendChild(
+        document.createTextNode(
+          map.fields.map((d) => `${d.label ?? d.key}${d.unit ? ` (${d.unit})` : ''}${d.required ? '*' : ''}`).join(' · '),
+        ),
+      )
+      mapSection.appendChild(f)
+    }
     const statuses = mapstore.progress(preconditionFor)
     map.steps.forEach((s, i) =>
       renderStep(s, i === map.steps.length - 1, mapSection, statuses.get(s.id)),

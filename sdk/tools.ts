@@ -1,9 +1,9 @@
 import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as host from './host'
-import { askUser, type AskOption } from './asks'
+import { askUser, getQuestionResult, getActionResult, type AskOption } from './asks'
 import { setWebmcpStatus } from './panel'
-import { runHostAction, preconditionFor } from './runner'
+import { startHostAction, preconditionFor } from './runner'
 import { startRunTracking } from './runsync'
 import type { ProcessMap } from './types'
 
@@ -98,17 +98,85 @@ const tools: ToolDef[] = [
       {
         title: { type: 'string', description: 'Short name of the process' },
         steps: { type: 'array', items: STEP_SCHEMA },
+        applies_when: {
+          type: 'object',
+          description:
+            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry (e.g. {\"kind\": \"equipment fault\"}). Without it the playbook can never be auto-suggested to the next worker.",
+        },
+        priority_when: {
+          type: 'object',
+          description: 'Conditions that raise the match priority, e.g. {"urgent": true}',
+        },
+        source_worklog_id: {
+          type: 'string',
+          description: 'Id of the work entry that triggered creating this playbook',
+        },
+        fields: {
+          type: 'array',
+          description:
+            "The playbook's data contract: variables that must be captured when following it (from the required_context interview answer). Rendered as a form for the next worker.",
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', description: 'camelCase key, e.g. vibrationLevel' },
+              label: { type: 'string' },
+              type: { type: 'string', enum: ['number', 'string', 'boolean'] },
+              unit: { type: 'string' },
+              required: { type: 'boolean' },
+            },
+            required: ['key', 'type'],
+          },
+        },
       },
       ['title', 'steps'],
     ),
     execute: async (args) => {
-      const map = { title: String(args.title), steps: args.steps } as ProcessMap
+      const map = {
+        title: String(args.title),
+        steps: args.steps,
+        appliesWhen: args.applies_when,
+        priorityWhen: args.priority_when,
+        sourceWorklogId: args.source_worklog_id ? String(args.source_worklog_id) : undefined,
+        fields: args.fields,
+      } as ProcessMap
       if (!Array.isArray(map.steps) || map.steps.length === 0) {
         return { ok: false, error: 'steps must be a non-empty array' }
       }
       mapstore.proposeMap(map)
-      return { ok: true, rendered: true, note: 'Map is now visible to the human, who may edit it.' }
+      if (map.fields?.length) mapstore.markGapResolved('required_context')
+      return {
+        ok: true,
+        rendered: true,
+        note:
+          'Map is now visible to the human, who may edit it.' +
+          (map.appliesWhen ? '' : ' WARNING: no applies_when set — this playbook will not be auto-suggested later. Set it if the process is tied to entry conditions.'),
+      }
     },
+  },
+  {
+    name: 'update_map_fields',
+    description:
+      "Set or replace the playbook's data contract — the variables that must be captured when following it. Call this after the human answers the required_context question ('which variables must always be recorded?'), translating their answer into typed fields. The next worker gets these as a ready-made form.",
+    inputSchema: schema(
+      {
+        fields: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string' },
+              label: { type: 'string' },
+              type: { type: 'string', enum: ['number', 'string', 'boolean'] },
+              unit: { type: 'string' },
+              required: { type: 'boolean' },
+            },
+            required: ['key', 'type'],
+          },
+        },
+      },
+      ['fields'],
+    ),
+    execute: async (args) => mapstore.setMapFields(args.fields as never),
   },
   {
     name: 'get_process_map',
@@ -145,6 +213,10 @@ const tools: ToolDef[] = [
         action: { type: 'string', description: 'Host action bound to this step for replay' },
         branch_to: { type: 'string', description: 'Target step id of an existing edge to update' },
         branch_condition: { type: 'string', description: 'New condition for that edge' },
+        humanOnly: {
+          type: 'boolean',
+          description: 'Mark the step as inherently manual (no host action can perform it); clears any action binding',
+        },
       },
       ['stepId'],
     ),
@@ -155,6 +227,7 @@ const tools: ToolDef[] = [
           label: args.label === undefined ? undefined : String(args.label),
           detail: args.detail === undefined ? undefined : String(args.detail),
           action: args.action === undefined ? undefined : String(args.action),
+          humanOnly: args.humanOnly === undefined ? undefined : args.humanOnly === true,
         },
         args.branch_to && args.branch_condition
           ? { to: String(args.branch_to), condition: String(args.branch_condition) }
@@ -180,6 +253,11 @@ const tools: ToolDef[] = [
     inputSchema: schema(
       {
         question: { type: 'string' },
+        resolves_gap: {
+          type: 'string',
+          description:
+            "Gap this question resolves once answered, as kind or kind:stepId from get_map_gaps (e.g. \"required_context:s1\") — answered gaps stop being listed.",
+        },
         options: {
           type: 'array',
           description: 'Quick-answer buttons: plain strings, or objects with an executable binding',
@@ -223,9 +301,30 @@ const tools: ToolDef[] = [
             }
           })
         : undefined
-      const answer = await askUser(String(args.question), options)
-      return { answer }
+      const questionId = askUser(
+        String(args.question),
+        options,
+        true,
+        args.resolves_gap ? String(args.resolves_gap) : undefined,
+      )
+      return {
+        questionId,
+        status: 'pending',
+        note: `The question card is now on screen. Humans take time — poll get_question_result with questionId "${questionId}" (their answer also appears in get_recent_actions). Never assume the answer.`,
+      }
     },
+  },
+  {
+    name: 'get_question_result',
+    description: "Check whether the human answered an ask_user question yet. 'pending' means keep waiting — ask something else or check back after your next action.",
+    inputSchema: schema({ questionId: { type: 'string' } }, ['questionId']),
+    execute: async (args) => getQuestionResult(String(args.questionId)),
+  },
+  {
+    name: 'get_action_result',
+    description: "Check the outcome of a run_action call that returned pending_approval: still pending, denied by the human (a normal answer, not an error), or complete with the action's result.",
+    inputSchema: schema({ actionId: { type: 'string' } }, ['actionId']),
+    execute: async (args) => getActionResult(String(args.actionId)),
   },
   {
     name: 'get_process_progress',
@@ -291,7 +390,7 @@ const tools: ToolDef[] = [
       ['stepId', 'resolution'],
     ),
     execute: async (args) =>
-      runHostAction('resolve_deviation', {
+      startHostAction('resolve_deviation', {
         stepId: args.stepId,
         resolution: args.resolution,
         reason: args.reason,
@@ -347,7 +446,7 @@ const tools: ToolDef[] = [
   {
     name: 'run_action',
     description:
-      'Execute one of the host app\'s actions (see describe_workspace) — this is how you replay a confirmed process: walk the map and run each step\'s action, asking the human at decision points. Unless the human enabled auto-approve, each call shows them an approval card first; a denial is a normal answer, not an error.',
+      'Execute one of the host app\'s actions (see describe_workspace) — this is how you replay a confirmed process: walk the map and run each step\'s action, asking the human at decision points. Unless the human enabled auto-approve, the call returns {status:"pending_approval", actionId} while an approval card is shown — poll get_action_result for the outcome; a denial is a normal answer, not an error.',
     inputSchema: schema(
       {
         name: { type: 'string', description: 'Action name from describe_workspace' },
@@ -361,7 +460,7 @@ const tools: ToolDef[] = [
       ['name'],
     ),
     execute: async (args) =>
-      runHostAction(String(args.name), (args.params ?? {}) as Record<string, unknown>, {
+      startHostAction(String(args.name), (args.params ?? {}) as Record<string, unknown>, {
         force: args.force === true,
       }),
   },

@@ -50,7 +50,7 @@ Human and agent share one surface and one login. Understudy computes the
 process state (steps, branches, deviations); WebMCP is the channel through
 which the agent understands it and acts — with the human deciding.
 
-We register 15 tools imperatively via `modelContext.registerTool()` (with
+We register 18 tools imperatively via `modelContext.registerTool()` (with
 `provideContext` fallback), and the second demo page also exposes its form
 through the declarative attribute API.
 
@@ -60,7 +60,7 @@ through the declarative attribute API.
   auto-capture, shadow-DOM side panel, process-map store with a run-state
   machine (done / next / skipped / blocked / conditional / not-applicable),
   branch resolution against live data, pre-execution process guard,
-  session-history retro-linking, and 15 WebMCP tools.
+  session-history retro-linking, and 18 WebMCP tools.
 - **Demo workspace** (React + Vite): a paint-shop incident &
   response log with reviews and a shared playbook library.
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,
