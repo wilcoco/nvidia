@@ -91,7 +91,7 @@ const tools: ToolDef[] = [
   {
     name: 'propose_process_map',
     description:
-      'Draw or replace the draft process map shown beside the human\'s work. Derive it from the journal: one step per meaningful unit of work, "decision" steps where the flow branched, "approval" steps where sign-off happened. Where a step corresponds to a host action, set its "action" field so the process can be replayed later. The human will edit your draft directly — check get_map_edits afterwards.',
+      'Draw or replace the draft process map shown beside the human\'s work. Derive it from the journal: one step per meaningful unit of work, "decision" steps where the flow branched, "approval" steps where sign-off happened. Where a step corresponds to a host action, set its "action" field so the process can be replayed later. Then interview the human with ask_user like a knowledge engineer — what has to happen BEFORE the first step, what must FOLLOW, who gives the FINAL sign-off, under what conditions does the flow branch, what would make an expert deviate — and fold the answers back by re-proposing. Capture judgment rules (thresholds, conditions, the WHY) in each step\'s "detail" field so the playbook carries the expert\'s knowledge, not just the click sequence. The human also edits your draft directly — check get_map_edits afterwards; their edits outrank your inference.',
     inputSchema: schema(
       {
         title: { type: 'string', description: 'Short name of the process' },
