@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Plain Purchase Requests — FlowCatch attach demo</title>
+  <style>
+    body { font-family: Georgia, serif; background: #fffbeb; margin: 0; padding: 24px; color: #333; }
+    .wrap { max-width: 560px; margin-right: 380px; }
+    h1 { font-size: 22px; }
+    p.tag { color: #92400e; font-size: 14px; }
+    form { background: #fff; border: 1px solid #e5e0c8; padding: 16px; margin-bottom: 20px; }
+    label { display: block; margin-bottom: 10px; font-size: 14px; }
+    input, select { padding: 5px; font-size: 14px; margin-left: 6px; }
+    button { padding: 6px 14px; font-size: 14px; }
+    table { border-collapse: collapse; width: 100%; background: #fff; }
+    td, th { border: 1px solid #e5e0c8; padding: 6px 10px; font-size: 14px; text-align: left; }
+  </style>
+  <!-- The whole integration is this one script tag plus the init call below. -->
+  <script src="/flowcatch.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Purchase Requests</h1>
+    <p class="tag">A deliberately plain, unrelated app — no build step, no framework, different styling.
+       FlowCatch is attached with one script tag and still journals the work, so an agent can
+       structure it into a process here too.</p>
+    <form id="pr-form" data-flow-label="purchase request form">
+      <label>Item <input name="item" required placeholder="e.g. cutting oil 20L" /></label>
+      <label>Quantity <input name="qty" type="number" value="1" min="1" /></label>
+      <label>Priority
+        <select name="priority">
+          <option>normal</option>
+          <option>high</option>
+        </select>
+      </label>
+      <button type="submit">Submit request</button>
+    </form>
+    <table id="pr-table">
+      <thead><tr><th>Item</th><th>Qty</th><th>Priority</th><th>Status</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <script>
+    const rows = []
+    FlowCatch.init({
+      appName: 'Plain Purchase Requests',
+      autoCapture: 'full',
+      stateProvider: () => ({ requests: rows }),
+      actions: [{
+        name: 'create_purchase_request',
+        description: 'Add a purchase request row to the table.',
+        params: {
+          item: { type: 'string', required: true },
+          qty: { type: 'number', required: true },
+          priority: { type: 'string', description: 'normal | high' },
+        },
+        handler: (p) => addRow(String(p.item), Number(p.qty), String(p.priority || 'normal')),
+      }],
+    })
+
+    function addRow(item, qty, priority) {
+      const row = { item, qty, priority, status: 'requested' }
+      rows.push(row)
+      const tr = document.createElement('tr')
+      tr.innerHTML = `<td></td><td></td><td></td><td></td>`
+      const cells = tr.querySelectorAll('td')
+      cells[0].textContent = item
+      cells[1].textContent = String(qty)
+      cells[2].textContent = priority
+      cells[3].textContent = row.status
+      document.querySelector('#pr-table tbody').appendChild(tr)
+      return row
+    }
+
+    document.getElementById('pr-form').addEventListener('submit', (e) => {
+      e.preventDefault()
+      const f = new FormData(e.target)
+      addRow(String(f.get('item')), Number(f.get('qty')), String(f.get('priority')))
+      e.target.reset()
+    })
+  </script>
+</body>
+</html>
