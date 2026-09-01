@@ -223,12 +223,34 @@ const tools: ToolDef[] = [
             ...s,
             note: 'On an undecided branch — required only if its condition turns out true. Judge from the branch conditions and page state; ask the human when unsure.',
           })),
+        not_applicable: map.steps
+          .filter((s) => s.naReason && !s.done)
+          .map((s) => ({ id: s.id, label: s.label, reason: s.naReason })),
         suggestedAction: ready?.action ? { name: ready.action } : null,
         branch_conditions: map.steps
           .filter((s) => (s.next?.length ?? 0) > 1)
           .map((s) => ({ at: s.label, branches: s.next })),
       }
     },
+  },
+  {
+    name: 'resolve_deviation',
+    description:
+      'Resolve a skipped or pending step without running its action: mark it "completed" (it was done outside the app) or "not_applicable" for this run, with a reason. Prefer offering this to the human as a run-bound ask_user option — e.g. {"label": "Mark not applicable", "run": {"name": "resolve_deviation", "params": {"stepId": "s1", "resolution": "not_applicable", "reason": "not required for this incident"}}} — so their click applies it directly.',
+    inputSchema: schema(
+      {
+        stepId: { type: 'string', description: 'Step id from get_process_progress' },
+        resolution: { type: 'string', enum: ['completed', 'not_applicable'] },
+        reason: { type: 'string', description: 'Why — recorded in the journal' },
+      },
+      ['stepId', 'resolution'],
+    ),
+    execute: async (args) =>
+      runHostAction('resolve_deviation', {
+        stepId: args.stepId,
+        resolution: args.resolution,
+        reason: args.reason,
+      }),
   },
   {
     name: 'list_saved_processes',

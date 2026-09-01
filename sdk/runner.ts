@@ -16,8 +16,40 @@ export interface RunOutcome {
   note?: string
 }
 
+import type { HostAction } from './types'
+
+/** SDK-built-in actions, runnable like host actions (run_action tool, ask_user run bindings). */
+const BUILTIN_ACTIONS: Record<string, HostAction> = {
+  resolve_deviation: {
+    name: 'resolve_deviation',
+    description:
+      'Resolve a process deviation: mark a skipped/pending step as completed (done outside the app) or as not applicable for this run, with a reason.',
+    params: {
+      stepId: { type: 'string', description: 'Step id from get_process_progress', required: true },
+      resolution: { type: 'string', description: '"completed" or "not_applicable"', required: true },
+      reason: { type: 'string', description: 'Why — recorded in the journal' },
+    },
+    handler: (p) => {
+      const resolution = String(p.resolution)
+      if (resolution !== 'completed' && resolution !== 'not_applicable') {
+        return { error: 'resolution must be "completed" or "not_applicable"' }
+      }
+      return mapstore.resolveDeviation(
+        String(p.stepId),
+        resolution,
+        p.reason ? String(p.reason) : undefined,
+        'user',
+      )
+    },
+  },
+}
+
+function resolveAction(name: string): HostAction | undefined {
+  return host.getAction(name) ?? BUILTIN_ACTIONS[name]
+}
+
 export function preconditionFor(actionName: string): string | null {
-  const action = host.getAction(actionName)
+  const action = resolveAction(actionName)
   if (!action) return `unknown action "${actionName}"`
   return action.precondition?.() ?? null
 }
@@ -25,8 +57,9 @@ export function preconditionFor(actionName: string): string | null {
 export async function runHostAction(
   name: string,
   raw: Record<string, unknown>,
+  opts: { humanInitiated?: boolean } = {},
 ): Promise<RunOutcome> {
-  const action = host.getAction(name)
+  const action = resolveAction(name)
   if (!action) {
     return { ok: false, error: `Unknown action "${name}". Call describe_workspace for the list.` }
   }
@@ -63,10 +96,15 @@ export async function runHostAction(
     }
   }
 
-  if (!isAutoApprove()) {
+  // A human clicking a run-bound option IS the consent for a state-only
+  // builtin like resolve_deviation; real host actions still show the
+  // approval card so the human sees the exact params before they run.
+  const skipGate = opts.humanInitiated && name in BUILTIN_ACTIONS
+  const actor = opts.humanInitiated ? 'user' : 'agent'
+  if (!skipGate && !isAutoApprove()) {
     const approved = await requestApproval(action.name, params)
     if (!approved) {
-      journal.record('agent', 'action', `${action.name} — denied by the human`, params)
+      journal.record(actor, 'action', `${action.name} — denied by the human`, params)
       return { ok: false, denied: true, note: 'The human denied this action.' }
     }
   }
@@ -80,10 +118,10 @@ export async function runHostAction(
         ? String((result as Record<string, unknown>).error)
         : null
     if (errorMsg) {
-      journal.record('agent', 'action', `${action.name} FAILED: ${errorMsg}`, params)
+      journal.record(actor, 'action', `${action.name} FAILED: ${errorMsg}`, params)
       return { ok: false, error: errorMsg }
     }
-    journal.record('agent', 'action', `ran ${action.name}`, params)
+    journal.record(actor, 'action', `ran ${action.name}`, params)
     const resultId =
       result && typeof result === 'object' && 'id' in (result as Record<string, unknown>)
         ? String((result as Record<string, unknown>).id)
@@ -92,7 +130,7 @@ export async function runHostAction(
     return { ok: true, result }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    journal.record('agent', 'action', `${action.name} FAILED: ${msg}`, params)
+    journal.record(actor, 'action', `${action.name} FAILED: ${msg}`, params)
     return { ok: false, error: msg }
   }
 }

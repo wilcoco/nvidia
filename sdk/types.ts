@@ -32,6 +32,8 @@ export interface Step {
   /** Id of the record the step's action produced (e.g. worklogId), captured on success
    *  so later steps can chain their params. */
   resultId?: string
+  /** Set when the step was explicitly resolved as not applicable for this run. */
+  naReason?: string
 }
 
 export interface ProcessMap {

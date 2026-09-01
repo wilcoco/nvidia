@@ -47,6 +47,7 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .step.skipped { border-left: 3px solid #ef4444; }
 .step.conditional { border-left: 3px dotted #64748b; }
 .step.blocked { border-left: 3px solid #f97316; }
+.step.not_applicable { opacity: .5; border-left: 3px dotted #94a3b8; }
 .step input.chk { accent-color: #34d399; flex: none; margin: 0; }
 .step input.chk:disabled { opacity: .4; }
 .chip { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; flex: none; }
@@ -54,6 +55,7 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 .chip.skipped { background: #ef4444; color: #fff; }
 .chip.conditional { background: #334155; color: #94a3b8; }
 .chip.blocked { background: #f97316; color: #431407; }
+.chip.na { background: #475569; color: #cbd5e1; }
 .step .blocked-reason { color: #fdba74; font-size: 10px; margin-top: 3px; }
 .step .row { display: flex; align-items: center; gap: 6px; }
 .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex: none; }
@@ -167,6 +169,7 @@ function renderStep(
   if (status === 'skipped') row.appendChild(el('span', 'chip skipped', 'SKIPPED'))
   if (status === 'conditional') row.appendChild(el('span', 'chip conditional', 'IF'))
   if (status === 'blocked') row.appendChild(el('span', 'chip blocked', 'BLOCKED'))
+  if (status === 'not_applicable') row.appendChild(el('span', 'chip na', 'N/A'))
 
   const label = el('span', 'label', step.label)
   label.title = 'Click to rename'
@@ -202,6 +205,7 @@ function renderStep(
 
   card.appendChild(row)
   if (step.detail) card.appendChild(el('div', 'detail', step.detail))
+  if (step.naReason) card.appendChild(el('div', 'detail', `N/A: ${step.naReason}`))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
   if (status === 'blocked' && step.action) {
     const reason = preconditionFor(step.action)
@@ -284,7 +288,7 @@ function render() {
             // the agent the real outcome instead of just the button label.
             b.disabled = true
             b.textContent = `${o.label}…`
-            const outcome = await runHostAction(o.run.name, o.run.params ?? {})
+            const outcome = await runHostAction(o.run.name, o.run.params ?? {}, { humanInitiated: true })
             ask.resolve(
               outcome.ok
                 ? `${o.label} — executed ${o.run.name} successfully`

@@ -94,7 +94,11 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string 
 
 /** Load a process someone saved earlier (already confirmed). Completion state starts fresh. */
 export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
-  map = { ...loaded, confirmed: true, steps: loaded.steps.map((s) => ({ ...s, done: false })) }
+  map = {
+    ...loaded,
+    confirmed: true,
+    steps: loaded.steps.map((s) => ({ ...s, done: false, naReason: undefined, resultId: undefined })),
+  }
   record(
     'agent',
     'map',
@@ -125,7 +129,37 @@ export function humanToggleStepDone(stepId: string): void {
   notify()
 }
 
-export type StepStatus = 'done' | 'ready' | 'skipped' | 'pending' | 'conditional' | 'blocked'
+export type StepStatus =
+  | 'done'
+  | 'ready'
+  | 'skipped'
+  | 'pending'
+  | 'conditional'
+  | 'blocked'
+  | 'not_applicable'
+
+/** Resolve a deviation: mark a step done, or excuse it with a reason. */
+export function resolveDeviation(
+  stepId: string,
+  resolution: 'completed' | 'not_applicable',
+  reason?: string,
+  by: 'user' | 'agent' = 'user',
+): { stepId: string; label: string; resolution: string } {
+  if (!map) throw new Error('no process is loaded')
+  const step = map.steps.find((s) => s.id === stepId)
+  if (!step) throw new Error(`unknown step "${stepId}" — see get_process_map for step ids`)
+  if (resolution === 'completed') {
+    step.done = true
+    delete step.naReason
+    record(by, 'map', `resolved step "${step.label}" as completed${reason ? ` — ${reason}` : ''}`)
+  } else {
+    step.naReason = reason || 'marked not applicable'
+    record(by, 'map', `marked step "${step.label}" not applicable — ${step.naReason}`)
+  }
+  pushEdit({ stepId, field: 'resolution', to: resolution })
+  notify()
+  return { stepId, label: step.label, resolution }
+}
 
 /** Steps that sit on only some branches out of a decision — they may legitimately
  *  never run, so they are never called 'skipped' until they actually happen. */
@@ -164,12 +198,14 @@ export function progress(
   if (!map?.confirmed) return statuses
   const conditional = conditionalStepIds(map.steps)
   const actionable = map.steps.filter((s) => s.type !== 'decision')
-  const lastDoneIdx = actionable.reduce((acc, s, i) => (s.done ? i : acc), -1)
+  // Not-applicable steps count as handled for ordering purposes.
+  const lastHandledIdx = actionable.reduce((acc, s, i) => (s.done || s.naReason ? i : acc), -1)
   let gateAssigned = false
   actionable.forEach((s, i) => {
     if (s.done) statuses.set(s.id, 'done')
+    else if (s.naReason) statuses.set(s.id, 'not_applicable')
     else if (conditional.has(s.id)) statuses.set(s.id, 'conditional')
-    else if (i < lastDoneIdx) statuses.set(s.id, 'skipped')
+    else if (i < lastHandledIdx) statuses.set(s.id, 'skipped')
     else if (!gateAssigned) {
       const reason = s.action && preconditionFor ? preconditionFor(s.action) : null
       statuses.set(s.id, reason ? 'blocked' : 'ready')
