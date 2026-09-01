@@ -93,7 +93,7 @@ const tools: ToolDef[] = [
   {
     name: 'propose_process_map',
     description:
-      'Draw or replace the draft process map shown beside the human\'s work. Derive it from the journal: one step per meaningful unit of work, "decision" steps where the flow branched, "approval" steps where sign-off happened. Where a step corresponds to a host action, set its "action" field so the process can be replayed later. Then interview the human with ask_user like a knowledge engineer — what has to happen BEFORE the first step, what must FOLLOW, who gives the FINAL sign-off, under what conditions does the flow branch, what would make an expert deviate — and fold the answers back by re-proposing. Capture judgment rules (thresholds, conditions, the WHY) in each step\'s "detail" field so the playbook carries the expert\'s knowledge, not just the click sequence. The human also edits your draft directly — check get_map_edits afterwards; their edits outrank your inference.',
+      'Draw or replace the draft process map shown beside the human\'s work. Derive it from the journal: one step per meaningful unit of work, "decision" steps where the flow branched, "approval" steps where sign-off happened. Where a step corresponds to a host action, set its "action" field so the process can be replayed later. Then call get_map_gaps for the interview agenda and question the human with ask_user like a knowledge engineer — what has to happen BEFORE the first step, what must FOLLOW, who gives the FINAL sign-off, under what conditions does the flow branch, what would make an expert deviate — and fold the answers back via update_step or a re-propose. Capture judgment rules (thresholds, conditions, the WHY) in each step\'s "detail" field so the playbook carries the expert\'s knowledge, not just the click sequence. The human also edits your draft directly — check get_map_edits afterwards; their edits outrank your inference.',
     inputSchema: schema(
       {
         title: { type: 'string', description: 'Short name of the process' },
@@ -116,6 +116,22 @@ const tools: ToolDef[] = [
       'The current process map, including any edits the human made (renames, type changes, removed steps, branch conditions) and whether they confirmed it. On a confirmed map each step carries a "done" flag (auto-set when its action runs, or checked off by the human) — use it to spot skipped steps and warn the human: if a later step is done while an earlier required step is not, the process is being violated.',
     inputSchema: schema(),
     execute: async () => mapstore.getMap() ?? { exists: false },
+  },
+  {
+    name: 'get_map_gaps',
+    description:
+      "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
+    inputSchema: schema(),
+    execute: async () => {
+      const gaps = mapstore.mapGaps()
+      return {
+        gaps,
+        note:
+          gaps.length === 0
+            ? 'No map yet — propose one first.'
+            : 'Ask the 2-3 most important questions via ask_user; the human may also just edit the map directly (watch get_map_edits).',
+      }
+    },
   },
   {
     name: 'update_step',

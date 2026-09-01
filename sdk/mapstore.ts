@@ -196,6 +196,75 @@ export function humanToggleStepDone(stepId: string): void {
   notify()
 }
 
+export interface MapGap {
+  kind: 'before' | 'after' | 'branch_condition' | 'final_signoff' | 'judgment' | 'replay_binding'
+  stepId?: string
+  step?: string
+  suggested_question?: string
+  note?: string
+}
+
+/** What the current map does NOT yet know — the interview agenda for the agent. */
+export function mapGaps(): MapGap[] {
+  if (!map) return []
+  const gaps: MapGap[] = []
+  const actionable = map.steps.filter((s) => s.type !== 'decision')
+  const first = actionable[0]
+  if (first) {
+    gaps.push({
+      kind: 'before',
+      stepId: first.id,
+      step: first.label,
+      suggested_question: `Before "${first.label}" — is there anything that must happen first (stopping the line, notifying someone, a check)?`,
+    })
+  }
+  const last = map.steps.find((s) => !s.next || s.next.length === 0)
+  if (last) {
+    gaps.push({
+      kind: 'after',
+      stepId: last.id,
+      step: last.label,
+      suggested_question: `After "${last.label}" — does anything follow (a report, cleanup, verification, restart)?`,
+    })
+  }
+  for (const d of map.steps) {
+    for (const e of d.next ?? []) {
+      if ((d.next?.length ?? 0) > 1 && !e.condition) {
+        const target = map.steps.find((s) => s.id === e.to)
+        gaps.push({
+          kind: 'branch_condition',
+          stepId: d.id,
+          step: d.label,
+          suggested_question: `When exactly does the flow go from "${d.label}" to "${target?.label ?? e.to}"? What decides it?`,
+        })
+      }
+    }
+  }
+  if (!map.steps.some((s) => s.type === 'approval')) {
+    gaps.push({
+      kind: 'final_signoff',
+      suggested_question: 'Who gives the final sign-off for this process, and at which point?',
+    })
+  }
+  for (const s of actionable.filter((x) => !x.detail).slice(0, 3)) {
+    gaps.push({
+      kind: 'judgment',
+      stepId: s.id,
+      step: s.label,
+      suggested_question: `What rule or threshold guides "${s.label}"? What would an expert check, and when would they deviate?`,
+    })
+  }
+  for (const s of actionable.filter((x) => !x.action)) {
+    gaps.push({
+      kind: 'replay_binding',
+      stepId: s.id,
+      step: s.label,
+      note: 'No host action bound — the agent cannot replay this step. If a matching action exists (see describe_workspace), bind it via update_step; otherwise it stays a human-only step.',
+    })
+  }
+  return gaps
+}
+
 /** Would running this action now jump past required, not-yet-done steps? */
 export function prerequisiteGap(actionName: string): { target: string; missing: string[] } | null {
   if (!map?.confirmed) return null

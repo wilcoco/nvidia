@@ -108,6 +108,7 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags. |
 | `get_process_progress` | Run-state of the loaded process: done / next-up / skipped steps, plus a suggested next action — the missed-step coach. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
+| `get_map_gaps` | The interview agenda: what the map does not yet know — missing before/after steps, undecided branches, no sign-off, steps without judgment rules. |
 | `update_step` | Refine one step in place — the agent writes the human's explained judgment rules into step notes. |
 | `ask_user` | In-page question card; resolves with the human's answer. Options can carry a `run` binding that executes an action on the human's click. |
 | `resolve_deviation` | Mark a skipped step completed-outside-the-app or not-applicable, with a reason. |
