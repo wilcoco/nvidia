@@ -331,7 +331,7 @@ function VerificationBlock({ w }: { w: store.Worklog }) {
   })
   return (
     <div className="note verify-note">
-      ✅ Verified (passed criteria{w.data.verifiedAt ? `, ${new Date(w.data.verifiedAt).toLocaleTimeString()}` : ''}): {rows}
+      ✅ Verified (passed criteria{w.data.verifiedAt ? `, ${new Date(w.data.verifiedAt).toLocaleTimeString('en-US')}` : ''}): {rows}
     </div>
   )
 }
@@ -463,7 +463,7 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
       {runs.map((r) => (
         <div key={r.id} className="run-row">
           <div className="meta">
-            Run #{r.id} · by {r.startedBy} · {new Date(r.startedAt).toLocaleString()} ·{' '}
+            Run #{r.id} · by {r.startedBy} · {new Date(r.startedAt).toLocaleString('en-US')} ·{' '}
             <span className={`status ${r.status === 'completed' ? 'approved' : 'submitted'}`}>
               {r.status}
             </span>
@@ -482,9 +482,20 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
   )
 }
 
+function latestPerTitle(processes: store.ProcessSummary[]): store.ProcessSummary[] {
+  const latest = new Map<string, store.ProcessSummary>()
+  for (const p of processes) {
+    const cur = latest.get(p.title)
+    if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
+  }
+  return [...latest.values()].sort((a, b) => Number(b.id) - Number(a.id))
+}
+
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
   const [runs, setRuns] = useState<store.ProcessRun[]>([])
+  const visible = latestPerTitle(state.processes)
+  const historyCount = (title: string) => state.processes.filter((p) => p.title === title).length - 1
 
   const open = async (id: string) => {
     const p = await store.getProcess(id)
@@ -506,7 +517,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
   return (
     <div className="proc-layout">
       <div className="list">
-        {state.processes.map((p) => (
+        {visible.map((p) => (
           <button
             key={p.id}
             className={`card proc-item ${selected?.id === p.id ? 'selected' : ''}`}
@@ -517,7 +528,8 @@ function PlaybookList({ state }: { state: store.AppState }) {
             </span>
             <span className="meta">
               by {state.users.find((u) => u.username === p.createdBy)?.name ?? p.createdBy} ·{' '}
-              {new Date(p.createdAt).toLocaleDateString()}
+              {new Date(p.createdAt).toLocaleDateString('en-US')}
+              {historyCount(p.title) > 0 && ` · ${historyCount(p.title)} earlier version(s) in history`}
             </span>
           </button>
         ))}
@@ -629,7 +641,9 @@ export default function App() {
           Reviews{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
         </button>
         <button className={tab === 'playbooks' ? 'active' : ''} onClick={() => setTab('playbooks')}>
-          Playbooks{state.processes.length > 0 && <span className="pill blue">{state.processes.length}</span>}
+          Playbooks{state.processes.length > 0 && (
+            <span className="pill blue">{latestPerTitle(state.processes).length}</span>
+          )}
         </button>
       </nav>
 
