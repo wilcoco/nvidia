@@ -361,8 +361,20 @@ export interface MapGap {
     | 'pass_criteria'
   stepId?: string
   step?: string
-  suggested_question?: string
+  /** What the question should find out — the agent writes the actual wording. */
+  question_goal?: string
+  /** The concrete information still missing. */
+  missing_information?: string[]
+  /** Generic wording — ONLY for when the domain cannot be inferred at all.
+   *  Never show this text to the human when the workspace/entry reveals the domain. */
+  fallback_question?: string
   note?: string
+}
+
+let lastFallbacks: string[] = []
+/** Fallback wordings from the last gap computation — used to detect verbatim reuse. */
+export function knownFallbackQuestions(): string[] {
+  return lastFallbacks
 }
 
 /** What the current map does NOT yet know — the interview agenda for the agent. */
@@ -376,19 +388,25 @@ export function mapGaps(): MapGap[] {
       kind: 'before',
       stepId: first.id,
       step: first.label,
-      suggested_question: `Before "${first.label}" — is there anything that must happen first (a safety or prerequisite step, notifying someone, a check)?`,
+      question_goal: `Find out whether anything must happen before "${first.label}"`,
+      missing_information: ['prerequisite steps', 'notifications', 'readiness or safety checks'],
+      fallback_question: `Before "${first.label}" — is there anything that must happen first?`,
     })
     gaps.push({
       kind: 'required_context',
       stepId: first.id,
       step: first.label,
-      suggested_question: `When logging "${first.label}" — which variables or readings must always be captured (measurements, settings, conditions)? I'll note them on the step so nothing gets missed.`,
+      question_goal: `Identify the variables or values that must always be captured when doing "${first.label}"`,
+      missing_information: ['required fields', 'measurements or values', 'their types and units'],
+      fallback_question: `Which values must always be recorded for "${first.label}"?`,
     })
     gaps.push({
       kind: 'precursors',
       stepId: first.id,
       step: first.label,
-      suggested_question: `Are there early signs that usually precede this situation — things an experienced person would notice before it becomes a problem? I'll record them so the playbook helps people catch it sooner.`,
+      question_goal: 'Identify early signs an experienced person notices before this situation becomes a problem',
+      missing_information: ['early warning signs', 'what to watch or check'],
+      fallback_question: 'Are there early signs that usually precede this situation?',
     })
   }
   const last = map.steps.find((s) => !s.next || s.next.length === 0)
@@ -397,7 +415,9 @@ export function mapGaps(): MapGap[] {
       kind: 'after',
       stepId: last.id,
       step: last.label,
-      suggested_question: `After "${last.label}" — does anything follow (a report, a verification, a hand-off, a follow-up task)?`,
+      question_goal: `Find out what follows "${last.label}"`,
+      missing_information: ['reports', 'verification', 'hand-off or follow-up tasks'],
+      fallback_question: `After "${last.label}" — does anything follow?`,
     })
   }
   for (const d of map.steps) {
@@ -408,7 +428,9 @@ export function mapGaps(): MapGap[] {
           kind: 'branch_condition',
           stepId: d.id,
           step: d.label,
-          suggested_question: `When exactly does the flow go from "${d.label}" to "${target?.label ?? e.to}"? What decides it?`,
+          question_goal: `Determine what decides the flow from "${d.label}" to "${target?.label ?? e.to}"`,
+          missing_information: ['the deciding condition', 'thresholds if any'],
+          fallback_question: `When does the flow go from "${d.label}" to "${target?.label ?? e.to}"?`,
         })
       }
     }
@@ -416,7 +438,9 @@ export function mapGaps(): MapGap[] {
   if (!map.steps.some((s) => s.type === 'approval')) {
     gaps.push({
       kind: 'final_signoff',
-      suggested_question: 'Who gives the final sign-off for this process, and at which point?',
+      question_goal: 'Identify who gives the final sign-off, at which point, and on what conditions',
+      missing_information: ['approver (role or person)', 'approval point in the flow', 'approval conditions'],
+      fallback_question: 'Who gives the final sign-off for this process, and at which point?',
     })
   }
   for (const s of actionable.filter((x) => !x.detail).slice(0, 3)) {
@@ -424,7 +448,9 @@ export function mapGaps(): MapGap[] {
       kind: 'judgment',
       stepId: s.id,
       step: s.label,
-      suggested_question: `What rule or threshold guides "${s.label}"? What would an expert check, and when would they deviate?`,
+      question_goal: `Capture the rule or threshold that guides "${s.label}"`,
+      missing_information: ['the rule or threshold', 'what an expert checks', 'when they would deviate'],
+      fallback_question: `What rule or threshold guides "${s.label}"?`,
     })
   }
   for (const s of actionable.filter((x) => !x.action && !x.humanOnly)) {
@@ -452,6 +478,7 @@ export function mapGaps(): MapGap[] {
     }
   }
   const resolved = new Set(map.resolvedGaps ?? [])
+  lastFallbacks = gaps.map((g) => g.fallback_question).filter((q): q is string => !!q)
   return gaps.filter((g) => !resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind))
 }
 

@@ -57,32 +57,24 @@ window.Understudy.init({
     {
       name: 'log_work_item',
       description:
-        'Create a work log entry (as the active persona): what was done or observed, its category, and any structured readings/values. Returns the new entry including its id.',
+        'Create a work log entry (as the active persona): what was done or observed, its category, and any structured values. When a playbook with a fields contract is loaded, pass those fields as additional params — they are stored on the entry. Returns the new entry including its id.',
       params: {
         date: { type: 'string', description: 'YYYY-MM-DD', required: true },
         line: { type: 'string', description: 'Area, "A" or "B"', required: true },
         kind: {
           type: 'string',
           description:
-            'Category: routine log | orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault (this demo workspace ships paint-shop categories; routine log fits any general work)',
+            'Category: routine log fits any general work; this demo workspace also ships paint-shop defect categories (orange peel | sagging / runs | dust inclusion | color mismatch | equipment fault)',
           required: true,
         },
         task: { type: 'string', description: 'What was done or observed, one line', required: true },
         urgent: { type: 'boolean', description: 'Blocked / needs the reviewer immediately' },
-        viscosity: { type: 'number', description: 'Paint viscosity in seconds, e.g. 18.5' },
-        boothTemp: { type: 'number', description: 'Booth temperature °C' },
-        sprayPressure: { type: 'number', description: 'Spray pressure in bar' },
-        colorChange: { type: 'boolean', description: 'Occurred right after a color change' },
-        actionTaken: { type: 'string', description: 'Corrective action taken, if any' },
         hours: { type: 'number', description: 'Time spent (default 0.5)' },
       },
       handler: (p) => {
-        // Playbook-specific fields (belt deflection, axis temperature, …) arrive
-        // as extra params — keep them as structured data on the entry.
-        const known = new Set([
-          'date', 'line', 'kind', 'task', 'urgent', 'viscosity', 'boothTemp',
-          'sprayPressure', 'colorChange', 'actionTaken', 'hours',
-        ])
+        // Domain-specific values (a loaded playbook's fields contract, or any
+        // structured readings) arrive as extra params and are stored on the entry.
+        const known = new Set(['date', 'line', 'kind', 'task', 'urgent', 'hours'])
         const extras = Object.fromEntries(Object.entries(p).filter(([k]) => !known.has(k)))
         return store.createWorklog({
           date: String(p.date),
@@ -92,14 +84,7 @@ window.Understudy.init({
           note: '',
           urgent: Boolean(p.urgent),
           kind: String(p.kind),
-          data: {
-            viscosity: p.viscosity === undefined ? undefined : Number(p.viscosity),
-            boothTemp: p.boothTemp === undefined ? undefined : Number(p.boothTemp),
-            sprayPressure: p.sprayPressure === undefined ? undefined : Number(p.sprayPressure),
-            colorChange: Boolean(p.colorChange),
-            actionTaken: p.actionTaken ? String(p.actionTaken) : undefined,
-            ...extras,
-          },
+          data: extras as store.IncidentData,
         })
       },
     },
@@ -111,15 +96,11 @@ window.Understudy.init({
         worklogId: { type: 'string', description: 'The entry being updated', required: true },
         actionTaken: { type: 'string', description: 'What was done for this step', required: true },
         result: { type: 'string', description: 'Outcome/verification summary' },
-        viscosity: { type: 'number', description: '(paint demo) new viscosity after adjustment' },
-        testPanelResult: { type: 'string', description: '(paint demo) pass | fail | notes' },
       },
       handler: (p) =>
         store.recordCorrectiveAction(String(p.worklogId), {
           actionTaken: String(p.actionTaken),
           result: p.result ? String(p.result) : undefined,
-          viscosity: p.viscosity === undefined ? undefined : Number(p.viscosity),
-          testPanelResult: p.testPanelResult ? String(p.testPanelResult) : undefined,
         }),
       precondition: () =>
         store.getState().worklogs.length > 0 ? null : 'no work log entry exists yet — log the work item first',

@@ -44,7 +44,7 @@ const STEP_SCHEMA = {
           criteria: {
             type: 'object',
             description:
-              'Machine-checkable pass criteria from the sign-off interview, e.g. {"axisTemperature": {"lt": 55}, "alarmActive": {"eq": false}, "dryCyclesPassed": {"gte": 3}}. resolve_decision verifies measurements against these server-side — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
+              'Machine-checkable pass criteria from the sign-off interview, e.g. {"testPassRate": {"gte": 100}, "openCriticalIssues": {"eq": 0}} or {"contrastRatio": {"gte": 4.5}, "rollbackReady": {"eq": true}}. resolve_decision verifies measurements against these server-side — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
           },
         },
         required: ['to'],
@@ -106,7 +106,7 @@ const tools: ToolDef[] = [
         applies_when: {
           type: 'object',
           description:
-            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry — find_relevant_processes' entering_now shows which keys this app matches on. Add finer keys when the human names them (equipment, subsystem, symptom), and ALWAYS a \"keywords\" array of 3-6 distinctive words from the work itself (e.g. {\"kind\": \"routine log\", \"keywords\": [\"filter\", \"pressure\", \"replacement\"], \"equipment\": \"booth-filter\"}) — a generic kind alone (routine log) scores only ~30% and will not surface as a suggestion; keywords matched in the live text are what raise it. Without applies_when the playbook can never be auto-suggested to the next worker.",
+            "REQUIRED when creating from a live entry: the structured conditions under which this playbook applies, copied from the entry — find_relevant_processes' entering_now shows which keys this app matches on. Add finer keys when the human names them (e.g. team, artifact, system), and ALWAYS a \"keywords\" array of 3-6 distinctive words from the work itself (e.g. keywords [\"hotfix\", \"latency\", \"rollback\"] or [\"handoff\", \"contrast\", \"accessibility\"]) — a generic kind alone (routine log) scores only ~30% and will not surface as a suggestion; keywords matched in the live text are what raise it. Without applies_when the playbook can never be auto-suggested to the next worker.",
         },
         priority_when: {
           type: 'object',
@@ -123,7 +123,7 @@ const tools: ToolDef[] = [
           items: {
             type: 'object',
             properties: {
-              key: { type: 'string', description: 'camelCase key, e.g. vibrationLevel' },
+              key: { type: 'string', description: 'camelCase key, e.g. contrastRatio, testPassRate' },
               label: { type: 'string' },
               type: { type: 'string', enum: ['number', 'string', 'boolean'] },
               unit: { type: 'string' },
@@ -193,7 +193,7 @@ const tools: ToolDef[] = [
   {
     name: 'get_map_gaps',
     description:
-      "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. IMPORTANT: phrase each question YOURSELF in this app's own domain language — you know the domain from describe_workspace, the journal and the entry text; suggested_question is a generic fallback, not copy to show the human. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
+      "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. IMPORTANT: each gap gives you question_goal + missing_information — write the actual question YOURSELF in this app's own domain language (you know the domain from describe_workspace, the journal and the entry text). fallback_question exists only for when the domain is truly unknown; ask_user rejects it verbatim. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
     inputSchema: schema(),
     execute: async () => {
       if (!mapstore.getMap()) return { gaps: [], note: 'No map yet — propose one first.' }
@@ -222,7 +222,7 @@ const tools: ToolDef[] = [
         branch_criteria: {
           type: 'object',
           description:
-            'Machine-checkable criteria for that edge, e.g. {"postPressure": {"gte": 120, "lte": 160}, "sealLeak": {"eq": false}} — resolve_decision then verifies measurements against them server-side. ALWAYS encode thresholds the human states.',
+            'Machine-checkable criteria for that edge, e.g. {"testPassRate": {"gte": 100}} or {"contrastRatio": {"gte": 4.5}, "openCriticalIssues": {"eq": 0}} — resolve_decision then verifies measurements against them server-side. ALWAYS encode thresholds the human states.',
         },
         humanOnly: {
           type: 'boolean',
@@ -304,6 +304,16 @@ const tools: ToolDef[] = [
       ['question'],
     ),
     execute: async (args) => {
+      const q = String(args.question ?? '').trim().toLowerCase()
+      const parroted = mapstore
+        .knownFallbackQuestions()
+        .some((f) => f.length > 25 && (q === f.toLowerCase() || q.includes(f.toLowerCase())))
+      if (parroted) {
+        return {
+          error: 'generic_question_detected',
+          note: 'That is the generic fallback wording. Rewrite the question in this workspace\'s own language, using the current entry and app context (describe_workspace, the journal, the entry text) — then call ask_user again.',
+        }
+      }
       const options: AskOption[] | undefined = Array.isArray(args.options)
         ? args.options.map((o): AskOption => {
             if (typeof o === 'string') return { label: o }
@@ -423,7 +433,7 @@ const tools: ToolDef[] = [
   {
     name: 'resolve_decision',
     description:
-      'Record the outcome of a branching step: which edge was taken and why. REQUIRED before moving past a step with branches — get_process_progress will not offer anything beyond an unresolved decision. If the chosen edge carries criteria, you MUST pass structured measurements ({"axisTemperature": 52, "alarmActive": false, "dryCyclesPassed": 3}); the engine verifies them and REFUSES the branch on any violation (evidence_conflict) — then ask the human whether the measurements are wrong or whether to take the failure branch, never how to override. Choosing a loop-back branch re-opens those steps.',
+      'Record the outcome of a branching step: which edge was taken and why. REQUIRED before moving past a step with branches — get_process_progress will not offer anything beyond an unresolved decision. If the chosen edge carries criteria, you MUST pass structured measurements (e.g. {"testPassRate": 100, "openCriticalIssues": 0} or {"contrastRatio": 4.7, "approvalsReceived": 4}); the engine verifies them and REFUSES the branch on any violation (evidence_conflict) — then ask the human whether the measurements are wrong or whether to take the failure branch, never how to override. Choosing a loop-back branch re-opens those steps.',
     inputSchema: schema(
       {
         stepId: { type: 'string' },
@@ -432,7 +442,7 @@ const tools: ToolDef[] = [
         evidence: { type: 'string', description: 'Free-text context (optional)' },
         measurements: {
           type: 'object',
-          description: 'Structured measured values checked against the edge criteria, e.g. {"axisTemperature": 52, "vibrationPresent": false, "dryCyclesPassed": 3}',
+          description: 'Structured measured values checked against the edge criteria, e.g. {"testPassRate": 100, "openCriticalIssues": 0, "rollbackReady": true}',
         },
       },
       ['stepId', 'branchTo', 'reason'],

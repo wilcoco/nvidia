@@ -34,7 +34,7 @@ const BUILTIN_ACTIONS: Record<string, HostAction> = {
       stepId: { type: 'string', description: 'The branching step (has multiple next edges)', required: true },
       branchTo: { type: 'string', description: 'Target step id of the chosen edge', required: true },
       reason: { type: 'string', description: 'Why this branch — cite the branch condition', required: true },
-      evidence: { type: 'string', description: 'Measured values backing the choice, e.g. "axis temp 52°C, 3/3 dry cycles clean"' },
+      evidence: { type: 'string', description: 'Context backing the choice, in the workspace\'s own terms' },
     },
     handler: (p) =>
       mapstore.resolveDecision(
