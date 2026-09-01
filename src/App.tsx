@@ -5,8 +5,15 @@ function today(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-const GENERAL_TYPES = ['routine log']
-const PAINT_DEMO_TYPES = ['orange peel', 'sagging / runs', 'dust inclusion', 'color mismatch', 'equipment fault']
+const WORK_CATEGORIES = [
+  'routine work',
+  'planning',
+  'development',
+  'design',
+  'operations',
+  'review',
+  'incident',
+]
 
 function Login() {
   // Pre-filled with the reviewer account so judges can sign in with one click.
@@ -97,13 +104,8 @@ function SuggestionCard() {
 function IncidentForm() {
   const [date, setDate] = useState(today())
   const [line, setLine] = useState('A')
-  const [kind, setKind] = useState('routine log')
+  const [kind, setKind] = useState('routine work')
   const [task, setTask] = useState('')
-  const [viscosity, setViscosity] = useState('')
-  const [boothTemp, setBoothTemp] = useState('')
-  const [sprayPressure, setSprayPressure] = useState('')
-  const [colorChange, setColorChange] = useState(false)
-  const [actionTaken, setActionTaken] = useState('')
   const [hours, setHours] = useState(0.5)
   const [urgent, setUrgent] = useState(false)
   // The loaded playbook's data contract (defined via interview) renders as a
@@ -128,12 +130,11 @@ function IncidentForm() {
   useEffect(() => {
     store.setDraftContext({
       kind,
-      colorChange,
       urgent,
       task,
-      hasInput: task.trim().length > 0 || colorChange || urgent,
+      hasInput: task.trim().length > 0 || urgent || kind !== 'routine work',
     })
-  }, [kind, colorChange, urgent, task])
+  }, [kind, urgent, task])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -147,11 +148,6 @@ function IncidentForm() {
       urgent,
       kind,
       data: {
-        viscosity: viscosity === '' ? undefined : Number(viscosity),
-        boothTemp: boothTemp === '' ? undefined : Number(boothTemp),
-        sprayPressure: sprayPressure === '' ? undefined : Number(sprayPressure),
-        colorChange,
-        actionTaken: actionTaken.trim() || undefined,
         ...Object.fromEntries(
           playbookFields
             .map((f) => {
@@ -166,15 +162,9 @@ function IncidentForm() {
     })
     setFieldValues({})
     setTask('')
-    setActionTaken('')
     setUrgent(false)
-    setColorChange(false)
-    setViscosity('')
-    setBoothTemp('')
-    setSprayPressure('')
   }
 
-  const isRoutine = kind === 'routine log'
   return (
     <form className="card form" onSubmit={submit} data-flow-label="incident report">
       <h3>Write a work log</h3>
@@ -193,14 +183,9 @@ function IncidentForm() {
         <label className="wide">
           Type
           <select value={kind} onChange={(e) => setKind(e.target.value)}>
-            {GENERAL_TYPES.map((t) => (
+            {WORK_CATEGORIES.map((t) => (
               <option key={t}>{t}</option>
             ))}
-            <optgroup label="paint-shop demo scenario">
-              {PAINT_DEMO_TYPES.map((t) => (
-                <option key={t}>{t}</option>
-              ))}
-            </optgroup>
           </select>
         </label>
         <label className="wide wide4">
@@ -208,29 +193,9 @@ function IncidentForm() {
           <input
             value={task}
             onChange={(e) => setTask(e.target.value)}
-            placeholder={
-              isRoutine
-                ? 'e.g. Completed the release checklist review and follow-ups'
-                : 'e.g. Orange peel on hoods after switching to matte gray'
-            }
+            placeholder="e.g. Completed the release checklist review and follow-ups"
           />
         </label>
-        {!isRoutine && (
-          <>
-            <label>
-              Viscosity (s)
-              <input type="number" step={0.1} value={viscosity} onChange={(e) => setViscosity(e.target.value)} placeholder="18.5" />
-            </label>
-            <label>
-              Booth temp (°C)
-              <input type="number" step={0.5} value={boothTemp} onChange={(e) => setBoothTemp(e.target.value)} placeholder="23" />
-            </label>
-            <label>
-              Spray (bar)
-              <input type="number" step={0.1} value={sprayPressure} onChange={(e) => setSprayPressure(e.target.value)} placeholder="2.4" />
-            </label>
-          </>
-        )}
         <label>
           Hours
           <input type="number" min={0} step={0.5} value={hours} onChange={(e) => setHours(Number(e.target.value))} />
@@ -266,29 +231,13 @@ function IncidentForm() {
             </div>
           </div>
         )}
-        {!isRoutine && (
-        <label className="wide wide4">
-          Action taken
-          <input
-            value={actionTaken}
-            onChange={(e) => setActionTaken(e.target.value)}
-            placeholder="e.g. Reduced viscosity to 17s, test panel sprayed"
-          />
-        </label>
-        )}
-        {!isRoutine && (
-        <label className="check">
-          <input type="checkbox" checked={colorChange} onChange={(e) => setColorChange(e.target.checked)} />
-          Right after a color change
-        </label>
-        )}
         <label className="check">
           <input type="checkbox" checked={urgent} onChange={(e) => setUrgent(e.target.checked)} />
           Urgent — blocked / needs reviewer now
         </label>
       </div>
       <button type="submit" className="primary">
-        {isRoutine ? 'Save work log' : 'Save incident log'}
+        Save work log
       </button>
     </form>
   )

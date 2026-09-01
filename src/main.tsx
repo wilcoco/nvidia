@@ -64,7 +64,7 @@ window.Understudy.init({
         kind: {
           type: 'string',
           description:
-            "Category: 'routine log' fits any general work (default). The paint-shop defect categories exist only for this workspace's demo scenario.",
+            "Category: routine work (default) | planning | development | design | operations | review | incident",
           required: true,
         },
         task: { type: 'string', description: 'What was done or observed, one line', required: true },

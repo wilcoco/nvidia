@@ -12,8 +12,12 @@ skipped steps before they happen, and executes fixes with human approval.
 
 ## What it does
 
-Ask ChatGPT, on any Understudy-enabled page: *"Work along this incident with
-me, following our process."* The agent reads the page's structured state,
+Understudy works with an active WebMCP agent session — you invite the agent
+once ("work along this with me"), and from then on it reads, asks and acts on
+the same page; the playbook-suggestion cards and the live NEXT/SKIPPED map
+colors are page-side and always on, agent or not. Ask ChatGPT, on any
+Understudy-enabled page: *"Work along this incident with me, following our
+process."* The agent reads the page's structured state,
 finds the matching playbook (with confidence and reasons), and joins the run:
 
 - **Capture** — while an expert handles a paint-shop defect, the agent reads
@@ -32,7 +36,8 @@ finds the matching playbook (with confidence and reasons), and joins the run:
   one-click fixes (executable ask-cards), and proceeds only with human
   approval — or an explicit human override.
 - **Remember** — every execution persists as a run record (who, when, which
-  steps, deviations); confirmed improvements save as new playbook versions.
+  steps, deviations). Improvement stays human-verified: the agent proposes a
+  revision from what the runs show, and confirming it saves a new version.
 
 ## Why WebMCP makes this possible
 
