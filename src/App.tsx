@@ -38,7 +38,8 @@ function Login() {
     <div className="login-wrap">
       <form className="card login" onSubmit={submit}>
         <h1>
-          LinePulse <span className="sub">paint shop incident &amp; response log</span>
+          LinePulse{' '}
+          <span className="sub">demo workspace powered by 🎭 Understudy</span>
         </h1>
         <p className="hint">
           Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
@@ -115,8 +116,13 @@ function IncidentForm() {
   // Keep the live draft context in the store so playbook matching (and the
   // agent, via find_relevant_processes) sees what is being entered right now.
   useEffect(() => {
-    store.setDraftContext({ kind, colorChange, urgent })
-  }, [kind, colorChange, urgent])
+    store.setDraftContext({
+      kind,
+      colorChange,
+      urgent,
+      hasInput: task.trim().length > 0 || colorChange || urgent,
+    })
+  }, [kind, colorChange, urgent, task])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -217,6 +223,28 @@ function IncidentForm() {
   )
 }
 
+function CorrectiveInput({ worklogId }: { worklogId: string }) {
+  const [text, setText] = useState('')
+  return (
+    <div className="decide">
+      <input
+        placeholder="Corrective action taken, e.g. reduced viscosity to 17s…"
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <button
+        onClick={() => {
+          if (!text.trim()) return
+          void store.recordCorrectiveAction(worklogId, { actionTaken: text.trim() })
+          setText('')
+        }}
+      >
+        Save action
+      </button>
+    </div>
+  )
+}
+
 function conditions(w: store.Worklog): string {
   return [
     w.data.colorChange ? 'after color change' : null,
@@ -246,11 +274,20 @@ function IncidentList({ state }: { state: store.AppState }) {
             {conditions(w) && <> · {conditions(w)}</>}
             {w.urgent && <span className="flag"> · URGENT</span>}
           </div>
-          {w.data.actionTaken && <div className="note">Action: {w.data.actionTaken}</div>}
+          {w.data.actionTaken && (
+            <div className="note">
+              Corrective action: {w.data.actionTaken}
+              {w.data.correctiveResult ? ` — ${w.data.correctiveResult}` : ''}
+              {w.data.testPanelResult ? ` (test panel: ${w.data.testPanelResult})` : ''}
+            </div>
+          )}
           {w.status === 'draft' && (
             <button onClick={() => void store.requestApproval(w.id, 'lee')}>
               Send to Lee for review
             </button>
+          )}
+          {!w.data.actionTaken && w.status !== 'draft' && w.status !== 'approved' && (
+            <CorrectiveInput worklogId={w.id} />
           )}
         </div>
       ))}
@@ -461,7 +498,8 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <h1>
-          LinePulse <span className="sub">paint shop incident &amp; response log</span>
+          LinePulse{' '}
+          <span className="sub">paint shop incident log — demo workspace powered by 🎭 Understudy</span>
         </h1>
         <div className="userbox">
           <span>

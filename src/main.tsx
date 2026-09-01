@@ -90,6 +90,27 @@ window.Understudy.init({
         }),
     },
     {
+      name: 'record_corrective_action',
+      description:
+        'Attach the corrective action (and its result) to an EXISTING incident log — use this for "apply corrective action" steps instead of creating a new incident.',
+      params: {
+        worklogId: { type: 'string', description: 'The incident being corrected', required: true },
+        actionTaken: { type: 'string', description: 'What was done, e.g. "reduced viscosity to 17s"', required: true },
+        result: { type: 'string', description: 'Outcome, e.g. "test panel clean"' },
+        viscosity: { type: 'number', description: 'New viscosity after adjustment' },
+        testPanelResult: { type: 'string', description: 'pass | fail | notes' },
+      },
+      handler: (p) =>
+        store.recordCorrectiveAction(String(p.worklogId), {
+          actionTaken: String(p.actionTaken),
+          result: p.result ? String(p.result) : undefined,
+          viscosity: p.viscosity === undefined ? undefined : Number(p.viscosity),
+          testPanelResult: p.testPanelResult ? String(p.testPanelResult) : undefined,
+        }),
+      precondition: () =>
+        store.getState().worklogs.length > 0 ? null : 'no incident log exists yet — log the incident first',
+    },
+    {
       name: 'request_review',
       description: 'Send an incident log to the team lead for review/approval.',
       params: {

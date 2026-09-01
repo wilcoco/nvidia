@@ -63,6 +63,12 @@ function memoryBackend() {
       if (w) w.status = status
       return w ?? null
     },
+    async mergeWorklogData(id, patch) {
+      const w = worklogs.find((x) => x.id === id)
+      if (!w) return null
+      w.data = { ...(w.data ?? {}), ...patch }
+      return w
+    },
     async createApproval(a) {
       const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now() }
       approvals.unshift(row)
@@ -239,6 +245,13 @@ async function pgBackend(databaseUrl) {
     },
     async setWorklogStatus(id, status) {
       const { rows } = await pool.query('UPDATE worklogs SET status=$2 WHERE id=$1 RETURNING *', [id, status])
+      return rows[0] ? wl(rows[0]) : null
+    },
+    async mergeWorklogData(id, patch) {
+      const { rows } = await pool.query(
+        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || $2::jsonb WHERE id=$1 RETURNING *`,
+        [id, JSON.stringify(patch)],
+      )
       return rows[0] ? wl(rows[0]) : null
     },
     async createApproval(a) {

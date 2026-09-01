@@ -12,6 +12,8 @@ export interface IncidentData {
   sprayPressure?: number
   colorChange?: boolean
   actionTaken?: string
+  correctiveResult?: string
+  testPanelResult?: string
 }
 
 export interface Worklog {
@@ -54,6 +56,8 @@ export interface DraftContext {
   kind?: string
   colorChange?: boolean
   urgent?: boolean
+  /** True once the human actually started describing the incident. */
+  hasInput?: boolean
 }
 
 export interface PlaybookMatch {
@@ -229,6 +233,20 @@ export async function decideApproval(
   return decided
 }
 
+export async function recordCorrectiveAction(
+  worklogId: string,
+  input: { actionTaken: string; result?: string; viscosity?: number; testPanelResult?: string },
+): Promise<Worklog> {
+  const wl = await api<Worklog>(`/api/worklogs/${worklogId}/corrective`, { ...input, actingAs: state.actingAs })
+  window.Understudy.log(
+    `recorded corrective action on incident #${worklogId} — "${input.actionTaken}"`,
+    { worklogId },
+  )
+  window.Understudy.notifyAction('record_corrective_action', worklogId)
+  await refresh()
+  return wl
+}
+
 /* Contextual playbook matching (condition-based, no LLM) */
 
 export function setDraftContext(draft: DraftContext): void {
@@ -250,6 +268,9 @@ const FIELD_LABEL: Record<string, (v: unknown) => string> = {
 
 export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   const draft = state.draft
+  // Don't suggest off pristine form defaults — wait until the human starts
+  // actually describing the incident.
+  if (!draft.hasInput) return []
   const matches: PlaybookMatch[] = []
   // Only the latest version of each playbook title competes.
   const latest = new Map<string, ProcessSummary>()

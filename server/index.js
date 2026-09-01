@@ -107,6 +107,19 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
   res.json(approval)
 })
 
+// Attach a corrective action to an EXISTING incident (instead of creating a new one).
+app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
+  const b = req.body ?? {}
+  if (!b.actionTaken) return res.status(400).json({ error: 'actionTaken is required' })
+  const patch = { actionTaken: String(b.actionTaken) }
+  if (b.result !== undefined) patch.correctiveResult = String(b.result)
+  if (b.viscosity !== undefined) patch.viscosity = Number(b.viscosity)
+  if (b.testPanelResult !== undefined) patch.testPanelResult = String(b.testPanelResult)
+  const row = await db.mergeWorklogData(req.params.id, patch)
+  if (!row) return res.status(404).json({ error: 'worklog not found' })
+  res.json(row)
+})
+
 app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   const decision = String(req.body?.decision ?? '')
   if (decision !== 'APPROVED' && decision !== 'REJECTED') {
