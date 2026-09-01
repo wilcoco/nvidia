@@ -196,12 +196,13 @@ const tools: ToolDef[] = [
       "The interview agenda: what the current map does NOT yet know — missing preceding/following steps, undecided branch conditions, no final sign-off, steps without judgment rules, steps that can't be replayed. Call this right after proposing a map (and again after edits), then interview the human with ask_user, one question at a time, starting with the most important gaps. Fold every answer back with update_step or a re-propose. This is how a rough draft becomes the organization's playbook.",
     inputSchema: schema(),
     execute: async () => {
+      if (!mapstore.getMap()) return { gaps: [], note: 'No map yet — propose one first.' }
       const gaps = mapstore.mapGaps()
       return {
         gaps,
         note:
           gaps.length === 0
-            ? 'No map yet — propose one first.'
+            ? 'No open gaps — the interview is complete for this map.'
             : 'Ask the 2-3 most important questions via ask_user; the human may also just edit the map directly (watch get_map_edits).',
       }
     },

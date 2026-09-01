@@ -95,3 +95,7 @@ button.ghost { border: none; background: none; color: #94a3b8; }
 .pf-grid label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: #475569; }
 .pf-grid label.check { flex-direction: row; align-items: center; gap: 6px; }
 .pf-grid input { padding: 5px 7px; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 13px; }
+
+.verify-note { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+.verify-item { margin-right: 10px; white-space: nowrap; }
+.verify-item s { color: #b91c1c; }

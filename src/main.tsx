@@ -37,6 +37,11 @@ window.Understudy.init({
     },
     startRun: (processId, map) => store.startRun(processId, map),
     updateRun: (runId, payload) => store.updateRun(runId, payload),
+    saveVerification: (measurements, meta) => {
+      const produced = meta.producedIds.find((p) => p.action === 'log_incident')
+      const target = produced?.id ?? store.getState().worklogs[0]?.id
+      if (target) return store.saveVerification(target, measurements)
+    },
   },
   // Resolve playbook branch conditions against live data: the urgency branch
   // becomes required once an actually-urgent incident exists in this run.
@@ -71,8 +76,15 @@ window.Understudy.init({
         actionTaken: { type: 'string', description: 'Corrective action taken, if any' },
         hours: { type: 'number', description: 'Time spent (default 0.5)' },
       },
-      handler: (p) =>
-        store.createWorklog({
+      handler: (p) => {
+        // Playbook-specific fields (belt deflection, axis temperature, …) arrive
+        // as extra params — keep them as structured data on the entry.
+        const known = new Set([
+          'date', 'line', 'kind', 'task', 'urgent', 'viscosity', 'boothTemp',
+          'sprayPressure', 'colorChange', 'actionTaken', 'hours',
+        ])
+        const extras = Object.fromEntries(Object.entries(p).filter(([k]) => !known.has(k)))
+        return store.createWorklog({
           date: String(p.date),
           line: String(p.line),
           task: String(p.task),
@@ -86,8 +98,10 @@ window.Understudy.init({
             sprayPressure: p.sprayPressure === undefined ? undefined : Number(p.sprayPressure),
             colorChange: Boolean(p.colorChange),
             actionTaken: p.actionTaken ? String(p.actionTaken) : undefined,
+            ...extras,
           },
-        }),
+        })
+      },
     },
     {
       name: 'record_corrective_action',

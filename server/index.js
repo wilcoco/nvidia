@@ -110,6 +110,18 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
   res.json(approval)
 })
 
+// Persist the verified measurements that passed a decision's criteria.
+app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
+  const m = req.body?.measurements
+  if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
+  const row = await db.mergeWorklogData(req.params.id, {
+    verification: m,
+    verifiedAt: new Date().toISOString(),
+  })
+  if (!row) return res.status(404).json({ error: 'worklog not found' })
+  res.json(row)
+})
+
 // Attach a corrective action to an EXISTING incident (instead of creating a new one).
 app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
   const b = req.body ?? {}

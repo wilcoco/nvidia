@@ -111,6 +111,13 @@ export interface ProcessStoreAdapter {
   load(id: string): Promise<{ map: ProcessMap; title?: string; createdBy?: string }>
   /** Optional: match saved processes against what the human is entering right now. */
   findRelevant?: () => Promise<unknown> | unknown
+  /** Optional: persist verified measurements onto the business record when a
+   *  pass-branch decision succeeds (so approvals show verified values, not the
+   *  initial failing readings). */
+  saveVerification?: (
+    measurements: Record<string, unknown>,
+    meta: { stepId: string; branchTo: string; producedIds: Array<{ step: string; action?: string; id: string }> },
+  ) => void | Promise<unknown>
   /** Optional run persistence: one record per execution of a playbook. */
   startRun?: (processId: string, map: ProcessMap) => Promise<{ id: string }>
   updateRun?: (

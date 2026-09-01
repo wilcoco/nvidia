@@ -317,6 +317,25 @@ function CorrectiveInput({ worklogId }: { worklogId: string }) {
   )
 }
 
+function VerificationBlock({ w }: { w: store.Worklog }) {
+  const v = w.data.verification
+  if (!v) return null
+  const rows = Object.entries(v).map(([k, val]) => {
+    const initial = (w.data as Record<string, unknown>)[k]
+    const changed = initial !== undefined && initial !== val
+    return (
+      <span key={k} className="verify-item">
+        {k}: {changed ? <><s>{String(initial)}</s> → <b>{String(val)}</b></> : <b>{String(val)}</b>}
+      </span>
+    )
+  })
+  return (
+    <div className="note verify-note">
+      ✅ Verified (passed criteria{w.data.verifiedAt ? `, ${new Date(w.data.verifiedAt).toLocaleTimeString()}` : ''}): {rows}
+    </div>
+  )
+}
+
 function conditions(w: store.Worklog): string {
   return [
     w.data.colorChange ? 'after color change' : null,
@@ -353,6 +372,7 @@ function IncidentList({ state }: { state: store.AppState }) {
               {w.data.testPanelResult ? ` (test panel: ${w.data.testPanelResult})` : ''}
             </div>
           )}
+          <VerificationBlock w={w} />
           {w.status === 'draft' && (
             <button onClick={() => void store.requestApproval(w.id, 'lee')}>
               Send to Lee for review
@@ -390,6 +410,7 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               {wl?.urgent && <span className="flag"> · URGENT</span>}
             </div>
             {wl?.data.actionTaken && <div className="note">Action: {wl.data.actionTaken}</div>}
+            {wl && <VerificationBlock w={wl} />}
             {a.comment && <div className="note">Comment: {a.comment}</div>}
             {a.status === 'PENDING' && (
               <div className="decide">

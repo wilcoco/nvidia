@@ -14,6 +14,10 @@ export interface IncidentData {
   actionTaken?: string
   correctiveResult?: string
   testPanelResult?: string
+  /** Measurements that passed the decision criteria (post-adjustment values). */
+  verification?: Record<string, number | string | boolean>
+  verifiedAt?: string
+  [key: string]: unknown
 }
 
 export interface Worklog {
@@ -249,6 +253,20 @@ export async function recordCorrectiveAction(
   window.Understudy.notifyAction('record_corrective_action', worklogId)
   await refresh()
   return wl
+}
+
+export async function saveVerification(
+  worklogId: string,
+  measurements: Record<string, unknown>,
+): Promise<void> {
+  await api(`/api/worklogs/${worklogId}/verification`, { measurements })
+  window.Understudy.log(
+    `verified measurements saved on incident #${worklogId}: ${Object.entries(measurements)
+      .map(([k, v]) => `${k}=${v}`)
+      .join(', ')}`,
+    { worklogId },
+  )
+  await refresh()
 }
 
 /* Contextual playbook matching (condition-based, no LLM) */
