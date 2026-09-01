@@ -517,10 +517,10 @@ export default function App() {
           <button
             className="ghost"
             data-flow-ignore
-            title="Clear incident logs and reviews (keeps playbooks)"
+            title="Clear incident logs, reviews and run records so you start from a clean slate (playbooks are kept)"
             onClick={() => void store.resetDemoData('worklogs')}
           >
-            Reset data
+            Start fresh demo
           </button>
           <button className="ghost" onClick={() => store.logout()} data-flow-ignore>
             Sign out
