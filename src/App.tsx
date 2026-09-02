@@ -707,7 +707,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const theirs = attention.filter((p) => p.role && myRole && p.role !== myRole)
   const done = prog.filter((p) => p.done).length
   const required = prog.filter(
-    (p) => p.status !== 'not_applicable' && p.status !== 'conditional',
+    (p) => p.done || (p.status !== 'not_applicable' && p.status !== 'conditional'),
   ).length
   const idxOf = (id: string) => prog.findIndex((p) => p.id === id)
   const prevDone = (id: string) => {

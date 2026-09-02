@@ -761,7 +761,15 @@ export function mapGaps(): MapGap[] {
 
 /** Reapply a persisted run's progress onto the freshly loaded map (page reload). */
 export function restoreRunState(
-  steps: Array<{ id?: unknown; status?: unknown; resultId?: unknown; naReason?: unknown }>,
+  steps: Array<{
+    id?: unknown
+    status?: unknown
+    resultId?: unknown
+    naReason?: unknown
+    completedBy?: unknown
+    completedAt?: unknown
+    resultData?: unknown
+  }>,
   decisions?: unknown[],
 ): number {
   if (!map) return 0
@@ -776,6 +784,10 @@ export function restoreRunState(
     }
     if (typeof ps.resultId === 'string') st.resultId = ps.resultId
     if (typeof ps.naReason === 'string') st.naReason = ps.naReason
+    if (typeof ps.completedBy === 'string') st.completedBy = ps.completedBy
+    if (typeof ps.completedAt === 'number') st.completedAt = ps.completedAt
+    if (ps.resultData && typeof ps.resultData === 'object')
+      st.resultData = ps.resultData as Record<string, unknown>
   }
   if (Array.isArray(decisions) && decisions.length) {
     map.decisions = decisions as typeof map.decisions
