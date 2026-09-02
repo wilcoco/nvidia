@@ -216,3 +216,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <App />
   </React.StrictMode>,
 )
+
+// The approval hand-off is process-driven: when a run reaches its sign-off
+// step, the pending review is created automatically.
+window.addEventListener('understudy:mapchange', () => setTimeout(() => store.autoSyncApproval(), 0))
+window.addEventListener('understudy:host-state', () => setTimeout(() => store.autoSyncApproval(), 0))

@@ -408,6 +408,15 @@ export async function followPlaybook(
     } catch {
       /* no runs — fresh start */
     }
+    if (!resume && opts.silent) {
+      // Reload with nothing to resume: do NOT silently mint a new run.
+      try {
+        localStorage.removeItem('understudy.lastPlaybook')
+      } catch {
+        /* ignore */
+      }
+      return
+    }
   }
   window.Understudy.loadProcess(p.map as never, {
     id: p.id,
@@ -431,6 +440,38 @@ export async function followPlaybook(
       next: next?.label,
     },
   })
+}
+
+/** When the run reaches its approval step, the linked entry's review request
+ *  is created automatically and routed to a persona of the step's role. */
+let approvalSyncInFlight = false
+export function autoSyncApproval(): void {
+  if (approvalSyncInFlight) return
+  const runId = window.Understudy.currentRunId?.()
+  if (!runId) return
+  const prog = window.Understudy.getProgress?.() ?? []
+  const readyApproval = prog.find((p) => p.status === 'ready' && p.type === 'approval')
+  if (!readyApproval) return
+  const wl = state.worklogs.find((w) => w.data.runId === runId && w.status === 'draft')
+  if (!wl) return
+  const proc = window.Understudy.getLoadedProcess?.()
+  const role = proc?.steps.find((s) => s.id === readyApproval.id)?.role ?? 'Reviewer'
+  const approver =
+    state.users.find((u) => u.role === role && u.username !== state.me?.username)?.username ?? 'lee'
+  approvalSyncInFlight = true
+  void requestApproval(wl.id, approver)
+    .then(() => {
+      window.Understudy.log(
+        `review request created automatically — the run reached "${readyApproval.label}" and was routed to ${approver}`,
+        { worklogId: wl.id },
+      )
+    })
+    .catch(() => {
+      /* server gate may refuse (e.g. sync lag) — retried on the next change */
+    })
+    .finally(() => {
+      approvalSyncInFlight = false
+    })
 }
 
 /** Demo stability: a reopened tab restores the map it was following. */
