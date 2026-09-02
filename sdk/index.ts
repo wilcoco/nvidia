@@ -62,10 +62,15 @@ function loadProcess(
     resume?: { runId: string; steps?: unknown[]; decisions?: unknown[] }
   },
 ): void {
-  loadSavedMap(map, meta)
+  loadSavedMap(map, meta?.resume ? { ...meta, quiet: true } : meta)
   if (meta?.resume?.runId) {
-    restoreRunState((meta.resume.steps ?? []) as never, meta.resume.decisions)
+    const applied = restoreRunState((meta.resume.steps ?? []) as never, meta.resume.decisions)
     resumeRunTracking(meta.resume.runId)
+    record(
+      'user',
+      'map',
+      `resumed "${map.title}" — run ${meta.resume.runId} reattached, ${applied} completed step(s) restored`,
+    )
   } else if (meta?.id) {
     startRunTracking(meta.id)
   }

@@ -404,7 +404,8 @@ export async function followPlaybook(
     createdBy: p.createdBy,
     ...(resume ? { resume } : {}),
   })
-  window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
+  if (!opts?.silent)
+    window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
   try {
     localStorage.setItem('understudy.lastPlaybook', processId)
   } catch {
@@ -423,7 +424,10 @@ export async function followPlaybook(
 }
 
 /** Demo stability: a reopened tab restores the map it was following. */
+let resumeAttempted = false
 export function resumeLastPlaybook(): void {
+  if (resumeAttempted) return
+  resumeAttempted = true
   let id: string | null = null
   try {
     id = localStorage.getItem('understudy.lastPlaybook')

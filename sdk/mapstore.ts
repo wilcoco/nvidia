@@ -61,8 +61,28 @@ function pushEdit(edit: Omit<MapEdit, 'id' | 'ts'>): void {
   if (edits.length > 200) edits.splice(0, edits.length - 200)
 }
 
+/** A confirmed (running) playbook is read-only for every role — structural
+ *  changes go through an explicit draft revision that must be re-confirmed. */
+function structureLocked(): boolean {
+  return !!map?.confirmed
+}
+
+/** Reopen the confirmed playbook as an editable draft revision (human gesture). */
+export function reopenAsDraft(): void {
+  if (!map || !map.confirmed) return
+  map.confirmed = false
+  pushEdit({ field: 'confirmed', to: 'false' })
+  record(
+    'user',
+    'map',
+    `reopened "${map.title}" as a draft revision — edits now allowed; re-confirm to save v${(map.version ?? 0) + 1}`,
+  )
+  notify()
+}
+
 /** Human edits made through the panel UI. Journaled so the agent can read them back. */
 export function humanEditStep(stepId: string, field: 'label' | 'detail' | 'type', to: string): void {
+  if (structureLocked()) return
   if (!map) return
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return
@@ -76,6 +96,7 @@ export function humanEditStep(stepId: string, field: 'label' | 'detail' | 'type'
 }
 
 export function humanEditCondition(stepId: string, targetId: string, to: string): void {
+  if (structureLocked()) return
   if (!map) return
   const step = map.steps.find((s) => s.id === stepId)
   const branch = step?.next?.find((b) => b.to === targetId)
@@ -89,6 +110,7 @@ export function humanEditCondition(stepId: string, targetId: string, to: string)
 }
 
 export function humanRemoveStep(stepId: string): void {
+  if (structureLocked()) return
   if (!map) return
   const idx = map.steps.findIndex((s) => s.id === stepId)
   if (idx < 0) return
@@ -129,7 +151,10 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
 }
 
 /** Load a process someone saved earlier (already confirmed). Completion state starts fresh. */
-export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
+export function loadSavedMap(
+  loaded: ProcessMap,
+  meta?: { id?: string; createdBy?: string; quiet?: boolean },
+): void {
   map = {
     ...loaded,
     sourceProcessId: meta?.id ?? loaded.sourceProcessId,
@@ -153,12 +178,14 @@ export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy
       linked++
     }
   }
-  record(
-    'agent',
-    'map',
-    `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}` +
-      (linked ? ` — linked ${linked} already-completed step(s)` : ''),
-  )
+  if (!meta?.quiet) {
+    record(
+      'agent',
+      'map',
+      `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}` +
+        (linked ? ` — linked ${linked} already-completed step(s)` : ''),
+    )
+  }
   notify()
 }
 
@@ -217,8 +244,15 @@ export function agentUpdateStep(
   stepId: string,
   patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean },
   branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
-): { ok: boolean; error?: string; step?: Step } {
+): { ok: boolean; error?: string; detail?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
+  if (map.confirmed)
+    return {
+      ok: false,
+      error: 'confirmed_readonly',
+      detail:
+        'This playbook is confirmed and running — its structure is read-only for every role. To revise it, propose_process_map a new draft (the human re-confirms it as the next version), or ask the human to press "Propose changes" on the panel.',
+    }
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const changed: string[] = []
@@ -543,8 +577,8 @@ export function mapGaps(): MapGap[] {
 export function restoreRunState(
   steps: Array<{ id?: unknown; status?: unknown; resultId?: unknown; naReason?: unknown }>,
   decisions?: unknown[],
-): void {
-  if (!map) return
+): number {
+  if (!map) return 0
   let applied = 0
   for (const ps of steps) {
     if (typeof ps?.id !== 'string') continue
@@ -560,8 +594,8 @@ export function restoreRunState(
   if (Array.isArray(decisions) && decisions.length) {
     map.decisions = decisions as typeof map.decisions
   }
-  record('user', 'map', `restored run progress: ${applied} completed step(s), ${map.decisions?.length ?? 0} decision(s)`)
   notify()
+  return applied
 }
 
 /** Would running this action now jump past required, not-yet-done steps? */

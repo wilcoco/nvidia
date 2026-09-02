@@ -124,6 +124,9 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .arrow { text-align: center; color: #475569; font-size: 11px; line-height: 1; margin: 1px 0; }
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .confirm-bar button { background: #059669; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.confirm-bar button.revise { background: #334155; color: #cbd5e1; }
+.step .label.ro { cursor: default; }
+.branch .cond-ro { color: #fbbf24; }
 .confirmed { color: #34d399; font-weight: 600; font-size: 12px; }
 .confirm-bar .unsaved { color: #fbbf24; font-size: 11px; font-weight: 600; }
 .run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
@@ -249,7 +252,9 @@ function renderStep(
   if (status === 'not_applicable') meta.appendChild(el('span', 'chip na', 'N/A'))
   meta.appendChild(el('span', 'spacer'))
 
-  const label = el('span', 'label', step.label)
+  const locked = !!mapstore.getMap()?.confirmed
+  const label = el('span', `label${locked ? ' ro' : ''}`, step.label)
+  if (!locked) {
   label.title = 'Click to rename'
   label.onclick = () => {
     const input = el('input', 'label-edit') as HTMLInputElement
@@ -264,6 +269,7 @@ function renderStep(
     }
     input.onblur = commit
   }
+  }
   row.appendChild(label)
 
   const typeSel = el('select') as HTMLSelectElement
@@ -274,17 +280,18 @@ function renderStep(
     typeSel.appendChild(opt)
   }
   typeSel.onchange = () => mapstore.humanEditStep(step.id, 'type', typeSel.value)
-  meta.appendChild(typeSel)
+  if (!locked) meta.appendChild(typeSel)
 
   const del = el('button', 'del', '✕')
   del.title = 'Remove step'
   del.onclick = () => mapstore.humanRemoveStep(step.id)
-  meta.appendChild(del)
+  if (!locked) meta.appendChild(del)
 
   card.appendChild(meta)
   card.appendChild(row)
-  if (step.type !== 'decision' || step.detail) {
+  if ((step.type !== 'decision' || step.detail) && (!locked || step.detail)) {
     const detail = el('div', `detail${step.detail ? '' : ' detail-empty'}`, step.detail || '+ add note')
+    if (!locked) {
     detail.title = 'Click to edit this note (judgment rules live here)'
     detail.onclick = () => {
       const input = el('input', 'detail-edit') as HTMLInputElement
@@ -298,6 +305,7 @@ function renderStep(
         if (e.key === 'Escape') scheduleRender()
       }
       input.onblur = commit
+    }
     }
     card.appendChild(detail)
   }
@@ -339,11 +347,15 @@ function renderStep(
       line.appendChild(el('span', `bglyph ${back ? 'back' : 'fwd'}`, back ? '⟲' : '↳'))
       line.appendChild(el('span', 'btarget', `${targetIdx >= 0 ? `#${targetIdx + 1} ` : ''}${target?.label ?? b.to}`))
       line.appendChild(el('span', undefined, 'if'))
-      const cond = el('input') as HTMLInputElement
-      cond.value = b.condition ?? ''
-      cond.placeholder = 'condition…'
-      cond.onchange = () => mapstore.humanEditCondition(step.id, b.to, cond.value)
-      line.appendChild(cond)
+      if (locked) {
+        line.appendChild(el('span', 'cond-ro', b.condition || '—'))
+      } else {
+        const cond = el('input') as HTMLInputElement
+        cond.value = b.condition ?? ''
+        cond.placeholder = 'condition…'
+        cond.onchange = () => mapstore.humanEditCondition(step.id, b.to, cond.value)
+        line.appendChild(cond)
+      }
       card.appendChild(line)
     }
   }
@@ -774,7 +786,7 @@ function render() {
         'div',
         'map-hint',
         map.confirmed
-          ? 'Live guide — the agent follows along as you work. Yellow border = do this next · red = skipped · dotted = only if its branch applies.'
+          ? 'Live guide — the agent follows along as you work. Yellow border = do this next · red = skipped · dotted = only if its branch applies. The structure is read-only while running; use "Propose changes" to draft a revision.'
           : "The agent drafted this from your work — it's yours to correct before saving: click any text to reword it, hover a card to change its type (task / decision / approval) or remove it.",
       ),
     )
@@ -801,6 +813,10 @@ function render() {
     const bar = el('div', 'confirm-bar')
     if (map.confirmed) {
       bar.appendChild(el('span', 'confirmed', '✓ Confirmed — ready for the agent to run'))
+      const revise = el('button', 'revise', 'Propose changes (new draft)')
+      revise.title = 'The running structure is read-only. This reopens it as a draft you re-confirm as the next version.'
+      revise.onclick = () => mapstore.reopenAsDraft()
+      bar.appendChild(revise)
     } else {
       const store = host.getProcessStore()
       const nextV = (map.version ?? 0) + 1

@@ -94,7 +94,6 @@ export function resumeRunTracking(id: string): void {
     subscribed = true
     mapstore.subscribe(scheduleSync)
   }
-  record('user', 'map', `resumed run ${id} — progress restored from the server`)
 }
 
 export function startRunTracking(processId: string): void {
