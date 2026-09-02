@@ -94,6 +94,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .confirmed { color: #34d399; font-weight: 600; font-size: 12px; }
 .run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
+.map-hint { color: #7dd3fc; background: rgba(56,189,248,.08); border: 1px solid rgba(56,189,248,.25); border-radius: 6px; padding: 6px 8px; font-size: 11px; line-height: 1.5; margin-bottom: 8px; }
 .card { background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 .card .q { color: #f1f5f9; margin-bottom: 8px; }
 .card .opts { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -403,6 +404,15 @@ function render() {
     mapSection.appendChild(tip)
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
+    mapSection.appendChild(
+      el(
+        'div',
+        'map-hint',
+        map.confirmed
+          ? 'Live guide — the agent follows along as you work. Yellow border = do this next · red = skipped · dotted = only if its branch applies.'
+          : "The agent drafted this from your work — it's yours to correct before saving: click any text to reword it, hover a card to change its type (task / decision / approval) or remove it.",
+      ),
+    )
     if (map.fields?.length) {
       const f = el('div', 'map-fields')
       f.innerHTML = ''
