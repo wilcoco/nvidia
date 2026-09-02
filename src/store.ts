@@ -234,10 +234,14 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
   return wl
 }
 
-export async function requestApproval(worklogId: string, approver: string): Promise<Approval> {
+export async function requestApproval(
+  worklogId: string,
+  approver: string,
+  asPersona?: string,
+): Promise<Approval> {
   const approval = await api<Approval>(`/api/worklogs/${worklogId}/submit`, {
     approver,
-    actingAs: state.actingAs,
+    actingAs: asPersona ?? state.actingAs,
   })
   const wl = state.worklogs.find((w) => w.id === worklogId)
   window.Understudy.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
@@ -449,6 +453,12 @@ export async function followPlaybook(
 /** When the run reaches its approval step, the linked entry's review request
  *  is created automatically and routed to a persona of the step's role. */
 let approvalSyncInFlight = false
+function contributorPersonaFor(): string | undefined {
+  const me = state.users.find((u) => u.username === state.actingAs)
+  if (me?.role === 'Contributor') return me.username
+  return state.users.find((u) => u.role === 'Contributor')?.username
+}
+
 export async function autoSyncApproval(): Promise<void> {
   if (approvalSyncInFlight) return
   const runId = window.Understudy.currentRunId?.()
@@ -508,7 +518,7 @@ export async function autoSyncApproval(): Promise<void> {
   const approver =
     state.users.find((u) => u.role === role && u.username !== state.me?.username)?.username ?? 'lee'
   approvalSyncInFlight = true
-  void requestApproval(wl.id, approver)
+  void requestApproval(wl.id, approver, contributorPersonaFor())
     .then(() => {
       window.Understudy.log(
         `review request created automatically — the run reached "${readyApproval.label}" and was routed to ${approver}`,

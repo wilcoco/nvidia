@@ -717,7 +717,11 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       defs
         .map((d) => {
           const v = raw[d.key]
-          if (d.type === 'boolean') return [d.key, Boolean(v)]
+          if (d.type === 'boolean') {
+            if (d.confirm) return [d.key, Boolean(v)]
+            if (v === '' || v === undefined) return [d.key, undefined]
+            return [d.key, v === true || v === 'true']
+          }
           if (v === undefined || v === '') return [d.key, undefined]
           return [d.key, d.type === 'number' ? Number(v) : String(v)]
         })
@@ -745,7 +749,10 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
           .filter((d): d is UnderstudyFieldDef => !!d)
         const raw = taskValues[p.id] ?? {}
         const missingRequired = defs.some((d) => {
-          if (d.type === 'boolean') return d.confirm === true && raw[d.key] !== true
+          if (d.type === 'boolean') {
+            if (d.confirm === true) return raw[d.key] !== true
+            return d.required ? raw[d.key] === undefined || raw[d.key] === '' : false
+          }
           if (!d.required) return false
           return raw[d.key] === undefined || raw[d.key] === ''
         })
@@ -784,7 +791,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             {defs.length > 0 && (
               <div className="pf-grid task-fields">
                 {defs.map((f) =>
-                  f.type === 'boolean' ? (
+                  f.type === 'boolean' && f.confirm ? (
                     <label key={f.key} className="check">
                       <input
                         type="checkbox"
@@ -794,6 +801,22 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                         }
                       />
                       {f.label ?? f.key}
+                      {'*'}
+                    </label>
+                  ) : f.type === 'boolean' ? (
+                    <label key={f.key}>
+                      {f.label ?? f.key}
+                      {f.required ? '*' : ''}
+                      <select
+                        value={String(raw[f.key] ?? '')}
+                        onChange={(e) =>
+                          setTaskValues({ ...taskValues, [p.id]: { ...raw, [f.key]: e.target.value } })
+                        }
+                      >
+                        <option value="">— not measured —</option>
+                        <option value="true">pass / true</option>
+                        <option value="false">fail / false</option>
+                      </select>
                     </label>
                   ) : (
                     <label key={f.key}>

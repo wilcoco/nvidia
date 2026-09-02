@@ -564,7 +564,10 @@ export function humanToggleStepDone(
           const v = values?.[f.key]
           // Confirmation checkboxes must be affirmed; measurement booleans may
           // legitimately be false (that IS the reading).
-          if (f.type === 'boolean') return f.confirm === true && v !== true
+          if (f.type === 'boolean') {
+            if (f.confirm === true) return v !== true
+            return f.required ? v === undefined : false
+          }
           return f.required ? v === undefined || v === '' : false
         })
         if (missing.length) {
