@@ -81,6 +81,11 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step button.del { background: none; border: none; color: #475569; cursor: pointer; flex: none; }
 .step button.del:hover { color: #f87171; }
 .step select { background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; font-size: 10px; }
+/* Editing affordances stay out of the way until the card is hovered. */
+.step select, .step button.del { opacity: 0; transition: opacity .15s; }
+.step:hover select, .step:hover button.del { opacity: 1; }
+.step .action-tag { display: none; }
+.step:hover .action-tag { display: block; }
 .branch { margin: 2px 0 2px 16px; color: #94a3b8; font-size: 11px; display: flex; gap: 4px; align-items: center; }
 .branch input { background: #0f172a; color: #fbbf24; border: 1px solid #334155; border-radius: 4px; padding: 1px 5px; font-size: 11px; width: 150px; }
 .arrow { text-align: center; color: #475569; font-size: 11px; line-height: 1; margin: 1px 0; }
