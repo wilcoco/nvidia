@@ -310,7 +310,14 @@ function IncidentList({ state }: { state: store.AppState }) {
   return (
     <div className="list">
       {mine.map((w) => (
-        <div key={w.id} className={`card entry ${w.urgent ? 'urgent' : ''}`}>
+        <div
+          key={w.id}
+          className={`card entry clickable ${w.urgent ? 'urgent' : ''}`}
+          title="Click to look up the playbook that covers this entry"
+          onClick={() =>
+            store.setDraftContext({ kind: w.kind, urgent: w.urgent, task: w.task, hasInput: true })
+          }
+        >
           <div className="entry-head">
             <span className="task">
               <span className="kind-tag">{w.kind}</span> {w.task}

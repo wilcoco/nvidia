@@ -101,3 +101,6 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .verify-note { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
 .verify-item { margin-right: 10px; white-space: nowrap; }
 .verify-item s { color: #b91c1c; }
+
+.card.entry.clickable { cursor: pointer; }
+.card.entry.clickable:hover { border-color: #93c5fd; }
