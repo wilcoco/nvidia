@@ -233,6 +233,12 @@ const tools: ToolDef[] = [
           description:
             "Role responsible for this step (this app's roles are in describe_workspace's state, e.g. Contributor, Reviewer). Only that role's persona can complete it or resolve its decision. ALWAYS set it when the human names who does a step.",
         },
+        fields: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            "Keys of the playbook's data-contract fields (update_map_fields) this step must capture — the assignee's task card then shows exactly those inputs (e.g. the snapshot step captures only snapshotId).",
+        },
       },
       ['stepId'],
     ),
@@ -245,6 +251,7 @@ const tools: ToolDef[] = [
           action: args.action === undefined ? undefined : String(args.action),
           humanOnly: args.humanOnly === undefined ? undefined : args.humanOnly === true,
           role: args.role === undefined ? undefined : String(args.role),
+          fields: Array.isArray(args.fields) ? args.fields.map(String) : undefined,
         },
         args.branch_to && (args.branch_condition || args.branch_criteria)
           ? {
@@ -359,6 +366,39 @@ const tools: ToolDef[] = [
     description: "Check the outcome of a run_action call that returned pending_approval: still pending, denied by the human (a normal answer, not an error), or complete with the action's result.",
     inputSchema: schema({ actionId: { type: 'string' } }, ['actionId']),
     execute: async (args) => getActionResult(String(args.actionId)),
+  },
+  {
+    name: 'list_my_tasks',
+    description:
+      "The active persona's worklist for the running playbook: steps that are ready and belong to their role (or to anyone), plus what the run is waiting on from other roles. Use it to answer 'do I have anything to do?' / 'who is blocked?'. Completing work happens via the page (task cards / run_action), not by editing state directly.",
+    inputSchema: schema(),
+    execute: async () => {
+      const map = mapstore.getMap()
+      if (!map?.confirmed) return { active: false, note: 'No confirmed process is running.' }
+      const statuses = mapstore.progress(preconditionFor)
+      const role = host.actorRole()
+      const ready = map.steps.filter((s) => statuses.get(s.id) === 'ready')
+      const mine = ready.filter((s) => !s.role || !role || s.role === role)
+      const waiting = ready.filter((s) => s.role && role && s.role !== role)
+      return {
+        active: true,
+        persona_role: role ?? 'unknown',
+        my_tasks: mine.map((s) => ({
+          stepId: s.id,
+          label: s.label,
+          type: s.type,
+          detail: s.detail,
+          required_fields: s.fields,
+          how_to_complete:
+            s.type === 'approval'
+              ? 'Decide it in the Reviews screen (or approve/reject_review action).'
+              : s.action
+                ? `Run or perform the bound action \"${s.action}\".`
+                : 'The assignee completes it from their My-tasks card.',
+        })),
+        waiting_on: waiting.map((s) => ({ label: s.label, role: s.role })),
+      }
+    },
   },
   {
     name: 'get_process_progress',

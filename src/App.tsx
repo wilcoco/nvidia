@@ -616,6 +616,9 @@ function RunStartedModal({ info }: { info: NonNullable<store.AppState['runStarte
 
 function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () => void }) {
   const [, setTick] = useState(0)
+  const [taskValues, setTaskValues] = useState<Record<string, Record<string, string | boolean>>>({})
+  const [problemFor, setProblemFor] = useState<string | null>(null)
+  const [problemText, setProblemText] = useState('')
   useEffect(() => {
     const f = () => setTick((t) => t + 1)
     window.addEventListener('understudy:mapchange', f)
@@ -632,48 +635,149 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         steps will be assigned here by role.
       </p>
     )
-  const detailOf = (id: string) => proc.steps.find((s) => s.id === id)?.detail
-  const actionOf = (id: string) => proc.steps.find((s) => s.id === id)?.action
+  const stepOf = (id: string) => proc.steps.find((s) => s.id === id)
+  const fieldDefs = proc.fields ?? []
   const ready = prog.filter((p) => p.status === 'ready')
   const mine = ready.filter((p) => !p.role || !myRole || p.role === myRole)
   const theirs = ready.filter((p) => p.role && myRole && p.role !== myRole)
   const done = prog.filter((p) => p.done).length
+  const idxOf = (id: string) => prog.findIndex((p) => p.id === id)
+  const prevDone = (id: string) => {
+    const before = prog.slice(0, idxOf(id)).filter((p) => p.done)
+    return before.length ? before[before.length - 1] : undefined
+  }
+  const nextUp = (id: string) => prog.slice(idxOf(id) + 1).find((p) => !p.done && p.status !== 'not_applicable')
+  const complete = (p: { id: string; fields?: string[] }) => {
+    const defs = (p.fields ?? [])
+      .map((k) => fieldDefs.find((f) => f.key === k))
+      .filter((d): d is UnderstudyFieldDef => !!d)
+    const raw = taskValues[p.id] ?? {}
+    const values = Object.fromEntries(
+      defs
+        .map((d) => {
+          const v = raw[d.key]
+          if (d.type === 'boolean') return [d.key, Boolean(v)]
+          if (v === undefined || v === '') return [d.key, undefined]
+          return [d.key, d.type === 'number' ? Number(v) : String(v)]
+        })
+        .filter(([, v]) => v !== undefined),
+    )
+    window.Understudy.completeStep?.(p.id, values)
+  }
   return (
     <div className="list">
       <div className="meta">
         {proc.title}
-        {runId ? ` · run #${runId}` : ''} · {done}/{prog.length} steps done
+        {runId ? ` · run #${runId}` : ''} · {done}/{prog.length} steps done · your role: {myRole ?? '—'}
       </div>
       {mine.length === 0 && theirs.length === 0 && (
-        <p className="empty">Nothing is waiting on anyone — the run may be complete or awaiting a decision (ask the agent).</p>
+        <p className="empty">
+          Nothing is waiting on anyone — the run may be complete or awaiting a decision (ask the
+          agent).
+        </p>
       )}
-      {mine.map((p) => (
-        <div key={p.id} className="card entry task-card">
-          <div className="entry-head">
-            <span className="task">
-              <span className="kind-tag">{p.type}</span> {p.label}
-            </span>
-            <span className="status draft">assigned to you{p.role ? ` (${p.role})` : ''}</span>
-          </div>
-          {detailOf(p.id) && <div className="meta">{detailOf(p.id)}</div>}
-          {p.type === 'approval' ? (
-            <button className="primary" onClick={goReviews}>
-              Open Reviews to decide
-            </button>
-          ) : p.type === 'decision' ? (
-            <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
-          ) : (
-            <div className="decide">
-              {actionOf(p.id) === 'log_work_item' && (
-                <span className="meta">Saving a work log completes this step — or:</span>
-              )}
-              <button className="primary" onClick={() => window.Understudy.completeStep?.(p.id)}>
-                Mark complete
-              </button>
+      {mine.map((p) => {
+        const st = stepOf(p.id)
+        const defs = (p.fields ?? [])
+          .map((k) => fieldDefs.find((f) => f.key === k))
+          .filter((d): d is UnderstudyFieldDef => !!d)
+        const raw = taskValues[p.id] ?? {}
+        const missingRequired = defs.some(
+          (d) => d.required && d.type !== 'boolean' && (raw[d.key] === undefined || raw[d.key] === ''),
+        )
+        const prev = prevDone(p.id)
+        const next = nextUp(p.id)
+        return (
+          <div key={p.id} className="card entry task-card">
+            <div className="entry-head">
+              <span className="task">
+                <span className="kind-tag">{p.type}</span> {p.label}
+              </span>
+              <span className="status draft">assigned to you{p.role ? ` (${p.role})` : ''}</span>
             </div>
-          )}
-        </div>
-      ))}
+            {st?.detail && <div className="meta">{st.detail}</div>}
+            {prev && (
+              <div className="meta">
+                Previous: ✓ {prev.label}
+                {stepOf(prev.id)?.completedBy ? ` (by ${stepOf(prev.id)?.completedBy})` : ''}
+              </div>
+            )}
+            {defs.length > 0 && (
+              <div className="pf-grid task-fields">
+                {defs.map((f) =>
+                  f.type === 'boolean' ? (
+                    <label key={f.key} className="check">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(raw[f.key])}
+                        onChange={(e) =>
+                          setTaskValues({ ...taskValues, [p.id]: { ...raw, [f.key]: e.target.checked } })
+                        }
+                      />
+                      {f.label ?? f.key}
+                    </label>
+                  ) : (
+                    <label key={f.key}>
+                      {f.label ?? f.key}
+                      {f.unit ? ` (${f.unit})` : ''}
+                      {f.required ? '*' : ''}
+                      <input
+                        type={f.type === 'number' ? 'number' : 'text'}
+                        value={String(raw[f.key] ?? '')}
+                        onChange={(e) =>
+                          setTaskValues({ ...taskValues, [p.id]: { ...raw, [f.key]: e.target.value } })
+                        }
+                      />
+                    </label>
+                  ),
+                )}
+              </div>
+            )}
+            {p.type === 'approval' ? (
+              <button className="primary" onClick={goReviews}>
+                Open Reviews to decide
+              </button>
+            ) : p.type === 'decision' ? (
+              <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
+            ) : (
+              <div className="decide">
+                <button className="primary" disabled={missingRequired} onClick={() => complete(p)}>
+                  {missingRequired ? 'Fill required fields…' : 'Complete & submit'}
+                </button>
+                <button className="ghost" data-flow-ignore onClick={() => setProblemFor(problemFor === p.id ? null : p.id)}>
+                  Report a problem
+                </button>
+              </div>
+            )}
+            {problemFor === p.id && (
+              <div className="decide">
+                <input
+                  placeholder="What is blocking this step?"
+                  value={problemText}
+                  onChange={(e) => setProblemText(e.target.value)}
+                />
+                <button
+                  onClick={() => {
+                    if (problemText.trim()) {
+                      window.Understudy.reportProblem?.(p.id, problemText.trim())
+                      setProblemText('')
+                      setProblemFor(null)
+                    }
+                  }}
+                >
+                  Send
+                </button>
+              </div>
+            )}
+            {next && (
+              <div className="meta">
+                Next: {next.label}
+                {next.role ? ` → ${next.role}` : ''}
+              </div>
+            )}
+          </div>
+        )
+      })}
       {theirs.map((p) => (
         <div key={p.id} className="card entry waiting-card">
           <div className="entry-head">

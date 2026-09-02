@@ -30,6 +30,13 @@ export interface Step {
   detail?: string
   /** Role responsible for this step (e.g. Contributor, Reviewer). Empty = anyone. */
   role?: string
+  /** Keys of the playbook's data-contract fields this step must capture. */
+  fields?: string[]
+  /** Persona who completed the step, and when (audit attribution). */
+  completedBy?: string
+  completedAt?: number
+  /** Values the assignee submitted when completing the step. */
+  resultData?: Record<string, unknown>
   /** Which host action (if any) performs this step when the agent replays the process. */
   action?: string
   next?: BranchTarget[]

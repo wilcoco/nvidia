@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, progress as progressOf, humanToggleStepDone, subscribe as subscribeMap } from './mapstore'
+import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
 import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
@@ -94,8 +94,13 @@ function getLoadedProcess(): ProcessMap | null {
 }
 
 /** Host worklists complete a step through the same role/order-guarded lane as the panel checkbox. */
-function completeStep(stepId: string): void {
-  humanToggleStepDone(stepId)
+function completeStep(stepId: string, values?: Record<string, unknown>): void {
+  humanToggleStepDone(stepId, values)
+}
+
+/** Host worklists flag a blocked step; journaled for the agent and the team. */
+function reportProblem(stepId: string, note: string): void {
+  reportProblemOn(stepId, note)
 }
 
 /** Live per-step status for host-side worklists ('what is next, and whose is it'). */
@@ -108,6 +113,7 @@ function getProgress(): Array<{ id: string; label: string; type: string; role?: 
     label: s.label,
     type: s.type,
     role: s.role,
+    fields: s.fields,
     status: statuses.get(s.id),
     done: s.done,
   }))
@@ -132,5 +138,6 @@ subscribeMap(() => {
   getLoadedProcess,
   getProgress,
   completeStep,
+  reportProblem,
   currentRunId,
 }

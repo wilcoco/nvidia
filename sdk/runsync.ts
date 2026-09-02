@@ -28,6 +28,10 @@ function snapshot() {
       status: statuses.get(s.id),
       resultId: s.resultId,
       naReason: s.naReason,
+      role: s.role,
+      completedBy: s.completedBy,
+      completedAt: s.completedAt,
+      resultData: s.resultData,
     }))
   const open = steps.filter((s) => ['ready', 'blocked', 'skipped', 'pending'].includes(s.status ?? ''))
   // An unresolved decision keeps the run open even when every reachable task

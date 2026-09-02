@@ -61,6 +61,29 @@ function pushEdit(edit: Omit<MapEdit, 'id' | 'ts'>): void {
   if (edits.length > 200) edits.splice(0, edits.length - 200)
 }
 
+function actingPersona(): string | undefined {
+  try {
+    const st = host.getState() as { actingAs?: unknown } | null
+    return typeof st?.actingAs === 'string' ? st.actingAs : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** An assignee flags that their step cannot proceed — journaled for the agent
+ *  and the rest of the team; the step stays open. */
+export function reportProblem(stepId: string, note: string): void {
+  const step = map?.steps.find((s) => s.id === stepId)
+  if (!step) return
+  const persona = actingPersona()
+  record(
+    'user',
+    'map',
+    `PROBLEM reported on "${step.label}"${persona ? ` by ${persona}` : ''}: ${note} — step remains open; agent, read this and help.`,
+  )
+  notify()
+}
+
 /** A confirmed (running) playbook is read-only for every role — structural
  *  changes go through an explicit draft revision that must be re-confirmed. */
 function structureLocked(): boolean {
@@ -242,7 +265,14 @@ export function markActionDone(
 /** Agent refines a single step in place (e.g. writing captured judgment into its note). */
 export function agentUpdateStep(
   stepId: string,
-  patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean; role?: string },
+  patch: {
+    label?: string
+    detail?: string
+    action?: string
+    humanOnly?: boolean
+    role?: string
+    fields?: string[]
+  },
   branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
 ): { ok: boolean; error?: string; detail?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
@@ -262,6 +292,10 @@ export function agentUpdateStep(
       step[field] = value
       changed.push(field)
     }
+  }
+  if (patch.fields !== undefined) {
+    step.fields = patch.fields.filter((k) => typeof k === 'string')
+    changed.push('fields')
   }
   if (patch.humanOnly !== undefined && patch.humanOnly !== step.humanOnly) {
     step.humanOnly = patch.humanOnly
@@ -439,7 +473,7 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
 }
 
 /** Human checks a step off (or un-checks it) in the panel. */
-export function humanToggleStepDone(stepId: string): void {
+export function humanToggleStepDone(stepId: string, values?: Record<string, unknown>): void {
   {
     const step = map?.steps.find((s) => s.id === stepId)
     const role = host.actorRole()
@@ -448,13 +482,35 @@ export function humanToggleStepDone(stepId: string): void {
       notify()
       return
     }
+    if (step && !step.done) {
+      const persona = actingPersona()
+      step.completedBy = persona ?? undefined
+      step.completedAt = Date.now()
+      if (values && Object.keys(values).length) step.resultData = values
+    } else if (step && step.done) {
+      step.completedBy = undefined
+      step.completedAt = undefined
+      step.resultData = undefined
+    }
   }
   if (!map) return
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return
   step.done = !step.done
   pushEdit({ stepId, field: 'done', to: String(step.done) })
-  record('user', 'map', `${step.done ? 'checked off' : 'unchecked'} step "${step.label}"`)
+  {
+    const persona = actingPersona()
+    const vals = step.resultData
+      ? ` — submitted: ${Object.entries(step.resultData)
+          .map(([k, v]) => `${k}=${v}`)
+          .join(', ')}`
+      : ''
+    record(
+      'user',
+      'map',
+      `${step.done ? 'completed' : 'reopened'} step "${step.label}"${persona ? ` (by ${persona})` : ''}${step.done ? vals : ''}`,
+    )
+  }
   notify()
 }
 
