@@ -15,7 +15,9 @@ process, and the agent's behavior changes because of it.*
 > "In a paint shop, the response to a defect lives in one veteran's head.
 > When they're off shift, steps get skipped — and skipped steps stop lines.
 > This is Understudy: a drop-in layer that lets an AI agent learn how your
-> experts actually work — on the same page, through WebMCP."
+> experts actually work — on the same page, through WebMCP. Not to log the
+> event — to capture the process around it: what to prepare and prevent
+> before, what to verify and sign off after."
 
 *Screen: the demo workspace open, Understudy panel on the right, ChatGPT alongside.
 Briefly hover the "WebMCP connected" dot and ChatGPT's Site tools list (19

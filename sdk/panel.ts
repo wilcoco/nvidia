@@ -86,7 +86,28 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step:hover select, .step:hover button.del { opacity: 1; }
 .step .action-tag { display: none; }
 .step:hover .action-tag { display: block; }
-.branch { margin: 2px 0 2px 16px; color: #94a3b8; font-size: 11px; display: flex; gap: 4px; align-items: center; }
+.branch { margin: 2px 0 2px 16px; color: #94a3b8; font-size: 11px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.branch .bglyph { font-weight: 700; flex: none; }
+.branch .bglyph.fwd { color: #34d399; }
+.branch .bglyph.back { color: #f87171; }
+.branch .btarget { color: #cbd5e1; font-weight: 600; }
+.flow { display: flex; flex-direction: column; gap: 8px; }
+.flow-row { display: flex; gap: 8px; }
+.flow-row .step { flex: 1; margin-bottom: 0; min-width: 0; }
+.node-col { width: 24px; flex: none; position: relative; display: flex; justify-content: center; }
+.flow-row:not(:last-child) .node-col::after { content: ''; position: absolute; top: 30px; bottom: -16px; left: 50%; transform: translateX(-50%); width: 2px; background: #334155; }
+.node { width: 20px; height: 20px; flex: none; border-radius: 50%; background: #0f172a; border: 2px solid #475569; color: #94a3b8; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 6px; z-index: 1; }
+.node.task { border-color: #3b82f6; }
+.node.decision { border-radius: 4px; transform: rotate(45deg); border-color: #d97706; }
+.node.decision .ni { transform: rotate(-45deg); }
+.node.approval { border-radius: 6px; border-color: #8b5cf6; }
+.node.done { background: #059669; border-color: #34d399; color: #fff; }
+.node.ready { background: #f59e0b; border-color: #fbbf24; color: #451a03; animation: nodepulse 1.6s infinite; }
+.node.skipped { background: #dc2626; border-color: #ef4444; color: #fff; }
+.node.blocked { background: #ea580c; border-color: #f97316; color: #fff; }
+.node.conditional { border-style: dashed; }
+.node.not_applicable { opacity: .4; }
+@keyframes nodepulse { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,.55); } 50% { box-shadow: 0 0 0 6px rgba(251,191,36,0); } }
 .branch input { background: #0f172a; color: #fbbf24; border: 1px solid #334155; border-radius: 4px; padding: 1px 5px; font-size: 11px; width: 150px; }
 .arrow { text-align: center; color: #475569; font-size: 11px; line-height: 1; margin: 1px 0; }
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
@@ -164,7 +185,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
 
 function renderStep(
   step: Step,
-  isLast: boolean,
+  index: number,
   container: HTMLElement,
   status?: mapstore.StepStatus,
 ) {
@@ -255,9 +276,13 @@ function renderStep(
   const map = mapstore.getMap()
   if (branches.length > 1 || branches.some((b) => b.condition)) {
     for (const b of branches) {
-      const target = map?.steps.find((s) => s.id === b.to)
+      const targetIdx = map?.steps.findIndex((s) => s.id === b.to) ?? -1
+      const target = targetIdx >= 0 ? map?.steps[targetIdx] : undefined
       const line = el('div', 'branch')
-      line.appendChild(el('span', undefined, `→ ${target?.label ?? b.to} if`))
+      const back = targetIdx >= 0 && targetIdx <= index
+      line.appendChild(el('span', `bglyph ${back ? 'back' : 'fwd'}`, back ? '⟲' : '↳'))
+      line.appendChild(el('span', 'btarget', `${targetIdx >= 0 ? `#${targetIdx + 1} ` : ''}${target?.label ?? b.to}`))
+      line.appendChild(el('span', undefined, 'if'))
       const cond = el('input') as HTMLInputElement
       cond.value = b.condition ?? ''
       cond.placeholder = 'condition…'
@@ -267,8 +292,16 @@ function renderStep(
     }
   }
 
-  container.appendChild(card)
-  if (!isLast) container.appendChild(el('div', 'arrow', '↓'))
+  const rowWrap = el('div', 'flow-row')
+  const nodeCol = el('div', 'node-col')
+  const node = el('div', `node ${step.type}${status ? ` ${status}` : ''}`)
+  const glyph = status === 'done' ? '✓' : status === 'skipped' ? '✕' : String(index + 1)
+  node.appendChild(el('span', 'ni', glyph))
+  node.title = `step ${index + 1} · ${step.type}${status ? ` · ${status}` : ''}`
+  nodeCol.appendChild(node)
+  rowWrap.appendChild(nodeCol)
+  rowWrap.appendChild(card)
+  container.appendChild(rowWrap)
 }
 
 function render() {
@@ -383,7 +416,7 @@ function render() {
   const map = mapstore.getMap()
   if (!map) {
     mapSection.appendChild(
-      el('div', 'empty', 'No process yet. Work in the app — the agent will draft one from what you do.'),
+      el('div', 'empty', 'No process yet. Do your work — the agent drafts the process around each event: what to prepare and prevent before it, what to verify and sign off after it.'),
     )
     const invite =
       'Work along with me on this page. Watch what I do, guide me with the saved playbooks, and ask me questions when a process is missing knowledge.'
@@ -425,9 +458,9 @@ function render() {
       mapSection.appendChild(f)
     }
     const statuses = mapstore.progress(preconditionFor)
-    map.steps.forEach((s, i) =>
-      renderStep(s, i === map.steps.length - 1, mapSection, statuses.get(s.id)),
-    )
+    const flow = el('div', 'flow')
+    map.steps.forEach((s, i) => renderStep(s, i, flow, statuses.get(s.id)))
+    mapSection.appendChild(flow)
     if (map.confirmed && isRunComplete()) {
       mapSection.appendChild(el('div', 'run-complete', '✓ Playbook run complete — all required steps handled'))
     }

@@ -58,7 +58,7 @@ const tools: ToolDef[] = [
   {
     name: 'describe_workspace',
     description:
-      'Start here. Describes this web app: what it is, what actions the agent can run on it, and whether a process map already exists. Understudy is a layer that lets you (the agent) watch what the human does in this app, structure their work into a business process, and later execute that process for them.',
+      'Start here. Describes this web app: what it is, what actions the agent can run on it, and whether a process map already exists. Understudy is a layer that lets you (the agent) watch what the human does in this app, structure their work into a business process, and later execute that process for them. The goal is never a record of the event itself — it is the process around it: what must be prepared, checked or prevented BEFORE work like this, and what must be verified, managed and signed off AFTER, captured from the human and enforced on the next run.',
     inputSchema: schema(),
     execute: async () => ({
       app: host.getAppName(),

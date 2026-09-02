@@ -9,6 +9,10 @@ experts actually work — by watching them do it. The human works; the agent
 maps the process beside them; the human corrects the map and teaches it the
 organization's judgment; the playbook then guides the next worker, catches
 skipped steps before they happen, and executes fixes with human approval.
+The point is bigger than logging the event: around every work event,
+Understudy captures what must be prepared and prevented *before* it and what
+must be verified and signed off *after* it — and makes that surrounding
+process enforceable.
 
 ## What it does
 
