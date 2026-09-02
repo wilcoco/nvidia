@@ -269,17 +269,19 @@ app.delete('/api/processes/:id', auth, async (req, res) => {
 app.post('/api/runs', auth, async (req, res) => {
   const { processId, title, steps } = req.body ?? {}
   if (!processId || !title) return res.status(400).json({ error: 'processId and title are required' })
+  // Ownership binds to the authenticated session (personas are a demo skin
+  // and change mid-run — they must never break the sync lane).
   const run = await db.startRun({
     processId: String(processId),
     title: String(title),
-    startedBy: actor(req),
+    startedBy: req.user.username,
     steps: Array.isArray(steps) ? steps : [],
   })
-  // One live run per starter: older active runs are retired so a reload can
-  // trust "the newest run" as the workspace's real state.
+  // One live run per workspace: starting retires every older active run so a
+  // reload can trust "the newest active" as the real state.
   const all = await db.listRuns()
   for (const r of all) {
-    if (r.status === 'active' && r.startedBy === run.startedBy && String(r.id) !== String(run.id)) {
+    if (r.status === 'active' && String(r.id) !== String(run.id)) {
       await db.updateRun(r.id, { status: 'abandoned' })
     }
   }
@@ -292,7 +294,7 @@ app.post('/api/runs/:id', auth, async (req, res) => {
     const all = await db.listRuns()
     const row = all.find((r) => String(r.id) === String(req.params.id))
     if (!row) return res.status(404).json({ error: 'run not found' })
-    if (row.startedBy && row.startedBy !== actor(req))
+    if (row.startedBy && row.startedBy !== req.user.username)
       return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
     if (b.steps !== undefined) {
       const ok =

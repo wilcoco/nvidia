@@ -75,8 +75,15 @@ function sync() {
       deviations: snap.deviations,
       status: snap.isComplete ? 'completed' : 'active',
     })
-    .catch(() => {
-      /* run bookkeeping must never break the page */
+    .catch((err) => {
+      if (!syncFailureLogged) {
+        syncFailureLogged = true
+        record(
+          'user',
+          'map',
+          `⚠ run sync failing (${err instanceof Error ? err.message : err}) — progress is NOT persisting to the server`,
+        )
+      }
     })
 }
 
@@ -88,9 +95,12 @@ function scheduleSync() {
 let subscribed = false
 
 /** Call right after a saved playbook is loaded; starts a run record for it. */
+let syncFailureLogged = false
+
 export function stopRunTracking(): void {
   runId = null
   completed = false
+  syncFailureLogged = false
 }
 
 /** Reattach to a run that already exists (page reload) instead of starting a new one. */
