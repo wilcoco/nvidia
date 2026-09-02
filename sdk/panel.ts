@@ -378,8 +378,10 @@ function buildOverview(panelEl: HTMLElement): HTMLElement | null {
   const TYPESTROKE: Record<string, string> = { task: '#3b82f6', decision: '#d97706', approval: '#8b5cf6' }
   // edges first (under nodes)
   map.steps.forEach((st, i) => {
+    // An explicit empty next means a terminal step; only an OMITTED next
+    // falls back to the implicit straight line.
     const edges =
-      st.next && st.next.length
+      st.next !== undefined
         ? st.next
         : i < map.steps.length - 1
           ? [{ to: map.steps[i + 1].id, condition: undefined }]
@@ -519,8 +521,10 @@ function drawEdges(flow: HTMLElement) {
   svg.appendChild(defs)
   const idx = new Map(map.steps.map((st, i) => [st.id, i] as const))
   map.steps.forEach((st, i) => {
+    // An explicit empty next means a terminal step; only an OMITTED next
+    // falls back to the implicit straight line.
     const edges =
-      st.next && st.next.length
+      st.next !== undefined
         ? st.next
         : i < map.steps.length - 1
           ? [{ to: map.steps[i + 1].id, condition: undefined }]
