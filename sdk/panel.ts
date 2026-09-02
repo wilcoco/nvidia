@@ -338,16 +338,24 @@ function buildOverview(panelEl: HTMLElement): HTMLElement | null {
   if (!map || map.steps.length < 2) return null
   const statuses = mapstore.progress(preconditionFor)
   const idx = new Map(map.steps.map((st, i) => [st.id, i] as const))
-  const col = new Array(map.steps.length).fill(0)
+  // Lane assignment: a branch's whole chain inherits its lane, so the map
+  // reads as parallel paths (main lane left, alternatives fanning right).
+  const col = new Array(map.steps.length).fill(-1)
+  col[0] = 0
   map.steps.forEach((st, i) => {
+    if (col[i] === -1) col[i] = 0
+    const base = col[i]
     const fwd = (st.next ?? [])
       .map((e) => idx.get(e.to))
       .filter((j): j is number => j !== undefined && j > i)
       .sort((x, y) => x - y)
     fwd.forEach((j, k) => {
-      if (k === 0) col[j] = Math.min(col[j], col[i])
-      else col[j] = Math.max(col[j], col[i] + k)
+      if (k === 0) col[j] = col[j] === -1 ? base : Math.min(col[j], base)
+      else if (col[j] === -1) col[j] = base + k
     })
+  })
+  map.steps.forEach((_, i) => {
+    if (col[i] === -1) col[i] = 0
   })
   const STEPX = 26
   const STEPY = 30
