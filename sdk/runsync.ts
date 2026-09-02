@@ -17,6 +17,9 @@ export function currentRunId(): string | null {
 function snapshot() {
   const map = mapstore.getMap()
   if (!map) return null
+  // A draft (e.g. reopened for revision) has no execution state — never let
+  // its empty status table read as "run complete".
+  if (!map.confirmed) return null
   const statuses = mapstore.progress(preconditionFor)
   const steps = map.steps
     .filter((s) => s.type !== 'decision')
