@@ -25,6 +25,7 @@ interface UnderstudyProcessMap {
     detail?: string
     action?: string
     humanOnly?: boolean
+    role?: string
     done?: boolean
     next?: Array<{ to: string; condition?: string }>
   }>
@@ -85,6 +86,8 @@ interface UnderstudyApi {
   notifyAction(name: string, resultId?: string): void
   unloadProcess?(): void
   currentRunId?(): string | null
+  getProgress?(): Array<{ id: string; label: string; type: string; role?: string; status?: string; done?: boolean }>
+  completeStep?(stepId: string): void
   getLoadedProcess(): UnderstudyProcessMap | null
 }
 

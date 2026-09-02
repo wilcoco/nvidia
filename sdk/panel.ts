@@ -85,6 +85,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step input.detail-edit { width: 100%; background: #0f172a; color: #fff; border: 1px solid #3b82f6; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-top: 3px; }
 .step .action-tag { color: #38bdf8; font-size: 10px; margin-top: 2px; }
 .step .human-tag { color: #a5b4fc; }
+.role-chip { font-size: 9px; font-weight: 700; color: #93c5fd; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.3); border-radius: 999px; padding: 1px 7px; flex: none; }
 .map-fields { color: #94a3b8; font-size: 11px; margin: -4px 0 8px; }
 .map-fields b { color: #cbd5e1; font-weight: 600; }
 .step button.del { background: none; border: none; color: #475569; cursor: pointer; flex: none; }
@@ -223,6 +224,9 @@ function renderStep(
       // successful review action.
       chk.disabled = true
       chk.title = 'Approval steps complete only via a successful review action'
+    } else if (step.role && host.actorRole() && step.role !== host.actorRole() && !step.done) {
+      chk.disabled = true
+      chk.title = `This step belongs to the ${step.role} role — switch persona to complete it`
     } else {
       chk.title = 'Mark this step done'
       chk.onchange = () => {
@@ -312,6 +316,7 @@ function renderStep(
   if (step.naReason) card.appendChild(el('div', 'detail', `N/A: ${step.naReason}`))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
   if (step.humanOnly) card.appendChild(el('div', 'action-tag human-tag', '👤 human step'))
+  if (step.role) meta.insertBefore(el('span', 'role-chip', `👤 ${step.role}`), meta.querySelector('.spacer'))
   if (status === 'blocked' && step.action) {
     const reason = preconditionFor(step.action)
     if (reason) card.appendChild(el('div', 'blocked-reason', `⛔ ${reason}`))

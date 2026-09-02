@@ -113,3 +113,5 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .modal { background: #fff; border-radius: 14px; padding: 20px 22px; max-width: 420px; width: calc(100vw - 48px); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
 .modal h3 { margin: 0 0 10px; }
 .modal .hint { color: #475569; font-size: 13px; line-height: 1.55; }
+.task-card { border-left: 4px solid #f59e0b; }
+.waiting-card { opacity: .75; border-left: 4px solid #94a3b8; }

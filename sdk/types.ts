@@ -28,6 +28,8 @@ export interface Step {
   label: string
   type: StepType
   detail?: string
+  /** Role responsible for this step (e.g. Contributor, Reviewer). Empty = anyone. */
+  role?: string
   /** Which host action (if any) performs this step when the agent replays the process. */
   action?: string
   next?: BranchTarget[]

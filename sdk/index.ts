@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, subscribe as subscribeMap } from './mapstore'
+import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, progress as progressOf, humanToggleStepDone, subscribe as subscribeMap } from './mapstore'
 import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
@@ -93,6 +93,26 @@ function getLoadedProcess(): ProcessMap | null {
   return getMap()
 }
 
+/** Host worklists complete a step through the same role/order-guarded lane as the panel checkbox. */
+function completeStep(stepId: string): void {
+  humanToggleStepDone(stepId)
+}
+
+/** Live per-step status for host-side worklists ('what is next, and whose is it'). */
+function getProgress(): Array<{ id: string; label: string; type: string; role?: string; status?: string; done?: boolean }> {
+  const m = getMap()
+  if (!m || !m.confirmed) return []
+  const statuses = progressOf()
+  return m.steps.map((s) => ({
+    id: s.id,
+    label: s.label,
+    type: s.type,
+    role: s.role,
+    status: statuses.get(s.id),
+    done: s.done,
+  }))
+}
+
 // Let host apps react to map changes (dynamic field forms, etc.).
 subscribeMap(() => {
   try {
@@ -110,5 +130,7 @@ subscribeMap(() => {
   unloadProcess,
   notifyAction,
   getLoadedProcess,
+  getProgress,
+  completeStep,
   currentRunId,
 }

@@ -34,6 +34,21 @@ export function getState(): unknown {
   return stateProvider ? stateProvider() : { note: 'This app did not register a state provider.' }
 }
 
+/** The active persona's role, when the host state exposes actingAs + users[]. */
+export function actorRole(): string | undefined {
+  try {
+    const st = getState() as {
+      actingAs?: unknown
+      users?: Array<{ username?: unknown; role?: unknown }>
+    } | null
+    const acting = typeof st?.actingAs === 'string' ? st.actingAs : undefined
+    const u = Array.isArray(st?.users) ? st.users.find((x) => x?.username === acting) : undefined
+    return typeof u?.role === 'string' ? u.role : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function registerAction(action: HostAction): void {
   actions.set(action.name, action)
 }

@@ -614,9 +614,83 @@ function RunStartedModal({ info }: { info: NonNullable<store.AppState['runStarte
   )
 }
 
+function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () => void }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const f = () => setTick((t) => t + 1)
+    window.addEventListener('understudy:mapchange', f)
+    return () => window.removeEventListener('understudy:mapchange', f)
+  }, [])
+  const proc = window.Understudy.getLoadedProcess?.()
+  const prog = window.Understudy.getProgress?.() ?? []
+  const runId = window.Understudy.currentRunId?.()
+  const myRole = state.users.find((u) => u.username === state.actingAs)?.role
+  if (!proc || prog.length === 0)
+    return (
+      <p className="empty">
+        No process is running. Follow a playbook (Playbooks tab, or click a work-log entry) and its
+        steps will be assigned here by role.
+      </p>
+    )
+  const detailOf = (id: string) => proc.steps.find((s) => s.id === id)?.detail
+  const actionOf = (id: string) => proc.steps.find((s) => s.id === id)?.action
+  const ready = prog.filter((p) => p.status === 'ready')
+  const mine = ready.filter((p) => !p.role || !myRole || p.role === myRole)
+  const theirs = ready.filter((p) => p.role && myRole && p.role !== myRole)
+  const done = prog.filter((p) => p.done).length
+  return (
+    <div className="list">
+      <div className="meta">
+        {proc.title}
+        {runId ? ` · run #${runId}` : ''} · {done}/{prog.length} steps done
+      </div>
+      {mine.length === 0 && theirs.length === 0 && (
+        <p className="empty">Nothing is waiting on anyone — the run may be complete or awaiting a decision (ask the agent).</p>
+      )}
+      {mine.map((p) => (
+        <div key={p.id} className="card entry task-card">
+          <div className="entry-head">
+            <span className="task">
+              <span className="kind-tag">{p.type}</span> {p.label}
+            </span>
+            <span className="status draft">assigned to you{p.role ? ` (${p.role})` : ''}</span>
+          </div>
+          {detailOf(p.id) && <div className="meta">{detailOf(p.id)}</div>}
+          {p.type === 'approval' ? (
+            <button className="primary" onClick={goReviews}>
+              Open Reviews to decide
+            </button>
+          ) : p.type === 'decision' ? (
+            <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
+          ) : (
+            <div className="decide">
+              {actionOf(p.id) === 'log_work_item' && (
+                <span className="meta">Saving a work log completes this step — or:</span>
+              )}
+              <button className="primary" onClick={() => window.Understudy.completeStep?.(p.id)}>
+                Mark complete
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      {theirs.map((p) => (
+        <div key={p.id} className="card entry waiting-card">
+          <div className="entry-head">
+            <span className="task">⏳ Waiting on {p.role}</span>
+          </div>
+          <div className="meta">
+            {p.label} — switch persona to {p.role} to complete it, or ask the agent who is blocked.
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
-  const [tab, setTab] = useState<'incidents' | 'approvals' | 'playbooks'>('incidents')
+  const [tab, setTab] = useState<'incidents' | 'tasks' | 'approvals' | 'playbooks'>('incidents')
   const [resetFlash, setResetFlash] = useState(false)
 
   useEffect(() => {
@@ -675,6 +749,9 @@ export default function App() {
         <button className={tab === 'incidents' ? 'active' : ''} onClick={() => setTab('incidents')}>
           Work log
         </button>
+        <button className={tab === 'tasks' ? 'active' : ''} onClick={() => setTab('tasks')}>
+          My tasks
+        </button>
         <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
           Reviews{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
         </button>
@@ -686,6 +763,7 @@ export default function App() {
       </nav>
 
       <main>
+        {tab === 'tasks' && <MyTasks state={state} goReviews={() => setTab('approvals')} />}
         {tab === 'incidents' && (
           <>
             <SuggestionCard />

@@ -78,9 +78,18 @@ app.get('/api/state', auth, async (req, res) => {
   res.json({ me: req.user, users, worklogs, approvals, processes })
 })
 
+async function roleOfUser(username) {
+  if (!username) return undefined
+  const users = await db.listUsers()
+  return users.find((u) => u.username === username)?.role
+}
+
 app.post('/api/worklogs', auth, async (req, res) => {
   const b = req.body ?? {}
   if (!b.date || !b.line || !b.task) return res.status(400).json({ error: 'date, line, task are required' })
+  const role = await roleOfUser(b.actingAs)
+  if (role && role !== 'Contributor')
+    return res.status(403).json({ error: 'role_mismatch', detail: `Work logs are written by Contributors; the active persona's role is ${role}.` })
   const row = await db.createWorklog({
     date: String(b.date),
     line: String(b.line),
@@ -195,6 +204,15 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   const existing = await db.getApproval(req.params.id)
   if (!existing) return res.status(404).json({ error: 'approval not found' })
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })
+  {
+    const actingAs = typeof req.body?.actingAs === 'string' ? req.body.actingAs : undefined
+    if (actingAs && actingAs !== existing.approver) {
+      return res.status(403).json({
+        error: 'role_mismatch',
+        detail: `This review is assigned to ${existing.approver}; the active persona is ${actingAs}.`,
+      })
+    }
+  }
   if (decision === 'APPROVED') {
     const wlAll = await db.listWorklogs()
     const wlRow = wlAll.find((w) => w.id === existing.worklogId)

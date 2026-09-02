@@ -154,20 +154,6 @@ async function executeCore(
 }
 
 /** Agent path: validate → guard → gate (async pending) or execute. */
-function actorRole(): string | undefined {
-  try {
-    const st = host.getState() as {
-      actingAs?: unknown
-      users?: Array<{ username?: unknown; role?: unknown }>
-    } | null
-    const acting = typeof st?.actingAs === 'string' ? st.actingAs : undefined
-    const u = Array.isArray(st?.users) ? st.users.find((x) => x?.username === acting) : undefined
-    return typeof u?.role === 'string' ? u.role : undefined
-  } catch {
-    return undefined
-  }
-}
-
 export function startHostAction(
   name: string,
   raw: Record<string, unknown>,
@@ -183,7 +169,7 @@ export function startHostAction(
 
   // Role separation: an action reserved for a role refuses other personas.
   if (action.roles?.length) {
-    const role = actorRole()
+    const role = host.actorRole()
     if (role && !action.roles.includes(role)) {
       return {
         ok: false,

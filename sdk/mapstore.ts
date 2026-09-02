@@ -242,7 +242,7 @@ export function markActionDone(
 /** Agent refines a single step in place (e.g. writing captured judgment into its note). */
 export function agentUpdateStep(
   stepId: string,
-  patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean },
+  patch: { label?: string; detail?: string; action?: string; humanOnly?: boolean; role?: string },
   branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
 ): { ok: boolean; error?: string; detail?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
@@ -256,7 +256,7 @@ export function agentUpdateStep(
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const changed: string[] = []
-  for (const field of ['label', 'detail', 'action'] as const) {
+  for (const field of ['label', 'detail', 'action', 'role'] as const) {
     const value = patch[field]
     if (value !== undefined && value !== step[field]) {
       step[field] = value
@@ -308,6 +308,17 @@ export function resolveDecision(
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const edge = step.next?.find((e) => e.to === branchTo)
   if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branchTo}"` }
+  // Role separation: a decision owned by a role is resolved only by that role.
+  {
+    const role = host.actorRole()
+    if (step.role && role && step.role !== role) {
+      return {
+        ok: false,
+        error: 'role_mismatch',
+        detail: `The decision "${step.label}" belongs to the ${step.role} role; the active persona's role is ${role}. Switch persona first.`,
+      }
+    }
+  }
   // Order enforcement: a decision may only be resolved when it IS the live
   // gate — recording outcomes for steps not yet reached is how audit trails
   // get falsified, so it is refused, not warned.
@@ -429,6 +440,15 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
 
 /** Human checks a step off (or un-checks it) in the panel. */
 export function humanToggleStepDone(stepId: string): void {
+  {
+    const step = map?.steps.find((s) => s.id === stepId)
+    const role = host.actorRole()
+    if (step?.role && role && step.role !== role && !step.done) {
+      record('user', 'map', `blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
+      notify()
+      return
+    }
+  }
   if (!map) return
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return

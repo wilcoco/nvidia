@@ -228,6 +228,11 @@ const tools: ToolDef[] = [
           type: 'boolean',
           description: 'Mark the step as inherently manual (no host action can perform it); clears any action binding',
         },
+        role: {
+          type: 'string',
+          description:
+            "Role responsible for this step (this app's roles are in describe_workspace's state, e.g. Contributor, Reviewer). Only that role's persona can complete it or resolve its decision. ALWAYS set it when the human names who does a step.",
+        },
       },
       ['stepId'],
     ),
@@ -239,6 +244,7 @@ const tools: ToolDef[] = [
           detail: args.detail === undefined ? undefined : String(args.detail),
           action: args.action === undefined ? undefined : String(args.action),
           humanOnly: args.humanOnly === undefined ? undefined : args.humanOnly === true,
+          role: args.role === undefined ? undefined : String(args.role),
         },
         args.branch_to && (args.branch_condition || args.branch_criteria)
           ? {
@@ -371,12 +377,24 @@ const tools: ToolDef[] = [
           id: s.id,
           label: s.label,
           action: s.action,
+          role: s.role,
           status: statuses.get(s.id),
           resultId: s.resultId,
           blockedReason:
             statuses.get(s.id) === 'blocked' && s.action ? preconditionFor(s.action) : undefined,
         }))
+      const activeRole = host.actorRole()
       const ready = view.find((s) => s.status === 'ready')
+      const assignment = ready
+        ? {
+            step: ready.label,
+            assigned_role: ready.role ?? 'anyone',
+            is_active_personas_turn: !ready.role || !activeRole || ready.role === activeRole,
+            note: ready.role && activeRole && ready.role !== activeRole
+              ? `Waiting on the ${ready.role} role — the active persona (${activeRole}) cannot complete it. Suggest switching persona or notifying that role.`
+              : undefined,
+          }
+        : undefined
       const blocked = view.find((s) => s.status === 'blocked')
       const gate = mapstore.pendingDecision()
       const branchingSteps = map.steps
@@ -391,6 +409,7 @@ const tools: ToolDef[] = [
         }))
       return {
         active: true,
+        assignment,
         process: map.title,
         steps: view,
         branching_steps: branchingSteps,
