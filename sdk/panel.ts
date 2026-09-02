@@ -134,6 +134,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .run-summary { background: linear-gradient(180deg, #064e3b, #0b3a2e); border: 1px solid #059669; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
 .run-summary .rs-title { color: #6ee7b7; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
 .run-summary .rs-line { color: #a7f3d0; font-size: 11px; line-height: 1.6; }
+.run-summary .rs-copy { margin-top: 8px; background: #059669; color: #fff; border: none; border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .map-hint { color: #64748b; font-size: 10.5px; line-height: 1.5; margin: -2px 0 10px; }
 .overview { background: #10182a; border: 1px solid rgba(148,163,184,.08); border-radius: 10px; padding: 6px 8px; margin-bottom: 10px; overflow-x: auto; }
@@ -840,6 +841,36 @@ function render() {
       }
       const signed = map.steps.filter((s) => s.type === 'approval' && s.done).map((s) => s.label)
       if (signed.length) card.appendChild(el('div', 'rs-line', `✍ signed off: ${signed.join(' · ')}`))
+      const copyBtn = el('button', 'rs-copy', '📋 Copy run report')
+      copyBtn.onclick = () => {
+        const lines: string[] = [`# Run report — ${map.title}${map.version ? ` v${map.version}` : ''}`, '']
+        lines.push('## Steps')
+        for (const s of map.steps) {
+          const state = s.done ? 'done' : s.naReason ? `n/a (${s.naReason})` : 'not required'
+          const who = s.completedBy ? ` — ${s.completedBy}` : ''
+          const when = s.completedAt ? ` @ ${new Date(s.completedAt).toLocaleString('en-US')}` : ''
+          const vals = s.resultData
+            ? ` — ${Object.entries(s.resultData).map(([k, v]) => `${k}=${v}`).join(', ')}`
+            : ''
+          lines.push(`- [${s.done ? 'x' : ' '}] ${s.label} (${s.type}${s.role ? `, ${s.role}` : ''}): ${state}${who}${when}${vals}`)
+        }
+        const decs = (map.decisions ?? []).filter((d) => !d.invalidated)
+        if (decs.length) {
+          lines.push('', '## Decisions')
+          for (const d of decs) {
+            const from = map.steps.find((s) => s.id === d.stepId)?.label ?? d.stepId
+            const to = map.steps.find((s) => s.id === d.to)?.label ?? d.to
+            lines.push(`- ${from} → ${to}${d.reason ? ` — ${d.reason}` : ''}${d.evidence ? ` (evidence: ${d.evidence})` : ''}`)
+          }
+        }
+        void navigator.clipboard.writeText(lines.join('\n')).then(() => {
+          copyBtn.textContent = '✓ Copied'
+          setTimeout(() => {
+            copyBtn.textContent = '📋 Copy run report'
+          }, 1500)
+        })
+      }
+      card.appendChild(copyBtn)
       mapSection.appendChild(card)
     }
     const bar = el('div', 'confirm-bar')

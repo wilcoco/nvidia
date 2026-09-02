@@ -691,6 +691,23 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     return before.length ? before[before.length - 1] : undefined
   }
   const nextUp = (id: string) => prog.slice(idxOf(id) + 1).find((p) => !p.done && p.status !== 'not_applicable')
+  const rememberValues = (vals: Record<string, unknown>) => {
+    try {
+      const cur = JSON.parse(localStorage.getItem('understudy.recentValues') ?? '{}')
+      for (const [k, v] of Object.entries(vals)) if (typeof v !== 'boolean') cur[k] = String(v)
+      localStorage.setItem('understudy.recentValues', JSON.stringify(cur))
+    } catch {
+      /* per-viewer convenience only */
+    }
+  }
+  const recentValue = (key: string): string | undefined => {
+    try {
+      const cur = JSON.parse(localStorage.getItem('understudy.recentValues') ?? '{}')
+      return typeof cur[key] === 'string' ? cur[key] : undefined
+    } catch {
+      return undefined
+    }
+  }
   const complete = (p: { id: string; fields?: string[] }) => {
     const defs = (p.fields ?? [])
       .map((k) => fieldDefs.find((f) => f.key === k))
@@ -706,6 +723,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         })
         .filter(([, v]) => v !== undefined),
     )
+    rememberValues(values)
     window.Understudy.completeStep?.(p.id, values)
   }
   return (
@@ -785,6 +803,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                       <input
                         type={f.type === 'number' ? 'number' : 'text'}
                         value={String(raw[f.key] ?? '')}
+                        placeholder={recentValue(f.key) ? `last: ${recentValue(f.key)}` : undefined}
                         onChange={(e) =>
                           setTaskValues({ ...taskValues, [p.id]: { ...raw, [f.key]: e.target.value } })
                         }
