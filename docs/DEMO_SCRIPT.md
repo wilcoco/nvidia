@@ -1,6 +1,6 @@
 # Understudy — 3-minute demo script
 
-**Environment**: ChatGPT's browser (WebMCP enabled), signed in as `judge`.
+**Environment**: ChatGPT's in-app browser (desktop app agent), signed in as `judge`.
 Before recording press **Start fresh demo** (playbooks are kept).
 Screen layout: demo app left, Understudy panel right, ChatGPT visible.
 

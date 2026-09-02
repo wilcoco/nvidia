@@ -47,8 +47,11 @@ This product cannot exist as a chatbot or a server-side MCP integration:
 
 Human and agent share one surface. That is exactly the collaboration WebMCP
 enables: the page registers tools via `modelContext.registerTool()` /
-`provideContext()`, and the agent in the browser (ChatGPT's in-app browser, or
-Chrome 149+ with `chrome://flags/#enable-webmcp-testing`) calls them directly.
+`provideContext()`, and the agent in the browser (ChatGPT's in-app browser)
+calls them directly. In Chrome 149+ you can also inspect and execute the
+registered tools yourself: enable `chrome://flags/#enable-webmcp-testing` and
+`chrome://flags/#devtools-webmcp-support`, then open
+**DevTools → Application → WebMCP**.
 
 ## Live demo
 

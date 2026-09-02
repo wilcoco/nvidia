@@ -76,9 +76,14 @@ through the declarative attribute API.
 - Live: https://nvidia-production-f205.up.railway.app
 - Sign in: **judge / webmcp2026** (pre-filled; kim & lee / linepulse also work)
 - Press **Start fresh demo** for a clean slate (playbooks are kept).
-- Open in ChatGPT's browser or Chrome 149+ with
-  `chrome://flags/#enable-webmcp-testing`, then say:
-  *"Watch how I handle this incident and turn it into a playbook."*
+- Open the live URL using ChatGPT's in-app browser (desktop app agent), then
+  say: *"Work along with me on this page — watch what I do, guide me with the
+  saved playbooks, and ask questions when a process is missing knowledge."*
+- Alternatively, use Chrome 149+: enable
+  `chrome://flags/#enable-webmcp-testing` and
+  `chrome://flags/#devtools-webmcp-support`, relaunch, open the URL, then
+  inspect the registered tools under **DevTools → Application → WebMCP**
+  (tool list, input schemas, direct execution).
 - Full walkthrough: `docs/DEMO_SCRIPT.md`. No payment or personal data; all
   scenario data is fictional.
 
