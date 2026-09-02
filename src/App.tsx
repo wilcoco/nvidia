@@ -680,10 +680,11 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     )
   const stepOf = (id: string) => proc.steps.find((s) => s.id === id)
   const fieldDefs = proc.fields ?? []
-  const ready = prog.filter((p) => p.status === 'ready')
-  const mine = ready.filter((p) => !p.role || !myRole || p.role === myRole)
-  const theirs = ready.filter((p) => p.role && myRole && p.role !== myRole)
+  const attention = prog.filter((p) => p.status === 'ready' || p.status === 'blocked' || p.status === 'skipped')
+  const mine = attention.filter((p) => !p.role || !myRole || p.role === myRole)
+  const theirs = attention.filter((p) => p.role && myRole && p.role !== myRole)
   const done = prog.filter((p) => p.done).length
+  const required = prog.filter((p) => p.status !== 'not_applicable').length
   const idxOf = (id: string) => prog.findIndex((p) => p.id === id)
   const prevDone = (id: string) => {
     const before = prog.slice(0, idxOf(id)).filter((p) => p.done)
@@ -711,7 +712,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     <div className="list">
       <div className="meta">
         {proc.title}
-        {runId ? ` · run #${runId}` : ''} · {done}/{prog.length} steps done · your role: {myRole ?? '—'}
+        {runId ? ` · run #${runId}` : ''} · {done}/{required} steps done · your role: {myRole ?? '—'}
       </div>
       {mine.length === 0 && theirs.length === 0 && (
         <p className="empty">
@@ -738,8 +739,23 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
               <span className="task">
                 <span className="kind-tag">{p.type}</span> {p.label}
               </span>
-              <span className="status draft">assigned to you{p.role ? ` (${p.role})` : ''}</span>
+              <span className={`status ${p.status === 'skipped' ? 'rejected' : 'draft'}`}>
+                {p.status === 'blocked'
+                  ? 'blocked'
+                  : p.status === 'skipped'
+                    ? 'skipped — needs resolution'
+                    : `assigned to you${p.role ? ` (${p.role})` : ''}`}
+              </span>
             </div>
+            {p.status === 'blocked' && (
+              <div className="meta">Blocked — the panel card shows the exact reason.</div>
+            )}
+            {p.status === 'skipped' && (
+              <div className="meta">
+                This step was jumped over. Ask the agent to resolve the deviation (complete it late or
+                excuse it with a reason) before sign-off.
+              </div>
+            )}
             {st?.detail && <div className="meta">{st.detail}</div>}
             {prev && (
               <div className="meta">

@@ -131,6 +131,9 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .confirmed { color: #34d399; font-weight: 600; font-size: 12px; }
 .confirm-bar .unsaved { color: #fbbf24; font-size: 11px; font-weight: 600; }
 .run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
+.run-summary { background: linear-gradient(180deg, #064e3b, #0b3a2e); border: 1px solid #059669; border-radius: 10px; padding: 10px 12px; margin-top: 8px; }
+.run-summary .rs-title { color: #6ee7b7; font-weight: 700; font-size: 13px; margin-bottom: 6px; }
+.run-summary .rs-line { color: #a7f3d0; font-size: 11px; line-height: 1.6; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .map-hint { color: #64748b; font-size: 10.5px; line-height: 1.5; margin: -2px 0 10px; }
 .overview { background: #10182a; border: 1px solid rgba(148,163,184,.08); border-radius: 10px; padding: 6px 8px; margin-bottom: 10px; overflow-x: auto; }
@@ -816,7 +819,28 @@ function render() {
     map.steps.forEach((s, i) => renderStep(s, i, flow, statuses.get(s.id)))
     mapSection.appendChild(flow)
     if (map.confirmed && isRunComplete()) {
-      mapSection.appendChild(el('div', 'run-complete', '✓ Playbook run complete — all required steps handled'))
+      const card = el('div', 'run-summary')
+      card.appendChild(el('div', 'rs-title', '🏁 Run complete — all required steps handled'))
+      const people = [
+        ...new Set(
+          map.steps.filter((s) => s.done && s.completedBy).map((s) => `${s.completedBy}${s.role ? ` (${s.role})` : ''}`),
+        ),
+      ]
+      if (people.length) card.appendChild(el('div', 'rs-line', `👥 ${people.join(' · ')}`))
+      const values: Record<string, unknown> = {}
+      for (const s of map.steps) if (s.resultData) Object.assign(values, s.resultData)
+      if (Object.keys(values).length)
+        card.appendChild(
+          el('div', 'rs-line', `📊 ${Object.entries(values).map(([k, v]) => `${k}=${v}`).join(' · ')}`),
+        )
+      for (const d of (map.decisions ?? []).filter((x) => !x.invalidated)) {
+        const from = map.steps.find((s) => s.id === d.stepId)?.label ?? d.stepId
+        const to = map.steps.find((s) => s.id === d.to)?.label ?? d.to
+        card.appendChild(el('div', 'rs-line', `◈ ${from} → ${to}`))
+      }
+      const signed = map.steps.filter((s) => s.type === 'approval' && s.done).map((s) => s.label)
+      if (signed.length) card.appendChild(el('div', 'rs-line', `✍ signed off: ${signed.join(' · ')}`))
+      mapSection.appendChild(card)
     }
     const bar = el('div', 'confirm-bar')
     if (map.confirmed) {
