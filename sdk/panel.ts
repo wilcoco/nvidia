@@ -125,7 +125,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .map-hint { color: #64748b; font-size: 10.5px; line-height: 1.5; margin: -2px 0 10px; }
 .overview { background: #10182a; border: 1px solid rgba(148,163,184,.08); border-radius: 10px; padding: 6px 8px; margin-bottom: 10px; overflow-x: auto; }
-.overview svg { display: block; }
+.overview svg { display: block; margin: 0 auto; }
 .overview .mini { cursor: pointer; }
 .map-hint::before { content: 'ℹ '; opacity: .8; }
 .card { background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
