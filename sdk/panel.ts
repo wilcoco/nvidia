@@ -19,7 +19,7 @@ const CSS = `
 :host { all: initial; }
 * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
 .panel {
-  position: fixed; top: 0; right: 0; height: 100vh; width: 360px; z-index: 2147483000;
+  position: fixed; top: 0; right: 0; height: 100vh; height: 100dvh; width: min(360px, 86vw); z-index: 2147483000;
   background: #0f172a; color: #e2e8f0; display: flex; flex-direction: column;
   box-shadow: -4px 0 24px rgba(0,0,0,.35); font-size: 13px;
 }
@@ -270,6 +270,10 @@ function render() {
   const root = shadow.getElementById('root')
   if (!root) return
   root.innerHTML = ''
+
+  // Let the host page adapt its layout to the panel (e.g. release the
+  // right-hand margin when the panel is minimized on narrow screens).
+  document.documentElement.setAttribute('data-understudy-panel', collapsed ? 'collapsed' : 'open')
 
   const fab = el('button', 'fab', collapsed ? '🎭 Understudy' : '')
   if (collapsed) {
