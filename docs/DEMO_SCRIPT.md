@@ -104,6 +104,9 @@ plain.html with its one script tag (view-source flash) → the tools list.*
 > "AI diagram tools draw the process you can already describe — and a diagram
 > can't refuse a bad pass decision. This playbook was captured from real work,
 > and it just did.
+> This build is the capture-and-enforce layer; the same playbook format seeds
+> the operations layer — because WebMCP gives every adopting app standard
+> tools, a step can bind to another app's tool the same way it runs this one's.
 > The paint-shop app is just a demo workspace. Understudy itself is one script tag —
 > nineteen WebMCP tools, an action journal, and a live process panel that any
 > web app can adopt. Your team already knows how the work is done.
