@@ -298,16 +298,22 @@ export function resolveDecision(
   }
   if (!map.decisions) map.decisions = []
   map.decisions.push({ stepId, to: branchTo, reason, evidence: evidence ?? (measurements ? JSON.stringify(measurements) : undefined), ts: Date.now() })
-  // A verified pass (forward branch with measurements) is worth keeping on the
-  // business record itself — otherwise the approval would show the initial
-  // failing readings instead of the values that actually passed.
-  const orderAll = new Map(map.steps.map((s, i) => [s.id, i]))
-  if (measurements && (orderAll.get(branchTo) ?? 0) > (orderAll.get(stepId) ?? 0)) {
+  // Measured resolutions are worth keeping on the business record itself,
+  // together with WHERE they routed the run — a remediation branch can also
+  // point forward, so direction alone says nothing about pass/fail.
+  if (measurements) {
+    const targetStep = map.steps.find((s) => s.id === branchTo)
     const producedIds = map.steps
       .filter((s) => s.resultId)
       .map((s) => ({ step: s.label, action: s.action, id: s.resultId! }))
     void Promise.resolve(
-      host.getProcessStore()?.saveVerification?.(measurements, { stepId, branchTo, producedIds }),
+      host.getProcessStore()?.saveVerification?.(measurements, {
+        stepId,
+        branchTo,
+        producedIds,
+        branchLabel: targetStep?.label,
+        toApproval: targetStep?.type === 'approval',
+      }),
     ).catch(() => {})
   }
   record(

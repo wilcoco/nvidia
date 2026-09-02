@@ -114,10 +114,17 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
 app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
   const m = req.body?.measurements
   if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
-  const row = await db.mergeWorklogData(req.params.id, {
+  const patch = {
     verification: m,
     verifiedAt: new Date().toISOString(),
-  })
+  }
+  if (req.body?.route && typeof req.body.route === 'object') {
+    patch.verifiedRoute = {
+      label: typeof req.body.route.label === 'string' ? req.body.route.label : undefined,
+      pass: req.body.route.pass === true,
+    }
+  }
+  const row = await db.mergeWorklogData(req.params.id, patch)
   if (!row) return res.status(404).json({ error: 'worklog not found' })
   res.json(row)
 })

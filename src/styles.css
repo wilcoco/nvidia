@@ -104,3 +104,4 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 
 .card.entry.clickable { cursor: pointer; }
 .card.entry.clickable:hover { border-color: #93c5fd; }
+.verify-note.reroute { background: #fffbeb; border-color: #fcd34d; color: #92400e; }

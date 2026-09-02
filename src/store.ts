@@ -258,8 +258,9 @@ export async function recordCorrectiveAction(
 export async function saveVerification(
   worklogId: string,
   measurements: Record<string, unknown>,
+  route?: { label?: string; pass?: boolean },
 ): Promise<void> {
-  await api(`/api/worklogs/${worklogId}/verification`, { measurements })
+  await api(`/api/worklogs/${worklogId}/verification`, { measurements, route })
   window.Understudy.log(
     `verified measurements saved on incident #${worklogId}: ${Object.entries(measurements)
       .map(([k, v]) => `${k}=${v}`)

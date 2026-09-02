@@ -118,7 +118,13 @@ export interface ProcessStoreAdapter {
    *  initial failing readings). */
   saveVerification?: (
     measurements: Record<string, unknown>,
-    meta: { stepId: string; branchTo: string; producedIds: Array<{ step: string; action?: string; id: string }> },
+    meta: {
+      stepId: string
+      branchTo: string
+      producedIds: Array<{ step: string; action?: string; id: string }>
+      branchLabel?: string
+      toApproval?: boolean
+    },
   ) => void | Promise<unknown>
   /** Optional run persistence: one record per execution of a playbook. */
   startRun?: (processId: string, map: ProcessMap) => Promise<{ id: string }>

@@ -40,7 +40,11 @@ window.Understudy.init({
     saveVerification: (measurements, meta) => {
       const produced = meta.producedIds.find((p) => p.action === 'log_work_item')
       const target = produced?.id ?? store.getState().worklogs[0]?.id
-      if (target) return store.saveVerification(target, measurements)
+      if (target)
+        return store.saveVerification(target, measurements, {
+          label: meta.branchLabel,
+          pass: meta.toApproval,
+        })
     },
   },
   // Resolve playbook branch conditions against live data: the urgency branch

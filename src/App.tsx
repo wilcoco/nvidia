@@ -286,9 +286,13 @@ function VerificationBlock({ w }: { w: store.Worklog }) {
       </span>
     )
   })
+  const route = w.data.verifiedRoute as { label?: string; pass?: boolean } | undefined
+  const t = w.data.verifiedAt ? ` · ${new Date(w.data.verifiedAt).toLocaleTimeString('en-US')}` : ''
   return (
-    <div className="note verify-note">
-      ✅ Verified (passed criteria{w.data.verifiedAt ? `, ${new Date(w.data.verifiedAt).toLocaleTimeString('en-US')}` : ''}): {rows}
+    <div className={`note verify-note ${route && !route.pass ? 'reroute' : ''}`}>
+      {route?.pass !== false ? '✅ Measured — criteria met' : '⚠️ Measured — criteria not met'}
+      {route?.label ? ` → routed to: ${route.label}` : ''}
+      {t}: {rows}
     </div>
   )
 }

@@ -53,7 +53,13 @@ interface UnderstudyApi {
       findRelevant?: () => unknown
       saveVerification?: (
         measurements: Record<string, unknown>,
-        meta: { stepId: string; branchTo: string; producedIds: Array<{ step: string; action?: string; id: string }> },
+        meta: {
+          stepId: string
+          branchTo: string
+          producedIds: Array<{ step: string; action?: string; id: string }>
+          branchLabel?: string
+          toApproval?: boolean
+        },
       ) => void | Promise<unknown>
       startRun?: (processId: string, map: UnderstudyProcessMap) => Promise<{ id: string }>
       updateRun?: (
