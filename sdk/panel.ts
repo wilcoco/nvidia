@@ -227,6 +227,9 @@ function renderStep(
     } else if (step.role && host.actorRole() && step.role !== host.actorRole() && !step.done) {
       chk.disabled = true
       chk.title = `This step belongs to the ${step.role} role — switch persona to complete it`
+    } else if (!step.done && step.fields?.length) {
+      chk.disabled = true
+      chk.title = 'This step requires inputs — complete it from the My tasks card'
     } else {
       chk.title = 'Mark this step done'
       chk.onchange = () => {

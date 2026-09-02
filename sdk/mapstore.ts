@@ -446,16 +446,31 @@ export function resolveDecision(
   const to = idx.get(branchTo) ?? 0
   const reopened: string[] = []
   if (to <= from) {
-    // Loop-back: the loop body (target through the branching step) runs again.
+    // Loop-back: the loop body (target through the branching step) runs again,
+    // and every decision inside it must be re-resolved on the retry.
+    const resetDecisions: string[] = []
     for (const s of map.steps) {
       const i = idx.get(s.id) ?? 0
-      if (i >= to && i <= from && s.type !== 'decision' && (s.done || s.naReason)) {
+      if (i < to || i > from) continue
+      if (s.type !== 'decision' && (s.done || s.naReason)) {
         s.done = false
         delete s.naReason
         reopened.push(s.label)
       }
+      if (s.id !== stepId && (s.next?.length ?? 0) > 1) {
+        let had = false
+        for (const d of map.decisions ?? []) {
+          if (d.stepId === s.id && !d.invalidated) {
+            d.invalidated = true
+            had = true
+          }
+        }
+        if (had) resetDecisions.push(s.label)
+      }
     }
     if (reopened.length) record(by, 'map', `re-opened for the loop: ${reopened.join('; ')}`)
+    if (resetDecisions.length)
+      record(by, 'map', `decision(s) reset for the retry — must be re-resolved: ${resetDecisions.join('; ')}`)
   }
   notify()
   return { ok: true, reopened }
@@ -483,6 +498,24 @@ export function humanToggleStepDone(stepId: string, values?: Record<string, unkn
       return
     }
     if (step && !step.done) {
+      if (step.fields?.length) {
+        const required = (map?.fields ?? []).filter(
+          (f) => step.fields!.includes(f.key) && f.required && f.type !== 'boolean',
+        )
+        const missing = required.filter((f) => {
+          const v = values?.[f.key]
+          return v === undefined || v === ''
+        })
+        if (missing.length) {
+          record(
+            'user',
+            'map',
+            `blocked: "${step.label}" requires ${missing.map((f) => f.label ?? f.key).join(', ')} before it can be completed`,
+          )
+          notify()
+          return
+        }
+      }
       const persona = actingPersona()
       step.completedBy = persona ?? undefined
       step.completedAt = Date.now()
@@ -787,10 +820,44 @@ export function pendingDecision(): Step | null {
 }
 
 function forwardResolved(d: Step, order: Map<string, number>): boolean {
-  const decs = map?.decisions?.filter((x) => x.stepId === d.id) ?? []
+  const decs = map?.decisions?.filter((x) => x.stepId === d.id && !x.invalidated) ?? []
   if (decs.length === 0) return false
   const last = decs[decs.length - 1]
   return (order.get(last.to) ?? 0) > (order.get(d.id) ?? 0)
+}
+
+/** Forward footprint of each branching step: which steps are exclusive to
+ *  which outgoing edge (loop-backs excluded). */
+function branchFootprints(steps: Step[]): Array<{
+  stepId: string
+  branches: Array<{ to: string; exclusive: Set<string> }>
+}> {
+  const byId = new Map(steps.map((s) => [s.id, s]))
+  const order = new Map(steps.map((s, i) => [s.id, i]))
+  const reach = (from: string, acc: Set<string>) => {
+    if (acc.has(from)) return
+    acc.add(from)
+    for (const e of byId.get(from)?.next ?? []) {
+      if ((order.get(e.to) ?? 0) > (order.get(from) ?? 0)) reach(e.to, acc)
+    }
+  }
+  const out: Array<{ stepId: string; branches: Array<{ to: string; exclusive: Set<string> }> }> = []
+  for (const d of steps.filter((s) => (s.next?.length ?? 0) > 1)) {
+    const dIdx = order.get(d.id) ?? 0
+    const forward = (d.next ?? []).filter((e) => (order.get(e.to) ?? 0) > dIdx)
+    if (forward.length < 2) continue
+    const per = forward.map((e) => {
+      const set = new Set<string>()
+      reach(e.to, set)
+      return { to: e.to, set }
+    })
+    const common = per.map((b) => b.set).reduce((a, b) => new Set([...a].filter((x) => b.has(x))))
+    out.push({
+      stepId: d.id,
+      branches: per.map((b) => ({ to: b.to, exclusive: new Set([...b.set].filter((x) => !common.has(x))) })),
+    })
+  }
+  return out
 }
 
 export function progress(
@@ -807,6 +874,24 @@ export function progress(
       .map(([id]) => id),
   )
   const order = new Map(map.steps.map((s, i) => [s.id, i]))
+  // Resolved decisions activate their chosen branch (steps leave the
+  // conditional set) and deactivate the branches not taken (not_applicable).
+  const choice = new Map<string, string>()
+  for (const d of map.decisions ?? []) if (!d.invalidated) choice.set(d.stepId, d.to)
+  const inactive = new Set<string>()
+  for (const fp of branchFootprints(map.steps)) {
+    const chosen = choice.get(fp.stepId)
+    if (!chosen) continue
+    const chosenIsForward = fp.branches.some((b) => b.to === chosen)
+    if (!chosenIsForward) continue
+    for (const b of fp.branches) {
+      for (const id of b.exclusive) {
+        if (b.to === chosen) conditional.delete(id)
+        else inactive.add(id)
+      }
+    }
+  }
+  for (const id of inactive) conditional.delete(id)
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   // Not-applicable steps count as handled for ordering purposes.
   const lastHandledIdx = actionable.reduce((acc, s, i) => (s.done || s.naReason ? i : acc), -1)
@@ -817,6 +902,16 @@ export function progress(
   let aIdx = -1
   for (const s of map.steps) {
     if (s.type === 'decision') {
+      // Only a LIVE decision gates: one on a branch that was not taken (or
+      // still conditional) cannot hold the run hostage.
+      if (inactive.has(s.id)) {
+        statuses.set(s.id, 'not_applicable')
+        continue
+      }
+      if (conditional.has(s.id)) {
+        statuses.set(s.id, 'conditional')
+        continue
+      }
       // An unresolved decision whose predecessors are handled IS the gate:
       // nothing after it may become ready until resolve_decision picks an edge.
       if (hasBranching(s) && !gateAssigned && !forwardResolved(s, order)) {
@@ -829,6 +924,7 @@ export function progress(
     aIdx++
     if (s.done) statuses.set(s.id, 'done')
     else if (s.naReason) statuses.set(s.id, 'not_applicable')
+    else if (inactive.has(s.id)) statuses.set(s.id, 'not_applicable')
     else if (conditional.has(s.id)) statuses.set(s.id, 'conditional')
     else if (aIdx < lastHandledIdx) statuses.set(s.id, 'skipped')
     else if (!gateAssigned) {

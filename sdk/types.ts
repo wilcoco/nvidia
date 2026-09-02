@@ -79,7 +79,15 @@ export interface ProcessMap {
   /** Interview gaps the human already answered (kind[:stepId]) — not re-asked. */
   resolvedGaps?: string[]
   /** Explicit outcomes of branching steps in this run: which edge was taken and why. */
-  decisions?: Array<{ stepId: string; to: string; reason: string; evidence?: string; ts: number }>
+  decisions?: Array<{
+    stepId: string
+    to: string
+    reason: string
+    evidence?: string
+    ts: number
+    /** Set when a later loop-back reopened this decision's body — it must be re-resolved. */
+    invalidated?: boolean
+  }>
   version?: number
 }
 
