@@ -121,6 +121,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .confirm-bar button { background: #059669; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
 .confirmed { color: #34d399; font-weight: 600; font-size: 12px; }
+.confirm-bar .unsaved { color: #fbbf24; font-size: 11px; font-weight: 600; }
 .run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .map-hint { color: #64748b; font-size: 10.5px; line-height: 1.5; margin: -2px 0 10px; }
@@ -749,10 +750,18 @@ function render() {
       bar.appendChild(el('span', 'confirmed', '✓ Confirmed — ready for the agent to run'))
     } else {
       const store = host.getProcessStore()
-      const btn = el('button', undefined, store ? 'Confirm & save to library' : 'Confirm process')
+      const nextV = (map.version ?? 0) + 1
+      const btn = el(
+        'button',
+        undefined,
+        store ? (map.version ? `Save as v${nextV} to library` : 'Confirm & save to library') : 'Confirm process',
+      )
       btn.onclick = () =>
         mapstore.humanConfirmMap(store ? (m) => store.save(m) : undefined)
       bar.appendChild(btn)
+      bar.appendChild(
+        el('span', 'unsaved', map.version ? `● unsaved draft — edits are NOT in saved v${map.version} yet` : '● draft — not in the library yet'),
+      )
     }
     mapSection.appendChild(bar)
   }
