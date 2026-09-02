@@ -66,6 +66,7 @@ function Login() {
 
 function SuggestionCard() {
   const matches = store.computeMatches().filter((m) => m.tier === 'strong').slice(0, 2)
+  const [followedId, setFollowedId] = useState<string | null>(null)
   if (matches.length === 0) return null
   return (
     <div className="card suggestion">
@@ -84,8 +85,16 @@ function SuggestionCard() {
           </div>
           <div className="meta">Matched because: {m.reasons.join(' · ')}</div>
           <div className="decide">
-            <button className="primary" onClick={() => void store.followPlaybook(m.processId)}>
-              Follow this playbook
+            <button
+              className="primary"
+              onClick={() => {
+                void store.followPlaybook(m.processId).then(() => {
+                  setFollowedId(m.processId)
+                  setTimeout(() => setFollowedId(null), 2500)
+                })
+              }}
+            >
+              {followedId === m.processId ? '✓ Loaded — see the panel →' : 'Follow this playbook'}
             </button>
             <button
               className="ghost"
@@ -435,6 +444,7 @@ const latestPerTitle = store.latestPerTitle
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
   const [runs, setRuns] = useState<store.ProcessRun[]>([])
+  const [followFlash, setFollowFlash] = useState(false)
   const visible = latestPerTitle(state.processes)
   const historyCount = (title: string) => state.processes.filter((p) => p.title === title).length - 1
 
@@ -444,7 +454,12 @@ function PlaybookList({ state }: { state: store.AppState }) {
     setRuns(await store.listRuns(id))
   }
 
-  const follow = (p: LoadedProcess) => void store.followPlaybook(p.id)
+  const follow = (p: LoadedProcess) => {
+    void store.followPlaybook(p.id).then(() => {
+      setFollowFlash(true)
+      setTimeout(() => setFollowFlash(false), 2500)
+    })
+  }
 
   if (state.processes.length === 0) {
     return (
@@ -481,7 +496,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
             <span className="task">{selected.title}</span>
             <span>
               <button className="primary" onClick={() => follow(selected)}>
-                Follow this playbook
+                {followFlash ? '✓ Loaded — see the panel →' : 'Follow this playbook'}
               </button>{' '}
               <button
                 className="ghost"
@@ -527,6 +542,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
   const [tab, setTab] = useState<'incidents' | 'approvals' | 'playbooks'>('incidents')
+  const [resetFlash, setResetFlash] = useState(false)
 
   useEffect(() => {
     void store.refresh()
@@ -564,9 +580,14 @@ export default function App() {
             className="ghost"
             data-flow-ignore
             title="Clear incident logs, reviews and run records so you start from a clean slate (playbooks are kept)"
-            onClick={() => void store.resetDemoData('worklogs')}
+            onClick={() => {
+              void store.resetDemoData('worklogs').then(() => {
+                setResetFlash(true)
+                setTimeout(() => setResetFlash(false), 2000)
+              })
+            }}
           >
-            Start fresh demo
+            {resetFlash ? '✓ Cleared' : 'Start fresh demo'}
           </button>
           <button className="ghost" onClick={() => store.logout()} data-flow-ignore>
             Sign out
