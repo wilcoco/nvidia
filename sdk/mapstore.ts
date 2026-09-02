@@ -30,7 +30,7 @@ export function getMap(): ProcessMap | null {
 }
 
 /** Unload the current map/draft entirely (e.g. the host reset its demo data). */
-export function clearMap(by: 'user' | 'agent' | 'app' = 'app'): void {
+export function clearMap(by: 'user' | 'agent' = 'user'): void {
   if (!map) return
   const title = map.title
   map = null

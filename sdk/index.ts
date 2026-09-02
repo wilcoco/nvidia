@@ -61,7 +61,7 @@ function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }
 /** Host apps can clear the panel entirely (e.g. after a demo-data reset). */
 function unloadProcess(): void {
   stopRunTracking()
-  clearMap('app')
+  clearMap('user')
 }
 
 /** Host apps report a successful semantic action (e.g. the human saved a form),
