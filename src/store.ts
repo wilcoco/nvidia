@@ -450,8 +450,15 @@ export async function autoSyncApproval(): Promise<void> {
   const runId = window.Understudy.currentRunId?.()
   if (!runId) return
   const prog = window.Understudy.getProgress?.() ?? []
-  const readyApproval = prog.find((p) => p.status === 'ready' && p.type === 'approval')
+  // The sign-off step shows 'blocked' (no pending review) until we create one —
+  // both statuses mean "the run has arrived at sign-off".
+  const readyApproval = prog.find(
+    (p) => p.type === 'approval' && (p.status === 'ready' || p.status === 'blocked'),
+  )
   if (!readyApproval) return
+  // Everything before the sign-off must actually be handled.
+  const before = prog.slice(0, prog.findIndex((p) => p.id === readyApproval.id))
+  if (before.some((p) => !p.done && p.status !== 'not_applicable' && p.type !== 'decision')) return
   let wl = state.worklogs.find((w) => w.data.runId === runId && w.status === 'draft')
   const proc = window.Understudy.getLoadedProcess?.()
   if (!proc) return
@@ -494,7 +501,8 @@ export async function autoSyncApproval(): Promise<void> {
       )
     })
     .catch(() => {
-      /* server gate may refuse (e.g. sync lag) — retried on the next change */
+      // The 700ms run-sync can lag the server gate — retry once it settles.
+      setTimeout(() => void autoSyncApproval(), 1500)
     })
     .finally(() => {
       approvalSyncInFlight = false

@@ -323,7 +323,20 @@ app.post('/api/admin/reset', auth, async (req, res) => {
 /* ---------------- static ---------------- */
 
 const dist = path.join(__dirname, '..', 'dist')
-app.use(express.static(dist))
-app.get('*', (_req, res) => res.sendFile(path.join(dist, 'index.html')))
+// Hashed assets may cache forever; the HTML shell and the SDK bundle must not —
+// otherwise deploys don't reach already-open judges.
+app.use(
+  express.static(dist, {
+    setHeaders(res, filePath) {
+      if (filePath.endsWith('.html') || filePath.endsWith('understudy.js')) {
+        res.setHeader('Cache-Control', 'no-cache')
+      }
+    },
+  }),
+)
+app.get('*', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache')
+  res.sendFile(path.join(dist, 'index.html'))
+})
 
 app.listen(PORT, () => console.log(`[server] listening on :${PORT} (db: ${db.kind})`))
