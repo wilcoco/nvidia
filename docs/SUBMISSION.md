@@ -79,11 +79,11 @@ through the declarative attribute API.
 - Open the live URL using ChatGPT's in-app browser (desktop app agent), then
   say: *"Work along with me on this page — watch what I do, guide me with the
   saved playbooks, and ask questions when a process is missing knowledge."*
-- Alternatively, use Chrome 149+: enable
-  `chrome://flags/#enable-webmcp-testing` and
-  `chrome://flags/#devtools-webmcp-support`, relaunch, open the URL, then
-  inspect the registered tools under **DevTools → Application → WebMCP**
-  (tool list, input schemas, direct execution).
+- Alternatively, use Chrome 149+ — the site carries a **WebMCP origin-trial
+  token**, so no flags are needed for the API. Inspect and execute the
+  registered tools under **DevTools → Application → WebMCP** (enable
+  `chrome://flags/#devtools-webmcp-support` for that DevTools panel), or chat
+  with the tools via Google's official Model Context Tool Inspector extension.
 - Full walkthrough: `docs/DEMO_SCRIPT.md`. No payment or personal data; all
   scenario data is fictional.
 
