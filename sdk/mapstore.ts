@@ -159,7 +159,23 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
   notify()
   if (saver) {
     const current = map
-    saver(current)
+    // The library stores the DESIGN, never a run's state: strip decisions and
+    // per-step execution residue before saving.
+    const clean: ProcessMap = {
+      ...current,
+      decisions: [],
+      resolvedGaps: current.resolvedGaps,
+      steps: current.steps.map((s) => ({
+        ...s,
+        done: undefined,
+        naReason: undefined,
+        resultId: undefined,
+        completedBy: undefined,
+        completedAt: undefined,
+        resultData: undefined,
+      })),
+    }
+    saver(clean)
       .then((saved) =>
         record(
           'user',
@@ -182,7 +198,16 @@ export function loadSavedMap(
     ...loaded,
     sourceProcessId: meta?.id ?? loaded.sourceProcessId,
     confirmed: true,
-    steps: loaded.steps.map((s) => ({ ...s, done: false, naReason: undefined, resultId: undefined })),
+    decisions: [],
+    steps: loaded.steps.map((s) => ({
+      ...s,
+      done: false,
+      naReason: undefined,
+      resultId: undefined,
+      completedBy: undefined,
+      completedAt: undefined,
+      resultData: undefined,
+    })),
   }
   // Retroactively link work done just before this playbook was opened —
   // but ONLY events no other run has consumed, and only recent ones.
@@ -342,6 +367,8 @@ export function resolveDecision(
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const edge = step.next?.find((e) => e.to === branchTo)
   if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branchTo}"` }
+  if (!map.confirmed)
+    return { ok: false, error: 'draft_not_running', detail: 'This map is an unconfirmed draft — decisions are recorded only on a confirmed, running playbook.' }
   // Role separation: a decision owned by a role is resolved only by that role.
   {
     const role = host.actorRole()
@@ -477,7 +504,13 @@ export function resolveDecision(
 }
 
 /** Set/replace the playbook's data contract (from the required_context interview). */
-export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string; fields?: FieldDef[] } {
+export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string; detail?: string; fields?: FieldDef[] } {
+  if (map?.confirmed)
+    return {
+      ok: false,
+      error: 'confirmed_readonly',
+      detail: 'The playbook is confirmed and running — its data contract is read-only. Revise via a new draft (propose_process_map or the Propose changes button).',
+    }
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
   if (!Array.isArray(fields)) return { ok: false, error: 'fields must be an array' }
   map.fields = fields
@@ -488,14 +521,41 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
 }
 
 /** Human checks a step off (or un-checks it) in the panel. */
-export function humanToggleStepDone(stepId: string, values?: Record<string, unknown>): void {
+export function humanToggleStepDone(
+  stepId: string,
+  values?: Record<string, unknown>,
+  opts?: { allowSkip?: boolean },
+): void {
   {
     const step = map?.steps.find((s) => s.id === stepId)
     const role = host.actorRole()
+    if (step?.type === 'approval') {
+      record('user', 'map', `blocked: "${step.label}" completes only via a successful review action`)
+      notify()
+      return
+    }
     if (step?.role && role && step.role !== role && !step.done) {
       record('user', 'map', `blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
       notify()
       return
+    }
+    if (step && step.done) {
+      // Un-completing is reserved for the persona who did it (or its owning role).
+      const persona = actingPersona()
+      const allowed = !step.completedBy || step.completedBy === persona || (step.role && role && step.role === role)
+      if (!allowed) {
+        record('user', 'map', `blocked: "${step.label}" was completed by ${step.completedBy}; only they (or the ${step.role ?? 'owning'} role) may reopen it`)
+        notify()
+        return
+      }
+    }
+    if (step && !step.done && !opts?.allowSkip && map?.confirmed) {
+      const st = progress().get(stepId)
+      if (st === 'pending') {
+        record('user', 'map', `blocked: "${step.label}" is not the next step — finish earlier steps first (or skip explicitly from the panel)`)
+        notify()
+        return
+      }
     }
     if (step && !step.done) {
       if (step.fields?.length) {
@@ -746,6 +806,13 @@ export function resolveDeviation(
   if (!map) throw new Error('no process is loaded')
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) throw new Error(`unknown step "${stepId}" — see get_process_map for step ids`)
+  if (step.type === 'approval')
+    throw new Error(`"${step.label}" is an approval step — it completes only through a successful review action, never a deviation.`)
+  {
+    const role = host.actorRole()
+    if (step.role && role && step.role !== role)
+      throw new Error(`"${step.label}" belongs to the ${step.role} role; the active persona's role is ${role}. Switch persona first.`)
+  }
   if (resolution === 'completed') {
     step.done = true
     delete step.naReason
@@ -934,7 +1001,15 @@ export function progress(
     } else statuses.set(s.id, 'pending')
     // A completed TASK that branches also needs its outcome resolved before
     // anything later runs (e.g. verification done — passed or failed?).
-    if ((s.done || s.naReason) && hasBranching(s) && !gateAssigned && !forwardResolved(s, order)) {
+    // An excused (N/A) or not-taken/conditional branching step never gates.
+    if (
+      s.done &&
+      hasBranching(s) &&
+      !gateAssigned &&
+      !forwardResolved(s, order) &&
+      !inactive.has(s.id) &&
+      !conditional.has(s.id)
+    ) {
       lastPendingDecision = s
       gateAssigned = true
     }

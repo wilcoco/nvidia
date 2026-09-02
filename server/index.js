@@ -88,8 +88,11 @@ app.post('/api/worklogs', auth, async (req, res) => {
   const b = req.body ?? {}
   if (!b.date || !b.line || !b.task) return res.status(400).json({ error: 'date, line, task are required' })
   const role = await roleOfUser(b.actingAs)
-  if (role && role !== 'Contributor')
-    return res.status(403).json({ error: 'role_mismatch', detail: `Work logs are written by Contributors; the active persona's role is ${role}.` })
+  if (role !== 'Contributor')
+    return res.status(403).json({
+      error: 'role_mismatch',
+      detail: `Work logs are written by a known Contributor persona; got ${b.actingAs ?? 'none'} (${role ?? 'unknown role'}).`,
+    })
   const row = await db.createWorklog({
     date: String(b.date),
     line: String(b.line),
@@ -142,10 +145,16 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
       detail: `This entry belongs to playbook run #${linked.runId}, which still has required steps open: ${linked.open.join(' → ')}. Finish them (or resolve a deviation) before requesting review.`,
     })
   }
+  const approver = String(req.body?.approver ?? 'lee')
+  const approverRole = await roleOfUser(approver)
+  if (approverRole !== 'Reviewer')
+    return res.status(400).json({ error: 'invalid_approver', detail: `Approver must be an existing Reviewer; "${approver}" is ${approverRole ?? 'unknown'}.` })
+  if (wl.createdBy && approver === wl.createdBy)
+    return res.status(400).json({ error: 'invalid_approver', detail: 'An entry cannot be reviewed by its own author.' })
   const approval = await db.createApproval({
     worklogId: wl.id,
     requestedBy: actor(req),
-    approver: String(req.body?.approver ?? 'lee'),
+    approver,
   })
   await db.setWorklogStatus(wl.id, 'submitted')
   res.json(approval)
@@ -206,12 +215,16 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })
   {
     const actingAs = typeof req.body?.actingAs === 'string' ? req.body.actingAs : undefined
-    if (actingAs && actingAs !== existing.approver) {
+    if (!actingAs)
+      return res.status(400).json({ error: 'actingAs_required', detail: 'Decisions must state the acting persona.' })
+    if (actingAs !== existing.approver)
       return res.status(403).json({
         error: 'role_mismatch',
         detail: `This review is assigned to ${existing.approver}; the active persona is ${actingAs}.`,
       })
-    }
+    const r = await roleOfUser(actingAs)
+    if (r !== 'Reviewer')
+      return res.status(403).json({ error: 'role_mismatch', detail: `Only a Reviewer may decide; ${actingAs} is ${r ?? 'unknown'}.` })
   }
   if (decision === 'APPROVED') {
     const wlAll = await db.listWorklogs()
@@ -267,6 +280,25 @@ app.post('/api/runs', auth, async (req, res) => {
 
 app.post('/api/runs/:id', auth, async (req, res) => {
   const b = req.body ?? {}
+  {
+    const all = await db.listRuns()
+    const row = all.find((r) => String(r.id) === String(req.params.id))
+    if (!row) return res.status(404).json({ error: 'run not found' })
+    if (row.startedBy && row.startedBy !== actor(req))
+      return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
+    if (b.steps !== undefined) {
+      const ok =
+        Array.isArray(b.steps) &&
+        b.steps.every(
+          (s) =>
+            s && typeof s === 'object' && typeof s.id === 'string' &&
+            (s.status === undefined || ['done', 'ready', 'blocked', 'skipped', 'pending', 'conditional', 'not_applicable'].includes(String(s.status))),
+        )
+      if (!ok) return res.status(400).json({ error: 'invalid_steps' })
+    }
+    if (b.status !== undefined && !['active', 'completed'].includes(String(b.status)))
+      return res.status(400).json({ error: 'invalid_status' })
+  }
   const run = await db.updateRun(req.params.id, {
     steps: Array.isArray(b.steps) ? b.steps : undefined,
     decisions: Array.isArray(b.decisions) ? b.decisions : undefined,

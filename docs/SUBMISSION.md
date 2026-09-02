@@ -20,10 +20,11 @@ process enforceable.
   before/prevention and after/verification the expert never writes down).
 - Bidirectional teaching: edit the map by click or by chat — the agent reads
   the edits back and changes its behavior.
-- The map is a runtime: out-of-order decisions, unfinished-run reviews and
-  approvals, and evidence-contradicting passes are **refused server-side**
-  (`out_of_sequence` / `process_incomplete` / `evidence_conflict`), and
-  approved records freeze (`approved_immutable`).
+- The map is a runtime: the engine refuses out-of-order decisions and
+  evidence-contradicting passes (`out_of_sequence` / `evidence_conflict`),
+  and the server independently refuses reviews/approvals of unfinished runs
+  and edits to approved records (`process_incomplete` /
+  `approved_immutable`).
 - Zero API keys: the page ships tools; visitors bring their own agent brain.
 - Agents self-onboard from tool descriptions alone; the interview is
   anti-parrot by design.
@@ -153,6 +154,15 @@ connector problem that makes classic BPM integrations expensive dissolves
 into tool bindings. The interview already captures the seed data — owners
 ("who signs off"), required evidence, criteria — so the operations layer is
 an extension of the same playbook format, not a rewrite.
+
+**Trust model (stated, not discovered):** personas are a demo device — one
+signed-in reviewer account acts as Kim/Park/Lee, so persona identity is a UI
+assertion, not authentication. The server still fail-closes on what it can
+know: unknown personas cannot write, approvers must be existing Reviewers
+and never the author, runs are updated only by their owner, and run/step
+payloads are shape-validated. Production hardening (real per-user sessions,
+server-side progress recomputation) is the first item of the operations
+roadmap above.
 
 ## What's new vs. prior work
 

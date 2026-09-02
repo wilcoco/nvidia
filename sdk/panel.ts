@@ -332,7 +332,7 @@ function renderStep(
     const yes = el('button', 'skip-yes', 'Skip anyway (recorded)')
     yes.onclick = () => {
       skipConfirmId = null
-      mapstore.humanToggleStepDone(step.id)
+      mapstore.humanToggleStepDone(step.id, undefined, { allowSkip: true })
     }
     const no = el('button', 'skip-no', 'Cancel')
     no.onclick = () => {

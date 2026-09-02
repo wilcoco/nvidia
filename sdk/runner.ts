@@ -211,6 +211,16 @@ export async function runAsHuman(
 ): Promise<RunOutcome> {
   const action = resolveAction(name)
   if (!action) return { ok: false, error: `Unknown action "${name}".` }
+  if (action.roles?.length) {
+    const role = host.actorRole()
+    if (role && !action.roles.includes(role)) {
+      return { ok: false, error: `"${name}" is a ${action.roles.join('/')} action; the active persona's role is ${role}.` }
+    }
+  }
+  const gap = mapstore.prerequisiteGap(name)
+  if (gap) {
+    return { ok: false, error: `Process violation prevented: "${gap.target}" would skip ${gap.missing.join(', ')}.` }
+  }
   const validated = validateParams(action, raw)
   if ('error' in validated) return validated.error
   return executeCore(action, validated.params, 'user')

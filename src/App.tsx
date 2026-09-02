@@ -335,6 +335,8 @@ function IncidentList({ state }: { state: store.AppState }) {
             // Inner buttons/inputs keep their own meaning.
             if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
             store.setDraftContext({ kind: w.kind, urgent: w.urgent, task: w.task, hasInput: true })
+            // Never yank an active run out from under the team — suggestions only.
+            if (window.Understudy.currentRunId?.()) return
             const best = store.computeMatches().filter((m) => m.tier === 'strong')
             // The click on a specific entry IS the human's decision: load the
             // clear winner immediately; fall back to the suggestion card only
@@ -476,7 +478,7 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
             {r.deviations > 0 && <span className="flag"> · {r.deviations} deviation(s)</span>}
           </div>
           <div className="run-steps">
-            {r.steps.map((s) => (
+            {r.steps.filter((s) => !String(s.id).startsWith('gate:')).map((s) => (
               <span key={s.id} title={`${s.label}: ${s.status}${s.naReason ? ` (${s.naReason})` : ''}`}>
                 {STATUS_ICON[s.status ?? 'pending'] ?? '▫️'}
               </span>

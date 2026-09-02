@@ -178,10 +178,20 @@ export async function login(username: string, password: string): Promise<void> {
 
 export function logout(): void {
   setToken(null)
+  try {
+    localStorage.removeItem('understudy.lastPlaybook')
+  } catch {
+    /* ignore */
+  }
+  window.Understudy.unloadProcess?.()
   commit({ me: null })
 }
 
 export function switchActingAs(username: string): void {
+  if (!state.users.some((u) => u.username === username)) {
+    window.Understudy.log(`refused persona switch: unknown user "${username}"`)
+    return
+  }
   commit({ actingAs: username })
   window.Understudy.log(`switched active persona to ${username}`)
 }
