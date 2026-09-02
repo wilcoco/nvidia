@@ -43,14 +43,28 @@ window.Understudy.init({
     startRun: (processId, map) => store.startRun(processId, map),
     updateRun: (runId, payload) => store.updateRun(runId, payload),
     saveVerification: (measurements, meta) => {
-      const produced = meta.producedIds.find((p) => p.action === 'log_work_item')
-      const target = produced?.id ?? store.getState().worklogs[0]?.id
-      if (target)
-        return store.saveVerification(target, measurements, {
-          label: meta.branchLabel,
-          pass: meta.toApproval,
-          checked: meta.criteriaChecked,
-        })
+      // Evidence is run-scoped, never guessed: only a record produced by THIS
+      // run may carry it. If the completion record doesn't exist yet (it is
+      // synthesized moments later at sign-off), retry once — then give up
+      // rather than stamping another run's paperwork.
+      const attach = (attempt: number): void => {
+        const runId = window.Understudy.currentRunId?.()
+        const produced = meta.producedIds.find((p) => p.action === 'log_work_item')
+        const byRun = runId
+          ? store.getState().worklogs.find((w) => w.data.runId === runId)
+          : undefined
+        const target = produced?.id ?? byRun?.id
+        if (target) {
+          void store.saveVerification(target, measurements, {
+            label: meta.branchLabel,
+            pass: meta.toApproval,
+            checked: meta.criteriaChecked,
+          })
+        } else if (attempt < 3) {
+          setTimeout(() => attach(attempt + 1), 1500)
+        }
+      }
+      attach(0)
     },
   },
   // Resolve playbook branch conditions against live data: the urgency branch

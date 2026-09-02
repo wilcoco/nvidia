@@ -684,7 +684,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const mine = attention.filter((p) => !p.role || !myRole || p.role === myRole)
   const theirs = attention.filter((p) => p.role && myRole && p.role !== myRole)
   const done = prog.filter((p) => p.done).length
-  const required = prog.filter((p) => p.status !== 'not_applicable').length
+  const required = prog.filter(
+    (p) => p.status !== 'not_applicable' && p.status !== 'conditional',
+  ).length
   const idxOf = (id: string) => prog.findIndex((p) => p.id === id)
   const prevDone = (id: string) => {
     const before = prog.slice(0, idxOf(id)).filter((p) => p.done)
@@ -734,7 +736,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     <div className="list">
       <div className="meta">
         {proc.title}
-        {runId ? ` · run #${runId}` : ''} · {done}/{required} steps done · your role: {myRole ?? '—'}
+        {runId ? ` · run #${runId}` : ''} · path {done}/{required} done · map {prog.length} nodes · your
+        role: {myRole ?? '—'}
       </div>
       {mine.length === 0 && theirs.length === 0 && (
         <p className="empty">

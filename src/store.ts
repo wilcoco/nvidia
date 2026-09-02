@@ -325,6 +325,9 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   // Don't suggest off pristine form defaults — wait until the human starts
   // actually describing the incident.
   if (!draft.hasInput) return []
+  // A run's own completion record is an output, not new work — feeding its
+  // title back in must not re-trigger the playbook that produced it.
+  if (/completion record|—\s*run\s*#\d+/i.test(state.draft.task ?? '')) return []
   const matches: PlaybookMatch[] = []
   // Only the latest version of each playbook title competes.
   const latest = new Map<string, ProcessSummary>()
