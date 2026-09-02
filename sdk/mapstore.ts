@@ -559,11 +559,11 @@ export function humanToggleStepDone(
     }
     if (step && !step.done) {
       if (step.fields?.length) {
-        const required = (map?.fields ?? []).filter(
-          (f) => step.fields!.includes(f.key) && f.required && f.type !== 'boolean',
-        )
+        const required = (map?.fields ?? []).filter((f) => step.fields!.includes(f.key) && f.required)
         const missing = required.filter((f) => {
           const v = values?.[f.key]
+          // A required boolean is a confirmation — it must be checked true.
+          if (f.type === 'boolean') return v !== true
           return v === undefined || v === ''
         })
         if (missing.length) {

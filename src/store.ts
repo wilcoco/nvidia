@@ -471,13 +471,17 @@ export async function autoSyncApproval(): Promise<void> {
     // Pure task-card runs produce no entry of their own — synthesize the run's
     // completion record (with every submitted step value as evidence) so the
     // review has a subject. Server still enforces the Contributor role.
-    const me = state.users.find((u) => u.username === state.actingAs)
-    if (me?.role !== 'Contributor') return // retried when a Contributor persona is active
+    // The record is attributed to a Contributor persona (the run's doer) even
+    // if a Reviewer persona is active when the run reaches sign-off.
+    const contributor =
+      state.users.find((u) => u.username === state.actingAs && u.role === 'Contributor')?.username ??
+      state.users.find((u) => u.role === 'Contributor')?.username
+    if (!contributor) return
     const evidence: Record<string, unknown> = {}
     for (const s of proc.steps) if (s.resultData) Object.assign(evidence, s.resultData)
     approvalSyncInFlight = true
     try {
-      wl = await createWorklog({
+      wl = await api<Worklog>('/api/worklogs', {
         date: new Date().toISOString().slice(0, 10),
         line: 'A',
         task: `${proc.title} — run #${runId} completion record`,
@@ -485,8 +489,15 @@ export async function autoSyncApproval(): Promise<void> {
         note: '',
         urgent: false,
         kind: ((proc as { appliesWhen?: { kind?: string } }).appliesWhen?.kind as string) ?? 'development',
-        data: evidence,
+        data: { ...evidence, runId, systemGenerated: true },
+        progressPct: 100,
+        actingAs: contributor,
       })
+      window.Understudy.log(
+        `completion record for run #${runId} created automatically (attributed to ${contributor})`,
+        { worklogId: wl.id },
+      )
+      await refresh()
     } catch {
       approvalSyncInFlight = false
       return

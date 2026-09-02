@@ -334,6 +334,8 @@ function IncidentList({ state }: { state: store.AppState }) {
           onClick={(e) => {
             // Inner buttons/inputs keep their own meaning.
             if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
+            // A run's own record is an output, not new work — no re-suggestion loop.
+            if (w.data.runId) return
             store.setDraftContext({ kind: w.kind, urgent: w.urgent, task: w.task, hasInput: true })
             // Never yank an active run out from under the team — suggestions only.
             if (window.Understudy.currentRunId?.()) return
@@ -723,9 +725,11 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
           .map((k) => fieldDefs.find((f) => f.key === k))
           .filter((d): d is UnderstudyFieldDef => !!d)
         const raw = taskValues[p.id] ?? {}
-        const missingRequired = defs.some(
-          (d) => d.required && d.type !== 'boolean' && (raw[d.key] === undefined || raw[d.key] === ''),
-        )
+        const missingRequired = defs.some((d) => {
+          if (!d.required) return false
+          if (d.type === 'boolean') return raw[d.key] !== true
+          return raw[d.key] === undefined || raw[d.key] === ''
+        })
         const prev = prevDone(p.id)
         const next = nextUp(p.id)
         return (
