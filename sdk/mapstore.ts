@@ -277,12 +277,25 @@ export function markActionDone(
   by: 'user' | 'agent' = 'agent',
 ): Step | null {
   if (!map?.confirmed) return null
-  const step = map.steps.find((s) => s.action === actionName && !s.done)
+  // Several steps may bind the same action (e.g. both sign-off lanes run
+  // approve_review). The success belongs to the step that is actually LIVE:
+  // never one sitting on a branch that was not taken.
+  const statuses = progress()
+  const candidates = map.steps.filter((s) => s.action === actionName && !s.done)
+  const step =
+    candidates.find((s) => statuses.get(s.id) === 'ready') ??
+    candidates.find((s) => {
+      const st = statuses.get(s.id)
+      return st !== 'not_applicable' && st !== 'conditional'
+    })
   if (!step) return null
   step.done = true
   delete step.naReason
   if (resultId) step.resultId = resultId
-  record(by, 'map', `completed step "${step.label}"`)
+  const persona = actingPersona()
+  step.completedBy = persona ?? step.completedBy
+  step.completedAt = Date.now()
+  record(by, 'map', `completed step "${step.label}"${persona ? ` (by ${persona})` : ''}`)
   notify()
   return step
 }
