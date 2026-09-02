@@ -198,7 +198,15 @@ export interface WorklogInput {
 }
 
 export async function createWorklog(input: WorklogInput): Promise<Worklog> {
-  const wl = await api<Worklog>('/api/worklogs', { ...input, progressPct: 100, actingAs: state.actingAs })
+  // Stamp the active playbook run on the entry so the server can gate its
+  // review/approval against that run's live state, deterministically.
+  const runId = window.Understudy.currentRunId?.() ?? undefined
+  const wl = await api<Worklog>('/api/worklogs', {
+    ...input,
+    data: { ...(input.data ?? {}), ...(runId ? { runId } : {}) },
+    progressPct: 100,
+    actingAs: state.actingAs,
+  })
   const cond = [
     wl.data.colorChange ? 'after color change' : null,
     wl.data.viscosity != null ? `viscosity ${wl.data.viscosity}s` : null,
@@ -376,9 +384,26 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
     .sort((a, b) => b.confidence - a.confidence)
 }
 
-export async function followPlaybook(processId: string, opts?: { silent?: boolean }): Promise<void> {
+export async function followPlaybook(
+  processId: string,
+  opts?: { silent?: boolean; resume?: boolean },
+): Promise<void> {
   const p = await getProcess(processId)
-  window.Understudy.loadProcess(p.map as never, { id: p.id, createdBy: p.createdBy })
+  let resume: { runId: string; steps?: unknown[]; decisions?: unknown[] } | undefined
+  if (opts?.resume) {
+    try {
+      const runs = await listRuns(processId)
+      const active = runs.find((r) => r.status === 'active' && Array.isArray(r.steps) && r.steps.length > 0)
+      if (active) resume = { runId: active.id, steps: active.steps, decisions: active.decisions }
+    } catch {
+      /* no runs — fresh start */
+    }
+  }
+  window.Understudy.loadProcess(p.map as never, {
+    id: p.id,
+    createdBy: p.createdBy,
+    ...(resume ? { resume } : {}),
+  })
   window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
   try {
     localStorage.setItem('understudy.lastPlaybook', processId)
@@ -407,7 +432,7 @@ export function resumeLastPlaybook(): void {
   }
   if (!id) return
   if (window.Understudy.getLoadedProcess?.()) return
-  void followPlaybook(id, { silent: true }).catch(() => {
+  void followPlaybook(id, { silent: true, resume: true }).catch(() => {
     try {
       localStorage.removeItem('understudy.lastPlaybook')
     } catch {
@@ -523,6 +548,7 @@ export interface ProcessRun {
   updatedAt: number
   status: 'active' | 'completed'
   steps: RunStep[]
+  decisions?: unknown[]
   deviations: number
 }
 

@@ -1,4 +1,5 @@
 interface UnderstudyHostAction {
+  roles?: string[]
   name: string
   description: string
   params?: Record<string, { type: 'string' | 'number' | 'boolean'; description?: string; required?: boolean }>
@@ -66,16 +67,24 @@ interface UnderstudyApi {
       startRun?: (processId: string, map: UnderstudyProcessMap) => Promise<{ id: string }>
       updateRun?: (
         runId: string,
-        payload: { steps: unknown[]; status?: 'active' | 'completed'; deviations?: number },
+        payload: {
+      steps: unknown[]
+      decisions?: unknown[]
+      status?: 'active' | 'completed'
+      deviations?: number
+    },
       ) => Promise<unknown>
     }
     branchResolver?: (condition: string) => boolean | undefined
   }): void
   log(label: string, detail?: unknown): void
   registerAction(action: UnderstudyHostAction): void
-  loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string }): void
+  loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string
+      resume?: { runId: string; steps?: unknown[]; decisions?: unknown[] }
+    }): void
   notifyAction(name: string, resultId?: string): void
   unloadProcess?(): void
+  currentRunId?(): string | null
   getLoadedProcess(): UnderstudyProcessMap | null
 }
 

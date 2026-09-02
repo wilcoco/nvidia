@@ -123,7 +123,7 @@ function memoryBackend() {
     async startRun(r) {
       const row = {
         id: String(seq++), processId: r.processId, title: r.title, startedBy: r.startedBy,
-        startedAt: Date.now(), updatedAt: Date.now(), status: 'active', steps: r.steps ?? [], deviations: 0,
+        startedAt: Date.now(), updatedAt: Date.now(), status: 'active', steps: r.steps ?? [], decisions: [], deviations: 0,
       }
       runs.unshift(row)
       return row
@@ -132,6 +132,7 @@ function memoryBackend() {
       const run = runs.find((x) => x.id === id)
       if (!run) return null
       if (patch.steps) run.steps = patch.steps
+      if (patch.decisions) run.decisions = patch.decisions
       if (patch.status) run.status = patch.status
       if (patch.deviations !== undefined) run.deviations = patch.deviations
       run.updatedAt = Date.now()
@@ -187,6 +188,7 @@ async function pgBackend(databaseUrl) {
       steps JSONB NOT NULL DEFAULT '[]',
       deviations INT DEFAULT 0
     );
+    ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS decisions JSONB DEFAULT '[]';
   `)
 
   // Keep display roles in sync with the current neutral naming (idempotent).
@@ -332,9 +334,10 @@ async function pgBackend(databaseUrl) {
            steps = COALESCE($2, steps),
            status = COALESCE($3, status),
            deviations = COALESCE($4, deviations),
+           decisions = COALESCE($5, decisions),
            updated_at = now()
          WHERE id=$1 RETURNING *`,
-        [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null, patch.deviations ?? null],
+        [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null, patch.deviations ?? null, patch.decisions ? JSON.stringify(patch.decisions) : null],
       )
       return rows[0] ? runRow(rows[0]) : null
     },
@@ -360,6 +363,7 @@ function runRow(r) {
     updatedAt: new Date(r.updated_at).getTime(),
     status: r.status,
     steps: r.steps ?? [],
+    decisions: r.decisions ?? [],
     deviations: r.deviations ?? 0,
   }
 }

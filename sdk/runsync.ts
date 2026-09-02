@@ -30,10 +30,19 @@ function snapshot() {
       naReason: s.naReason,
     }))
   const open = steps.filter((s) => ['ready', 'blocked', 'skipped', 'pending'].includes(s.status ?? ''))
+  // An unresolved decision keeps the run open even when every reachable task
+  // is handled — the not-yet-chosen branches are still conditional, not done.
+  // It travels inside `steps` so the server's completion gate sees it too.
+  const gate = mapstore.pendingDecision()
+  const outSteps: Array<Record<string, unknown>> = [...steps]
+  if (gate) {
+    outSteps.push({ id: `gate:${gate.id}`, label: `decision: ${gate.label}`, type: 'gate', status: 'ready' })
+  }
   return {
-    steps,
+    steps: outSteps,
+    decisions: map.decisions ?? [],
     deviations: steps.filter((s) => s.status === 'skipped' || s.naReason).length,
-    isComplete: steps.length > 0 && open.length === 0,
+    isComplete: steps.length > 0 && open.length === 0 && !gate,
   }
 }
 
@@ -55,6 +64,7 @@ function sync() {
   void store
     .updateRun(runId, {
       steps: snap.steps,
+      decisions: snap.decisions,
       deviations: snap.deviations,
       status: snap.isComplete ? 'completed' : 'active',
     })
@@ -74,6 +84,17 @@ let subscribed = false
 export function stopRunTracking(): void {
   runId = null
   completed = false
+}
+
+/** Reattach to a run that already exists (page reload) instead of starting a new one. */
+export function resumeRunTracking(id: string): void {
+  runId = id
+  completed = false
+  if (!subscribed) {
+    subscribed = true
+    mapstore.subscribe(scheduleSync)
+  }
+  record('user', 'map', `resumed run ${id} — progress restored from the server`)
 }
 
 export function startRunTracking(processId: string): void {

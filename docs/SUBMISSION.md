@@ -14,6 +14,29 @@ Understudy captures what must be prepared and prevented *before* it and what
 must be verified and signed off *after* it — and makes that surrounding
 process enforceable.
 
+**At a glance — what makes it stand out**
+
+- Raw one-line work log → interviewed into an established process (the
+  before/prevention and after/verification the expert never writes down).
+- Bidirectional teaching: edit the map by click or by chat — the agent reads
+  the edits back and changes its behavior.
+- The map is a runtime: out-of-order decisions, unfinished-run reviews and
+  approvals, and evidence-contradicting passes are **refused server-side**
+  (`out_of_sequence` / `process_incomplete` / `evidence_conflict`), and
+  approved records freeze (`approved_immutable`).
+- Zero API keys: the page ships tools; visitors bring their own agent brain.
+- Agents self-onboard from tool descriptions alone; the interview is
+  anti-parrot by design.
+- Playbooks are versioned assets with lineage, a data contract that becomes
+  real form fields, and explained suggestions (confidence + reasons).
+- Everything the next worker needs — suggestions, NEXT/SKIPPED guidance,
+  server gates — also works with **no agent at all**.
+- The human always decides: unforgeable, persona-scoped approval clicks,
+  role-gated actions, human-only saves, an auto-approve dial.
+- It is a layer: one script tag attaches it to a second, framework-free page.
+
+(Full list with proof points: `docs/KEY_STRENGTHS.md`.)
+
 ## What it does
 
 Understudy works with an active WebMCP agent session — you invite the agent
@@ -24,7 +47,8 @@ Understudy-enabled page: *"Work along this incident with me, following our
 process."* The agent reads the page's structured state,
 finds the matching playbook (with confidence and reasons), and joins the run:
 
-- **Capture** — while an expert handles a paint-shop defect, the agent reads
+- **Capture** — while an expert handles real work (a staging schema
+  migration, an incident), the agent reads
   the action journal and drafts a step-by-step response playbook, live, next
   to their work.
 - **Teach** — the human edits the map in place: renames steps, fixes branch
@@ -70,8 +94,8 @@ through the declarative attribute API.
   machine (done / next / skipped / blocked / conditional / not-applicable),
   branch resolution against live data, pre-execution process guard,
   session-history retro-linking, and 19 WebMCP tools.
-- **Demo workspace** (React + Vite): a paint-shop incident &
-  response log with reviews and a shared playbook library.
+- **Demo workspace** (React + Vite): a generic work-log workspace with
+  reviews and a shared playbook library (incidents are one scenario).
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,
   playbook library with versioning, and persistent run records.
 

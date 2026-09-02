@@ -539,6 +539,31 @@ export function mapGaps(): MapGap[] {
   return gaps.filter((g) => !resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind))
 }
 
+/** Reapply a persisted run's progress onto the freshly loaded map (page reload). */
+export function restoreRunState(
+  steps: Array<{ id?: unknown; status?: unknown; resultId?: unknown; naReason?: unknown }>,
+  decisions?: unknown[],
+): void {
+  if (!map) return
+  let applied = 0
+  for (const ps of steps) {
+    if (typeof ps?.id !== 'string') continue
+    const st = map.steps.find((s) => s.id === ps.id)
+    if (!st) continue
+    if (ps.status === 'done') {
+      st.done = true
+      applied++
+    }
+    if (typeof ps.resultId === 'string') st.resultId = ps.resultId
+    if (typeof ps.naReason === 'string') st.naReason = ps.naReason
+  }
+  if (Array.isArray(decisions) && decisions.length) {
+    map.decisions = decisions as typeof map.decisions
+  }
+  record('user', 'map', `restored run progress: ${applied} completed step(s), ${map.decisions?.length ?? 0} decision(s)`)
+  notify()
+}
+
 /** Would running this action now jump past required, not-yet-done steps? */
 export function prerequisiteGap(actionName: string): { target: string; missing: string[] } | null {
   if (!map?.confirmed) return null

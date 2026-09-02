@@ -12,8 +12,8 @@ process, and the agent's behavior changes because of it.*
 
 ## 0:00–0:15 — Cold open: the problem
 
-> "In a paint shop, the response to a defect lives in one veteran's head.
-> When they're off shift, steps get skipped — and skipped steps stop lines.
+> "In every team, how the work is really done lives in one veteran's head.
+> When they're away, steps get skipped — and skipped steps become incidents.
 > This is Understudy: a drop-in layer that lets an AI agent learn how your
 > experts actually work — on the same page, through WebMCP. Not to log the
 > event — to capture the process around it: what to prepare and prevent
@@ -107,7 +107,7 @@ plain.html with its one script tag (view-source flash) → the tools list.*
 > This build is the capture-and-enforce layer; the same playbook format seeds
 > the operations layer — because WebMCP gives every adopting app standard
 > tools, a step can bind to another app's tool the same way it runs this one's.
-> The paint-shop app is just a demo workspace. Understudy itself is one script tag —
+> The work-log app is just a demo workspace. Understudy itself is one script tag —
 > nineteen WebMCP tools, an action journal, and a live process panel that any
 > web app can adopt. Your team already knows how the work is done.
 > Understudy is how the agent learns it. You did it once — the agent can

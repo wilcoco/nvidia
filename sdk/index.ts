@@ -14,8 +14,8 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, getMap, clearMap, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking, stopRunTracking } from './runsync'
+import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, subscribe as subscribeMap } from './mapstore'
+import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -52,10 +52,23 @@ function registerAction(action: HostAction): void {
   host.registerAction(action)
 }
 
-/** Host apps can push a saved process into the panel (e.g. from a process-list screen). */
-function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
+/** Host apps can push a saved process into the panel (e.g. from a process-list screen).
+ *  Pass meta.resume to reattach an existing run's progress instead of starting fresh. */
+function loadProcess(
+  map: ProcessMap,
+  meta?: {
+    id?: string
+    createdBy?: string
+    resume?: { runId: string; steps?: unknown[]; decisions?: unknown[] }
+  },
+): void {
   loadSavedMap(map, meta)
-  if (meta?.id) startRunTracking(meta.id)
+  if (meta?.resume?.runId) {
+    restoreRunState((meta.resume.steps ?? []) as never, meta.resume.decisions)
+    resumeRunTracking(meta.resume.runId)
+  } else if (meta?.id) {
+    startRunTracking(meta.id)
+  }
 }
 
 /** Host apps can clear the panel entirely (e.g. after a demo-data reset). */
@@ -84,4 +97,13 @@ subscribeMap(() => {
   }
 })
 
-;(window as any).Understudy = { init, log, registerAction, loadProcess, unloadProcess, notifyAction, getLoadedProcess }
+;(window as any).Understudy = {
+  init,
+  log,
+  registerAction,
+  loadProcess,
+  unloadProcess,
+  notifyAction,
+  getLoadedProcess,
+  currentRunId,
+}

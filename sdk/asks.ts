@@ -3,6 +3,7 @@
 // time tool calls out in ~20s), so cards return a pending id and the agent
 // polls get_question_result / get_action_result.
 import { record } from './journal'
+import * as host from './host'
 
 type Listener = () => void
 
@@ -28,6 +29,8 @@ export interface PendingApproval {
   params: Record<string, unknown>
   /** Runs the action once the human approves; produces the stored outcome. */
   continuation: () => Promise<unknown>
+  /** The persona active when the agent requested this — only they may decide. */
+  persona?: string
 }
 
 export type QuestionResult =
@@ -92,13 +95,22 @@ export function getQuestionResult(id: string): QuestionResult | { status: 'unkno
 }
 
 /** Show an approval card for an agent-initiated action; returns the approval id. */
+function currentPersona(): string | undefined {
+  try {
+    const s = host.getState() as { actingAs?: unknown } | null
+    return typeof s?.actingAs === 'string' ? s.actingAs : undefined
+  } catch {
+    return undefined
+  }
+}
+
 export function requestApproval(
   actionName: string,
   params: Record<string, unknown>,
   continuation: () => Promise<unknown>,
 ): string {
   const id = `a${seq++}`
-  approvals.push({ id, actionName, params, continuation })
+  approvals.push({ id, actionName, params, continuation, persona: currentPersona() })
   actionResults.set(id, { status: 'pending_approval', action: actionName })
   notify()
   return id

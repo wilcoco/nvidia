@@ -90,6 +90,8 @@ export interface HostActionParam {
 }
 
 export interface HostAction {
+  /** Personas whose ROLE may run this action (checked against the host state's users/actingAs). */
+  roles?: string[]
   name: string
   description: string
   params?: Record<string, HostActionParam>
@@ -133,7 +135,12 @@ export interface ProcessStoreAdapter {
   startRun?: (processId: string, map: ProcessMap) => Promise<{ id: string }>
   updateRun?: (
     runId: string,
-    payload: { steps: unknown[]; status?: 'active' | 'completed'; deviations?: number },
+    payload: {
+      steps: unknown[]
+      decisions?: unknown[]
+      status?: 'active' | 'completed'
+      deviations?: number
+    },
   ) => Promise<unknown>
 }
 

@@ -101,12 +101,15 @@ app.post('/api/worklogs', auth, async (req, res) => {
 // explicitly resolved deviations excluded). The engine syncs live statuses
 // into the run row; the server enforces them here so UI clicks and direct
 // API calls obey the same gate as agent tools.
-async function openRunStepsFor(worklogId) {
+async function openRunStepsFor(worklogId, stampedRunId) {
   const runs = await db.listRuns()
   for (const r of runs) {
-    const steps = r?.payload?.steps
+    const steps = r?.steps
     if (!Array.isArray(steps)) continue
-    if (!steps.some((s) => s && s.resultId === worklogId)) continue
+    const linked =
+      (stampedRunId && String(r.id) === String(stampedRunId)) ||
+      steps.some((s) => s && s.resultId === worklogId)
+    if (!linked) continue
     const open = steps.filter(
       (s) =>
         s &&
@@ -123,7 +126,7 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
   const wl = worklogs.find((w) => w.id === req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   if (wl.status !== 'draft') return res.status(400).json({ error: `worklog is already ${wl.status}` })
-  const linked = await openRunStepsFor(wl.id)
+  const linked = await openRunStepsFor(wl.id, wl.data?.runId)
   if (linked && linked.open.length > 0) {
     return res.status(409).json({
       error: 'process_incomplete',
@@ -143,6 +146,12 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
 app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
   const m = req.body?.measurements
   if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
+  {
+    const all = await db.listWorklogs()
+    const row = all.find((w) => w.id === req.params.id)
+    if (row?.status === 'approved')
+      return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
+  }
   const patch = {
     verification: m,
     verifiedAt: new Date().toISOString(),
@@ -163,6 +172,12 @@ app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
 app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
   const b = req.body ?? {}
   if (!b.actionTaken) return res.status(400).json({ error: 'actionTaken is required' })
+  {
+    const all = await db.listWorklogs()
+    const row = all.find((w) => w.id === req.params.id)
+    if (row?.status === 'approved')
+      return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
+  }
   const patch = { actionTaken: String(b.actionTaken) }
   if (b.result !== undefined) patch.correctiveResult = String(b.result)
   if (b.viscosity !== undefined) patch.viscosity = Number(b.viscosity)
@@ -181,7 +196,9 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'approval not found' })
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })
   if (decision === 'APPROVED') {
-    const linked = await openRunStepsFor(existing.worklogId)
+    const wlAll = await db.listWorklogs()
+    const wlRow = wlAll.find((w) => w.id === existing.worklogId)
+    const linked = await openRunStepsFor(existing.worklogId, wlRow?.data?.runId)
     if (linked && linked.open.length > 0) {
       return res.status(409).json({
         error: 'process_incomplete',
@@ -234,6 +251,7 @@ app.post('/api/runs/:id', auth, async (req, res) => {
   const b = req.body ?? {}
   const run = await db.updateRun(req.params.id, {
     steps: Array.isArray(b.steps) ? b.steps : undefined,
+    decisions: Array.isArray(b.decisions) ? b.decisions : undefined,
     status: typeof b.status === 'string' ? b.status : undefined,
     deviations: typeof b.deviations === 'number' ? b.deviations : undefined,
   })

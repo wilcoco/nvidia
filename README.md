@@ -57,11 +57,10 @@ registered tools yourself: enable `chrome://flags/#enable-webmcp-testing` and
 
 Two host apps are included to prove the layer is app-agnostic:
 
-- `/` — **the Understudy demo workspace**, a paint-shop incident & response log (automotive
-  manufacturing scenario: line workers log defects like orange peel with the
-  line conditions — viscosity, booth temperature, spray pressure — team leads
-  review corrective actions, and a **Playbooks** tab lists the shared library
-  so anyone can follow a proven response process). Integrated the "rich" way:
+- `/` — **the Understudy demo workspace**, a generic work-log & review app
+  (contributors log work of any kind, team leads review it, and a
+  **Playbooks** tab lists the shared library so anyone can follow a proven
+  process). Integrated the "rich" way:
   semantic logs + registered actions + a process-store adapter.
 - `/plain.html` — a deliberately plain, framework-free purchase-request page.
   Integrated with **one script tag** and `autoCapture: 'full'`.
@@ -186,7 +185,7 @@ sdk/        Understudy itself (TypeScript → bundled to a single understudy.js)
   asks.ts     agent→human questions & action-approval gates
   panel.ts    the in-page side panel (shadow DOM)
   tools.ts    WebMCP tool definitions & registration
-src/        paint-shop demo workspace (React)
+src/        demo workspace (React)
 server/     Express API + Postgres/in-memory storage (auth, worklogs, approvals, process library)
 public/plain.html   second host app (vanilla, one-script-tag attach)
 ```

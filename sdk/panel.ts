@@ -714,8 +714,25 @@ function render() {
       card.appendChild(el('div', 'params', JSON.stringify(req.params, null, 1)))
       const yn = el('div', 'yn')
       const yes = el('button', 'yes', 'Approve')
+      const nowPersona = (() => {
+        try {
+          const st = host.getState() as { actingAs?: unknown } | null
+          return typeof st?.actingAs === 'string' ? st.actingAs : undefined
+        } catch {
+          return undefined
+        }
+      })()
+      const wrongPersona = !!(req.persona && nowPersona && req.persona !== nowPersona)
+      if (wrongPersona) {
+        yes.disabled = true
+        yes.title = `Requested while acting as ${req.persona} — switch back to decide`
+        card.appendChild(
+          el('div', 'blocked-reason', `⛔ Requested by ${req.persona} — switch to that persona to approve or deny.`),
+        )
+      }
       yes.onclick = () => void asksStore.decideApprovalCard(req.id, true)
       const no = el('button', 'no', 'Deny')
+      if (wrongPersona) no.disabled = true
       no.onclick = () => void asksStore.decideApprovalCard(req.id, false)
       yn.appendChild(yes)
       yn.appendChild(no)
