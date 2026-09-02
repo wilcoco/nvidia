@@ -407,11 +407,11 @@ export async function followPlaybook(
   if (opts?.resume) {
     try {
       const runs = await listRuns(processId)
-      // Newest run wins, completed included — a finished run's state (roles,
-      // decisions, timeline, sign-off) must survive a reload.
-      const target = runs.find(
+      // Active first; a completed run only when nothing is in progress.
+      const usable = runs.filter(
         (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
       )
+      const target = usable.find((r) => r.status === 'active') ?? usable[0]
       if (target) resume = { runId: target.id, steps: target.steps, decisions: target.decisions }
     } catch {
       /* no runs — fresh start */
@@ -541,13 +541,21 @@ export function resumeLastPlaybook(): void {
   resumeAttempted = true
   if (window.Understudy.getLoadedProcess?.()) return
   void (async () => {
-    // Source of truth is the server: reattach the newest non-abandoned run,
-    // completed included — its process, roles and history come back with it.
+    // Source of truth is the server. Priority: the newest ACTIVE run (work in
+    // progress always beats finished work); otherwise the newest completed
+    // run, so a finished state still survives a reload.
     try {
-      const runs = await listRuns()
-      const target = runs.find(
+      let runs = await listRuns()
+      const newestActive = runs.find((r) => r.status === 'active')
+      if (newestActive && (!Array.isArray(newestActive.steps) || newestActive.steps.length === 0)) {
+        // Its sync may still be in flight — give it one beat and re-read.
+        await new Promise((r) => setTimeout(r, 900))
+        runs = await listRuns()
+      }
+      const usable = runs.filter(
         (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
       )
+      const target = usable.find((r) => r.status === 'active') ?? usable[0]
       if (target) {
         await followPlaybook(target.processId, { silent: true, resume: true })
         return
