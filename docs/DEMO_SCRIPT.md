@@ -101,7 +101,10 @@ incident. Then final approval card → Approve → "✓ Playbook run complete".*
 *Quick cuts: Playbooks tab (run history strip, version badges) →
 plain.html with its one script tag (view-source flash) → the tools list.*
 
-> "The paint-shop app is just a demo workspace. Understudy itself is one script tag —
+> "AI diagram tools draw the process you can already describe — and a diagram
+> can't refuse a bad pass decision. This playbook was captured from real work,
+> and it just did.
+> The paint-shop app is just a demo workspace. Understudy itself is one script tag —
 > nineteen WebMCP tools, an action journal, and a live process panel that any
 > web app can adopt. Your team already knows how the work is done.
 > Understudy is how the agent learns it. You did it once — the agent can

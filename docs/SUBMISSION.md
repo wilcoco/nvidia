@@ -91,6 +91,24 @@ through the declarative attribute API.
 - Full walkthrough: `docs/DEMO_SCRIPT.md`. No payment or personal data; all
   scenario data is fictional.
 
+## Not a diagram generator
+
+AI process-map generators (Eraser, Whimsical AI, Miro AI) draw a picture of
+a process **you can already describe**, and the picture is where it ends.
+Understudy differs on both ends of the pipeline:
+
+- **Input**: it captures the process from *observed work plus interviews* —
+  surfacing the tacit parts (early-warning signs, pass thresholds, rework
+  loops, who signs off) that experts never think to write down. A prompt box
+  can't start there.
+- **Output**: the map is not documentation but an *enforced runtime*: it is
+  suggested to the next worker automatically, renders NEXT/SKIPPED live,
+  blocks skipped prerequisites server-side, refuses pass decisions that
+  contradict measured evidence, and routes the final sign-off to a human.
+
+A diagram can't refuse a bad pass decision. This playbook does.
+*A picture of the process vs. an operating system for the process.*
+
 ## What's new vs. prior work
 
 The concept distills lessons from earlier internal groupware experiments,
