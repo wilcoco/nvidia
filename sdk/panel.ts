@@ -41,6 +41,10 @@ header button.close { background: none; border: none; color: #94a3b8; cursor: po
 .body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 8px; }
 .empty { color: #475569; font-style: italic; }
+.invite-box { margin-top: 10px; background: #1e293b; border: 1px dashed #334155; border-radius: 8px; padding: 10px; }
+.invite-hint { color: #94a3b8; font-size: 11px; margin-bottom: 6px; }
+.invite-text { color: #cbd5e1; font-size: 11px; font-style: italic; margin-bottom: 8px; user-select: text; }
+.invite-copy { background: #3b82f6; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
 .step { background: #1e293b; border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; position: relative; }
 .step.done { opacity: .55; border-left: 3px solid #34d399; }
 .step.done .label { text-decoration: line-through; }
@@ -367,6 +371,23 @@ function render() {
     mapSection.appendChild(
       el('div', 'empty', 'No process yet. Work in the app — the agent will draft one from what you do.'),
     )
+    const invite =
+      'Work along with me on this page. Watch what I do, guide me with the saved playbooks, and ask me questions when a process is missing knowledge.'
+    const tip = el('div', 'invite-box')
+    tip.appendChild(el('div', 'invite-hint', 'Using an AI agent? Invite it once:'))
+    tip.appendChild(el('div', 'invite-text', `“${invite}”`))
+    const copy = el('button', 'invite-copy', '🤖 Copy agent invite')
+    copy.onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(invite)
+        copy.textContent = '✓ Copied — paste it to your agent'
+        setTimeout(() => (copy.textContent = '🤖 Copy agent invite'), 2500)
+      } catch {
+        copy.textContent = 'Select and copy the text above'
+      }
+    }
+    tip.appendChild(copy)
+    mapSection.appendChild(tip)
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
     if (map.fields?.length) {
