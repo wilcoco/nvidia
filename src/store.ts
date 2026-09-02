@@ -87,6 +87,7 @@ export interface AppState {
   processes: ProcessSummary[]
   draft: DraftContext
   dismissedSuggestions: string[]
+  runStarted: { title: string; version?: number; next?: string } | null
 }
 
 let state: AppState = {
@@ -99,6 +100,7 @@ let state: AppState = {
   processes: [],
   draft: {},
   dismissedSuggestions: [],
+  runStarted: null,
 }
 
 const listeners = new Set<() => void>()
@@ -357,6 +359,19 @@ export async function followPlaybook(processId: string): Promise<void> {
   const p = await getProcess(processId)
   window.Understudy.loadProcess(p.map as never, { id: p.id, createdBy: p.createdBy })
   window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
+  const loaded = window.Understudy.getLoadedProcess?.()
+  const next = loaded?.steps?.find((st) => !st.done)
+  commit({
+    runStarted: {
+      title: p.title,
+      version: (p as { version?: number }).version,
+      next: next?.label,
+    },
+  })
+}
+
+export function dismissRunStarted(): void {
+  commit({ runStarted: null })
 }
 
 /* Process library (shared across users via the server) */

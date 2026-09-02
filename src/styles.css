@@ -109,3 +109,7 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .verify-head { font-weight: 600; }
 .verify-time { opacity: .65; margin-left: 8px; font-weight: 400; font-size: 11px; }
 .verify-vals { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 4px; font-size: 12px; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.55); z-index: 2147483001; display: flex; align-items: center; justify-content: center; }
+.modal { background: #fff; border-radius: 14px; padding: 20px 22px; max-width: 420px; width: calc(100vw - 48px); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.modal h3 { margin: 0 0 10px; }
+.modal .hint { color: #475569; font-size: 13px; line-height: 1.55; }

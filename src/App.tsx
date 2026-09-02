@@ -521,7 +521,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
             <span className="task">{selected.title}</span>
             <span>
               <button className="primary" onClick={() => follow(selected)}>
-                {followFlash ? '✓ Loaded — see the panel →' : 'Follow this playbook'}
+                {followFlash ? '✓ Run started — see the panel →' : '▶ Run this playbook'}
               </button>{' '}
               <button
                 className="ghost"
@@ -564,6 +564,32 @@ function PlaybookList({ state }: { state: store.AppState }) {
   )
 }
 
+function RunStartedModal({ info }: { info: NonNullable<store.AppState['runStarted']> }) {
+  return (
+    <div className="modal-backdrop" onClick={() => store.dismissRunStarted()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <h3>
+          ▶ Run started — {info.title}
+          {info.version ? <span className="version-tag"> v{info.version}</span> : null}
+        </h3>
+        {info.next && (
+          <p>
+            First step: <b>{info.next}</b>
+          </p>
+        )}
+        <p className="hint">
+          The panel on the right guides this run: a yellow border marks your next step, red marks a
+          skipped one, and the playbook's required data fields are now part of the work-log form.
+          Out-of-order or criteria-violating moves will be blocked.
+        </p>
+        <button className="primary" onClick={() => store.dismissRunStarted()}>
+          Got it — start working
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
   const [tab, setTab] = useState<'incidents' | 'approvals' | 'playbooks'>('incidents')
@@ -583,6 +609,7 @@ export default function App() {
 
   return (
     <div className="app">
+      {state.runStarted && <RunStartedModal info={state.runStarted} />}
       <header className="topbar">
         <h1>
           🎭 Understudy{' '}
