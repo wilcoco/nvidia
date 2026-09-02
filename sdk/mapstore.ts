@@ -106,7 +106,7 @@ export function humanRemoveStep(stepId: string): void {
   notify()
 }
 
-export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string }>): void {
+export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string; version?: number }>): void {
   if (!map) return
   map.confirmed = true
   pushEdit({ field: 'confirmed', to: 'true' })
@@ -115,7 +115,15 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string 
   if (saver) {
     const current = map
     saver(current)
-      .then((saved) => record('user', 'map', `saved "${current.title}" to the shared process library (id ${saved.id})`))
+      .then((saved) =>
+        record(
+          'user',
+          'map',
+          saved.version && saved.version > 1
+            ? `saved "${current.title}" as v${saved.version} (id ${saved.id}) — same playbook, new immutable revision; earlier ids stay as history`
+            : `saved "${current.title}" to the shared process library (id ${saved.id})`,
+        ),
+      )
       .catch((err) => record('user', 'map', `saving "${current.title}" failed: ${err instanceof Error ? err.message : err}`))
   }
 }
@@ -490,17 +498,18 @@ export function mapGaps(): MapGap[] {
   // the engine cannot refuse a wrong pass-choice without them.
   const orderIdx = new Map(map.steps.map((s, i) => [s.id, i]))
   for (const s of map.steps.filter((x) => (x.next?.length ?? 0) >= 2)) {
-    for (const e of s.next ?? []) {
-      const isForward = (orderIdx.get(e.to) ?? 0) > (orderIdx.get(s.id) ?? 0)
-      if (isForward && (!e.criteria || Object.keys(e.criteria).length === 0)) {
-        gaps.push({
-          kind: 'pass_criteria',
-          stepId: s.id,
-          step: s.label,
-          note: `The pass edge "${s.label}" → "${map.steps.find((t) => t.id === e.to)?.label ?? e.to}" has no machine-checkable criteria — the engine cannot refuse a wrong pass-choice. If the human stated thresholds (e.g. "under 55°C, 3 clean cycles, no leak"), encode them now via update_step {stepId, branch_to, branch_criteria: {...}}. If none were stated, ask via ask_user.`,
-        })
-      }
-    }
+    const edges = s.next ?? []
+    // One criteria-carrying edge is enough: its siblings act as the
+    // else-branches (a failure route needs no mirror-image thresholds).
+    if (edges.some((e) => e.criteria && Object.keys(e.criteria).length > 0)) continue
+    const fwd = edges.find((e) => (orderIdx.get(e.to) ?? 0) > (orderIdx.get(s.id) ?? 0))
+    if (!fwd) continue
+    gaps.push({
+      kind: 'pass_criteria',
+      stepId: s.id,
+      step: s.label,
+      note: `No edge of the decision "${s.label}" carries machine-checkable criteria — the engine cannot refuse a wrong pass-choice. Encode the PASS edge's thresholds via update_step {stepId, branch_to, branch_criteria: {...}} (the other edges then act as the else-branches). If no thresholds were stated, ask via ask_user.`,
+    })
   }
   const resolved = new Set(map.resolvedGaps ?? [])
   lastFallbacks = gaps.map((g) => g.fallback_question).filter((q): q is string => !!q)

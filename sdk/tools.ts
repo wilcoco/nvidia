@@ -483,7 +483,11 @@ const tools: ToolDef[] = [
     execute: async () => {
       const store = host.getProcessStore()
       if (!store) return { available: false, note: 'This app has no shared process library.' }
-      return { processes: await store.list() }
+      return {
+        processes: await store.list(),
+        versioning_note:
+          'Versions are immutable rows: saving an update creates a NEW id under the SAME title, and this list shows only the latest version per title. A new id after a save is the same playbook, revised — not a separate playbook.',
+      }
     },
   },
   {
