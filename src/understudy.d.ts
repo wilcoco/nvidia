@@ -29,10 +29,13 @@ interface UnderstudyProcessMap {
     fields?: string[]
     done?: boolean
     completedBy?: string
+    completedAt?: number
     resultData?: Record<string, unknown>
     next?: Array<{ to: string; condition?: string }>
   }>
   confirmed?: boolean
+  version?: number
+  decisions?: Array<{ stepId: string; to: string; reason?: string; ts?: number; invalidated?: boolean }>
   fields?: UnderstudyFieldDef[]
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>

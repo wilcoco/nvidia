@@ -116,3 +116,15 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .task-card { border-left: 4px solid #f59e0b; }
 .waiting-card { opacity: .75; border-left: 4px solid #94a3b8; }
 .task-fields { margin: 8px 0; }
+.demo-strip { position: sticky; top: 0; z-index: 50; background: #0f172a; color: #e2e8f0; padding: 8px 14px; border-radius: 0 0 10px 10px; font-size: 13px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.demo-title { font-weight: 700; margin-right: 4px; }
+.relay-chip { background: #1e293b; border: 1px solid #334155; border-radius: 999px; padding: 1px 9px; font-size: 11px; color: #94a3b8; }
+.relay-chip.r-done { background: #064e3b; border-color: #059669; color: #6ee7b7; }
+.relay-chip.r-now { background: #f59e0b; border-color: #fbbf24; color: #451a03; font-weight: 700; animation: relaypulse 1.6s infinite; }
+.relay-chip.r-na { opacity: .35; }
+@keyframes relaypulse { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,.5); } 50% { box-shadow: 0 0 0 6px rgba(251,191,36,0); } }
+.demo-cue { margin-left: auto; font-weight: 600; color: #fbbf24; }
+.timeline .tl-time { color: #94a3b8; font-variant-numeric: tabular-nums; margin-right: 6px; }
+.timeline .tl-decision { color: #b45309; }
+.diff-card .diff-add { color: #059669; }
+.diff-card .diff-del { color: #dc2626; }

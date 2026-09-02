@@ -622,6 +622,50 @@ export async function listRuns(processId?: string): Promise<ProcessRun[]> {
   return api<ProcessRun[]>(`/api/runs${processId ? `?processId=${processId}` : ''}`)
 }
 
+export async function listProcessesRaw(): Promise<ProcessSummary[]> {
+  return api<ProcessSummary[]>('/api/processes')
+}
+
+export interface VersionDiff {
+  prevVersion: number
+  added: string[]
+  removed: string[]
+  changed: Array<{ label: string; changes: string[] }>
+}
+
+/** Human-readable structural diff of a playbook vs its previous version. */
+export async function diffWithPrevious(p: {
+  title: string
+  map: UnderstudyProcessMap
+}): Promise<VersionDiff | null> {
+  const all = await listProcessesRaw()
+  const prior = all
+    .filter((x) => x.title === p.title && (x.version || 1) < (p.map.version || 1))
+    .sort((a, b) => (b.version || 1) - (a.version || 1))[0]
+  if (!prior) return null
+  const prev = await getProcess(prior.id)
+  const prevMap = prev.map as UnderstudyProcessMap
+  const cur = new Map(p.map.steps.map((s) => [s.id, s]))
+  const old = new Map(prevMap.steps.map((s) => [s.id, s]))
+  const added = p.map.steps.filter((s) => !old.has(s.id)).map((s) => s.label)
+  const removed = prevMap.steps.filter((s) => !cur.has(s.id)).map((s) => s.label)
+  const changed: Array<{ label: string; changes: string[] }> = []
+  for (const s of p.map.steps) {
+    const o = old.get(s.id)
+    if (!o) continue
+    const c: string[] = []
+    if (o.label !== s.label) c.push(`renamed from “${o.label}”`)
+    if (o.type !== s.type) c.push(`type ${o.type} → ${s.type}`)
+    if ((o.role ?? '') !== (s.role ?? '')) c.push(`owner ${o.role ?? 'anyone'} → ${s.role ?? 'anyone'}`)
+    const of_ = (o.fields ?? []).join(','), nf = (s.fields ?? []).join(',')
+    if (of_ !== nf) c.push(`captures [${nf || '—'}] (was [${of_ || '—'}])`)
+    const oe = (o.next ?? []).length, ne = (s.next ?? []).length
+    if (oe !== ne) c.push(`${ne} outgoing branch(es) (was ${oe})`)
+    if (c.length) changed.push({ label: s.label, changes: c })
+  }
+  return { prevVersion: prior.version || 1, added, removed, changed }
+}
+
 export async function deleteProcess(id: string): Promise<void> {
   await fetch(`/api/processes/${id}`, {
     method: 'DELETE',

@@ -492,6 +492,44 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
 
 const latestPerTitle = store.latestPerTitle
 
+function VersionDiffView({ proc }: { proc: LoadedProcess }) {
+  const [diff, setDiff] = useState<store.VersionDiff | null | 'loading'>(null)
+  if ((proc.map.version ?? 1) <= 1) return null
+  if (diff === null)
+    return (
+      <button
+        className="ghost"
+        data-flow-ignore
+        onClick={() => {
+          setDiff('loading')
+          void store.diffWithPrevious(proc).then((d) => setDiff(d ?? null))
+        }}
+      >
+        Compare with v{(proc.map.version ?? 2) - 1}
+      </button>
+    )
+  if (diff === 'loading') return <p className="meta">Comparing…</p>
+  return (
+    <div className="card entry diff-card">
+      <div className="entry-head">
+        <span className="task">Δ vs v{diff.prevVersion}</span>
+      </div>
+      {diff.added.map((l) => (
+        <div key={`a${l}`} className="meta diff-add">+ added: {l}</div>
+      ))}
+      {diff.removed.map((l) => (
+        <div key={`r${l}`} className="meta diff-del">− removed: {l}</div>
+      ))}
+      {diff.changed.map((c) => (
+        <div key={c.label} className="meta">~ {c.label}: {c.changes.join('; ')}</div>
+      ))}
+      {diff.added.length + diff.removed.length + diff.changed.length === 0 && (
+        <div className="meta">No structural changes.</div>
+      )}
+    </div>
+  )
+}
+
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
   const [runs, setRuns] = useState<store.ProcessRun[]>([])
@@ -548,7 +586,8 @@ function PlaybookList({ state }: { state: store.AppState }) {
             <span>
               <button className="primary" onClick={() => follow(selected)}>
                 {followFlash ? '✓ Run started — see the panel →' : '▶ Run this playbook'}
-              </button>{' '}
+              </button>
+              <VersionDiffView proc={selected} />{' '}
               <button
                 className="ghost"
                 data-flow-ignore
@@ -790,6 +829,76 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
           </div>
         </div>
       ))}
+      <RunTimeline proc={proc} />
+    </div>
+  )
+}
+
+function RunTimeline({ proc }: { proc: UnderstudyProcessMap }) {
+  const events: Array<{ ts: number; text: string; kind: 'step' | 'decision' }> = []
+  for (const s of proc.steps) {
+    if (s.done && s.completedAt)
+      events.push({ ts: s.completedAt, kind: 'step', text: `✓ ${s.label}${s.completedBy ? ` — ${s.completedBy}` : ''}` })
+  }
+  for (const d of proc.decisions ?? []) {
+    const target = proc.steps.find((s) => s.id === d.to)?.label ?? d.to
+    events.push({
+      ts: d.ts ?? 0,
+      kind: 'decision',
+      text: `◈ ${proc.steps.find((s) => s.id === d.stepId)?.label ?? d.stepId} → ${target}${d.reason ? ` (${d.reason})` : ''}${d.invalidated ? ' · superseded by retry' : ''}`,
+    })
+  }
+  if (events.length === 0) return null
+  events.sort((a, b) => a.ts - b.ts)
+  return (
+    <div className="card entry timeline">
+      <div className="entry-head">
+        <span className="task">🕒 Run timeline</span>
+      </div>
+      {events.map((e, i) => (
+        <div key={i} className={`meta ${e.kind === 'decision' ? 'tl-decision' : ''}`}>
+          <span className="tl-time">{e.ts ? new Date(e.ts).toLocaleTimeString('en-US') : ''}</span> {e.text}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function DemoStrip({ state }: { state: store.AppState }) {
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    const f = () => setTick((t) => t + 1)
+    window.addEventListener('understudy:mapchange', f)
+    return () => window.removeEventListener('understudy:mapchange', f)
+  }, [])
+  const prog = window.Understudy.getProgress?.() ?? []
+  if (prog.length === 0)
+    return <div className="demo-strip">🎬 Demo mode — run a playbook and the role relay appears here.</div>
+  const personaOf = (role?: string) =>
+    role ? state.users.find((u) => u.role === role)?.name ?? role : 'anyone'
+  const ready = prog.find((p) => p.status === 'ready')
+  const doneCount = prog.filter((p) => p.done).length
+  return (
+    <div className="demo-strip">
+      <span className="demo-title">🎬 Role relay</span>
+      {prog.map((p) => (
+        <span
+          key={p.id}
+          className={`relay-chip ${p.done ? 'r-done' : p.status === 'ready' ? 'r-now' : p.status === 'not_applicable' ? 'r-na' : ''}`}
+          title={p.label}
+        >
+          {personaOf(p.role)}
+        </span>
+      ))}
+      <span className="demo-cue">
+        {ready
+          ? ready.role && state.users.find((u) => u.username === state.actingAs)?.role !== ready.role
+            ? `→ switch persona to ${personaOf(ready.role)} (${ready.role}): ${ready.label}`
+            : `→ now: ${ready.label}`
+          : doneCount === prog.filter((p) => p.status !== 'not_applicable').length
+            ? '✓ process complete'
+            : '→ awaiting a decision (ask the agent)'}
+      </span>
     </div>
   )
 }
@@ -797,6 +906,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
   const [tab, setTab] = useState<'incidents' | 'tasks' | 'approvals' | 'playbooks'>('incidents')
+  const [demoMode, setDemoMode] = useState(false)
   const [resetFlash, setResetFlash] = useState(false)
 
   useEffect(() => {
@@ -814,6 +924,7 @@ export default function App() {
   return (
     <div className="app">
       {state.runStarted && <RunStartedModal info={state.runStarted} />}
+      {demoMode && <DemoStrip state={state} />}
       <header className="topbar">
         <h1>
           🎭 Understudy{' '}
@@ -832,6 +943,14 @@ export default function App() {
                 </option>
               ))}
           </select>
+          <button
+            className="ghost"
+            data-flow-ignore
+            title="Presenter aid: shows the role relay and whose turn it is"
+            onClick={() => setDemoMode((d) => !d)}
+          >
+            {demoMode ? '🎬 Demo mode on' : 'Demo mode'}
+          </button>
           <button
             className="ghost"
             data-flow-ignore
