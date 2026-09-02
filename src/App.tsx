@@ -648,6 +648,12 @@ function PlaybookList({ state }: { state: store.AppState }) {
 }
 
 function RunStartedModal({ info }: { info: NonNullable<store.AppState['runStarted']> }) {
+  // Presenter-friendly: the toast dismisses itself so the next click always
+  // lands on the UI, never on the backdrop.
+  useEffect(() => {
+    const t = setTimeout(() => store.dismissRunStarted(), 5000)
+    return () => clearTimeout(t)
+  }, [])
   return (
     <div className="modal-backdrop" onClick={() => store.dismissRunStarted()}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
