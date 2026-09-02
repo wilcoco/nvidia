@@ -287,12 +287,19 @@ function VerificationBlock({ w }: { w: store.Worklog }) {
     )
   })
   const route = w.data.verifiedRoute as { label?: string; pass?: boolean } | undefined
-  const t = w.data.verifiedAt ? ` · ${new Date(w.data.verifiedAt).toLocaleTimeString('en-US')}` : ''
+  const t = w.data.verifiedAt ? new Date(w.data.verifiedAt).toLocaleTimeString('en-US') : ''
+  const verdict = !route
+    ? '\u{1F4CA} Measurements recorded'
+    : route.pass
+      ? "\u2705 Passed verification \u2014 measurements met the playbook's criteria"
+      : `\u26A0\uFE0F Verification failed \u2014 playbook rerouted to: ${route.label ?? 'remediation'}`
   return (
-    <div className={`note verify-note ${route && !route.pass ? 'reroute' : ''}`}>
-      {route?.pass !== false ? '✅ Measured — criteria met' : '⚠️ Measured — criteria not met'}
-      {route?.label ? ` → routed to: ${route.label}` : ''}
-      {t}: {rows}
+    <div className={`note verify-note ${route ? (route.pass ? '' : 'reroute') : 'neutral'}`}>
+      <div className="verify-head">
+        {verdict}
+        {t && <span className="verify-time">{t}</span>}
+      </div>
+      <div className="verify-vals">{rows}</div>
     </div>
   )
 }

@@ -105,3 +105,7 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .card.entry.clickable { cursor: pointer; }
 .card.entry.clickable:hover { border-color: #93c5fd; }
 .verify-note.reroute { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.verify-note.neutral { background: #f8fafc; border-color: #e2e8f0; color: #475569; }
+.verify-head { font-weight: 600; }
+.verify-time { opacity: .65; margin-left: 8px; font-weight: 400; font-size: 11px; }
+.verify-vals { display: flex; flex-wrap: wrap; gap: 3px 14px; margin-top: 4px; font-size: 12px; }
