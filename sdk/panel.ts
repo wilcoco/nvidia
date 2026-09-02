@@ -124,6 +124,9 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .run-complete { background: #064e3b; color: #6ee7b7; border-radius: 8px; padding: 8px 10px; margin-top: 8px; font-size: 12px; font-weight: 600; }
 .map-title { font-weight: 600; color: #fff; margin-bottom: 8px; }
 .map-hint { color: #64748b; font-size: 10.5px; line-height: 1.5; margin: -2px 0 10px; }
+.overview { background: #10182a; border: 1px solid rgba(148,163,184,.08); border-radius: 10px; padding: 6px 8px; margin-bottom: 10px; overflow-x: auto; }
+.overview svg { display: block; }
+.overview .mini { cursor: pointer; }
 .map-hint::before { content: 'ℹ '; opacity: .8; }
 .card { background: #1e293b; border: 1px solid #3b82f6; border-radius: 8px; padding: 10px; margin-bottom: 8px; }
 .card .q { color: #f1f5f9; margin-bottom: 8px; }
@@ -327,6 +330,141 @@ const EDGE_COLORS: Array<[string, string]> = [
   ['arr-red', '#f87171'],
 ]
 
+// Compact true-flowchart overview: branches fan out to the right, loop-backs
+// curve on the left, statuses color the nodes. Clicking a node scrolls to
+// its card. Small graphs only — columns are assigned along the step order.
+function buildOverview(panelEl: HTMLElement): HTMLElement | null {
+  const map = mapstore.getMap()
+  if (!map || map.steps.length < 2) return null
+  const statuses = mapstore.progress(preconditionFor)
+  const idx = new Map(map.steps.map((st, i) => [st.id, i] as const))
+  const col = new Array(map.steps.length).fill(0)
+  map.steps.forEach((st, i) => {
+    const fwd = (st.next ?? [])
+      .map((e) => idx.get(e.to))
+      .filter((j): j is number => j !== undefined && j > i)
+      .sort((x, y) => x - y)
+    fwd.forEach((j, k) => {
+      if (k === 0) col[j] = Math.min(col[j], col[i])
+      else col[j] = Math.max(col[j], col[i] + k)
+    })
+  })
+  const STEPX = 26
+  const STEPY = 30
+  const PADX = 16
+  const PADY = 12
+  const width = PADX * 2 + Math.max(...col) * STEPX + 20
+  const height = PADY * 2 + (map.steps.length - 1) * STEPY
+  const cx = (i: number) => PADX + col[i] * STEPX + 8
+  const cy = (i: number) => PADY + i * STEPY
+  const NS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(NS, 'svg')
+  svg.setAttribute('width', String(Math.max(width, 120)))
+  svg.setAttribute('height', String(height))
+  const FILL: Record<string, [string, string, string]> = {
+    done: ['#059669', '#34d399', '#fff'],
+    ready: ['#f59e0b', '#fbbf24', '#451a03'],
+    skipped: ['#dc2626', '#ef4444', '#fff'],
+    blocked: ['#ea580c', '#f97316', '#fff'],
+  }
+  const TYPESTROKE: Record<string, string> = { task: '#3b82f6', decision: '#d97706', approval: '#8b5cf6' }
+  // edges first (under nodes)
+  map.steps.forEach((st, i) => {
+    const edges =
+      st.next && st.next.length
+        ? st.next
+        : i < map.steps.length - 1
+          ? [{ to: map.steps[i + 1].id, condition: undefined }]
+          : []
+    for (const e of edges) {
+      const j = idx.get(e.to)
+      if (j === undefined) continue
+      const back = j <= i
+      const isBranch = (st.next?.length ?? 0) > 1 || !!e.condition
+      const tStatus = statuses.get(e.to)
+      let color = '#3d4a61'
+      let dash = ''
+      if (back) {
+        color = '#f87171'
+        dash = '3 3'
+      } else if (isBranch) {
+        color = tStatus === 'conditional' ? '#fbbf24' : '#34d399'
+      }
+      const path = document.createElementNS(NS, 'path')
+      let d: string
+      if (back) {
+        const bulge = 16 + col[i] * STEPX
+        d = `M ${cx(i) - 8} ${cy(i)} C ${cx(i) - bulge} ${cy(i)}, ${cx(j) - 16} ${cy(j)}, ${cx(j) - 8} ${cy(j)}`
+      } else if (col[i] === col[j]) {
+        d = `M ${cx(i)} ${cy(i) + 8} L ${cx(j)} ${cy(j) - 8}`
+      } else {
+        d = `M ${cx(i)} ${cy(i) + 8} C ${cx(i)} ${cy(i) + 20}, ${cx(j)} ${cy(j) - 20}, ${cx(j)} ${cy(j) - 8}`
+      }
+      path.setAttribute('d', d)
+      path.setAttribute('fill', 'none')
+      path.setAttribute('stroke', color)
+      path.setAttribute('stroke-width', '1.6')
+      if (dash) path.setAttribute('stroke-dasharray', dash)
+      if (tStatus === 'not_applicable') path.setAttribute('opacity', '.3')
+      svg.appendChild(path)
+    }
+  })
+  map.steps.forEach((st, i) => {
+    const status = statuses.get(st.id)
+    const g = document.createElementNS(NS, 'g')
+    g.setAttribute('class', 'mini')
+    const [fill, stroke, textCol] = FILL[status ?? ''] ?? ['#0f172a', TYPESTROKE[st.type] ?? '#475569', '#94a3b8']
+    let shape: SVGElement
+    if (st.type === 'decision') {
+      shape = document.createElementNS(NS, 'rect')
+      shape.setAttribute('x', String(cx(i) - 7))
+      shape.setAttribute('y', String(cy(i) - 7))
+      shape.setAttribute('width', '14')
+      shape.setAttribute('height', '14')
+      shape.setAttribute('rx', '3')
+      shape.setAttribute('transform', `rotate(45 ${cx(i)} ${cy(i)})`)
+    } else if (st.type === 'approval') {
+      shape = document.createElementNS(NS, 'rect')
+      shape.setAttribute('x', String(cx(i) - 8))
+      shape.setAttribute('y', String(cy(i) - 8))
+      shape.setAttribute('width', '16')
+      shape.setAttribute('height', '16')
+      shape.setAttribute('rx', '5')
+    } else {
+      shape = document.createElementNS(NS, 'circle')
+      shape.setAttribute('cx', String(cx(i)))
+      shape.setAttribute('cy', String(cy(i)))
+      shape.setAttribute('r', '8')
+    }
+    shape.setAttribute('fill', fill)
+    shape.setAttribute('stroke', stroke)
+    shape.setAttribute('stroke-width', '1.6')
+    if (status === 'conditional') shape.setAttribute('stroke-dasharray', '3 2')
+    if (status === 'not_applicable') g.setAttribute('opacity', '.35')
+    const label = document.createElementNS(NS, 'text')
+    label.setAttribute('x', String(cx(i)))
+    label.setAttribute('y', String(cy(i) + 3))
+    label.setAttribute('text-anchor', 'middle')
+    label.setAttribute('font-size', '8.5')
+    label.setAttribute('font-weight', '700')
+    label.setAttribute('fill', textCol)
+    label.textContent = status === 'done' ? '✓' : status === 'skipped' ? '✕' : String(i + 1)
+    const title = document.createElementNS(NS, 'title')
+    title.textContent = `${i + 1}. ${st.label}${status ? ` · ${status}` : ''}`
+    g.appendChild(title)
+    g.appendChild(shape)
+    g.appendChild(label)
+    g.addEventListener('click', () => {
+      const row = panelEl.querySelectorAll('.flow-row')[i]
+      row?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    svg.appendChild(g)
+  })
+  const wrap = el('div', 'overview')
+  wrap.appendChild(svg)
+  return wrap
+}
+
 // Draws every step-to-step edge as a real flowchart line over the node
 // column: straight gray for linear flow, green/amber curves for forward
 // branches (taken/undecided), dashed red loop-backs, dimmed when the
@@ -384,6 +522,9 @@ function drawEdges(flow: HTMLElement) {
       const a = pos.get(st.id)
       const b = j === undefined ? undefined : pos.get(e.to)
       if (j === undefined || !a || !b) continue
+      // The card gutter only carries adjacent connections; structure
+      // (skips, loop-backs) lives in the overview diagram and the pills.
+      if (j !== i + 1) continue
       const back = j <= i
       const isBranch = (st.next?.length ?? 0) > 1 || !!e.condition
       const tStatus = statuses.get(e.to)
@@ -583,6 +724,8 @@ function render() {
       mapSection.appendChild(f)
     }
     const statuses = mapstore.progress(preconditionFor)
+    const overview = buildOverview(panel)
+    if (overview) mapSection.appendChild(overview)
     const flow = el('div', 'flow')
     map.steps.forEach((s, i) => renderStep(s, i, flow, statuses.get(s.id)))
     mapSection.appendChild(flow)
