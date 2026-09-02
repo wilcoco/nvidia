@@ -342,13 +342,14 @@ function drawEdges(flow: HTMLElement) {
   for (const [id, color] of EDGE_COLORS) {
     const m = document.createElementNS(NS, 'marker')
     m.setAttribute('id', id)
-    m.setAttribute('markerWidth', '7')
-    m.setAttribute('markerHeight', '7')
-    m.setAttribute('refX', '5.5')
-    m.setAttribute('refY', '3.5')
+    m.setAttribute('markerUnits', 'userSpaceOnUse')
+    m.setAttribute('markerWidth', '8')
+    m.setAttribute('markerHeight', '8')
+    m.setAttribute('refX', '6.5')
+    m.setAttribute('refY', '4')
     m.setAttribute('orient', 'auto')
     const tri = document.createElementNS(NS, 'polygon')
-    tri.setAttribute('points', '0 0, 7 3.5, 0 7')
+    tri.setAttribute('points', '0 0, 8 4, 0 8')
     tri.setAttribute('fill', color)
     m.appendChild(tri)
     defs.appendChild(m)
@@ -389,7 +390,7 @@ function drawEdges(flow: HTMLElement) {
       }
       if (tStatus === 'not_applicable') opacity = '.3'
       let d: string
-      if (!back && j === i + 1 && !isBranch) {
+      if (!back && j === i + 1) {
         d = `M ${a.x} ${a.bottom + 2} L ${b.x} ${b.top - 4}`
       } else if (!back) {
         const bulge = 13 + Math.min(9, (j - i) * 3)
