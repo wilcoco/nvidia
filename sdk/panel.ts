@@ -40,6 +40,8 @@ header .dot.on { background: #34d399; }
 header button.close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 15px; }
 .body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 8px; }
+h2.activity-toggle { cursor: pointer; user-select: none; }
+h2.activity-toggle:hover { color: #94a3b8; }
 .empty { color: #475569; font-style: italic; }
 .invite-box { margin-top: 10px; background: #1e293b; border: 1px dashed #334155; border-radius: 8px; padding: 10px; }
 .invite-hint { color: #94a3b8; font-size: 11px; margin-bottom: 6px; }
@@ -109,6 +111,8 @@ footer input { accent-color: #3b82f6; }
 
 let shadow: ShadowRoot | null = null
 let collapsed = false
+// The activity journal exists for the agent; humans see a collapsed summary.
+let activityOpen = false
 let renderQueued = false
 
 export function mountPanel(): void {
@@ -422,19 +426,29 @@ function render() {
   }
   body.appendChild(mapSection)
 
-  // Journal
+  // Journal — collapsed by default: it is the agent's reading material, not the
+  // human's. A count keeps it discoverable without reading like a log dump.
   const jSection = el('section')
-  jSection.appendChild(el('h2', undefined, 'Activity'))
-  const entries = journal.all().slice(-30).reverse()
-  if (entries.length === 0) {
-    jSection.appendChild(el('div', 'empty', 'Nothing recorded yet.'))
-  } else {
-    for (const e of entries) {
-      const line = el('div', 'j-entry')
-      line.appendChild(el('span', `src ${e.source}`, e.source === 'agent' ? 'AGT' : 'YOU'))
-      line.appendChild(el('span', 'kind', e.kind))
-      line.appendChild(el('span', 'lbl', e.label))
-      jSection.appendChild(line)
+  const allEntries = journal.all()
+  const jHeader = el('h2', 'activity-toggle', `Activity (${allEntries.length}) ${activityOpen ? '▾' : '▸'}`)
+  jHeader.title = activityOpen ? 'Hide the agent-facing activity journal' : 'Show what the agent can read'
+  jHeader.onclick = () => {
+    activityOpen = !activityOpen
+    render()
+  }
+  jSection.appendChild(jHeader)
+  if (activityOpen) {
+    const entries = allEntries.slice(-30).reverse()
+    if (entries.length === 0) {
+      jSection.appendChild(el('div', 'empty', 'Nothing recorded yet.'))
+    } else {
+      for (const e of entries) {
+        const line = el('div', 'j-entry')
+        line.appendChild(el('span', `src ${e.source}`, e.source === 'agent' ? 'AGT' : 'YOU'))
+        line.appendChild(el('span', 'kind', e.kind))
+        line.appendChild(el('span', 'lbl', e.label))
+        jSection.appendChild(line)
+      }
     }
   }
   body.appendChild(jSection)
