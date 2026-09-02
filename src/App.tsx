@@ -40,7 +40,7 @@ function Login() {
       <form className="card login" onSubmit={submit}>
         <h1>
           🎭 Understudy{' '}
-          <span className="sub">work log demo</span>
+          <span className="sub">turn work into living playbooks</span>
         </h1>
         <p className="hint">
           Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
@@ -619,7 +619,7 @@ export default function App() {
       <header className="topbar">
         <h1>
           🎭 Understudy{' '}
-          <span className="sub">work log demo workspace</span>
+          <span className="sub">turn work into living playbooks · demo workspace</span>
         </h1>
         <div className="userbox">
           <span>
