@@ -56,6 +56,13 @@ finds the matching playbook (with confidence and reasons), and joins the run:
   conditions, writes judgment rules ("lower viscosity to 17s only above 18
   after a color change"). The agent reads the edits (`get_map_edits`) — they
   outrank its inference — and its questions and next actions change.
+- **Operate** — the saved playbook runs as real work: every step belongs to
+  a role (Contributor / Operations / Reviewer personas), the assignee's
+  **My tasks** card shows exactly the inputs that step must capture, other
+  roles see "Waiting on…", failure branches re-assign recovery work
+  automatically, reaching the sign-off step creates the pending review by
+  itself, and the run — roles, decisions, submitted values, timeline —
+  survives a page reload.
 - **Guide** — when a similar incident starts, condition-based matching (no
   LLM) surfaces the playbook: *92% match — incident type, color change,
   urgent*. Following it turns the map into a live guide: the next required

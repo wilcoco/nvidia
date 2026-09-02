@@ -1,123 +1,107 @@
-# Understudy — 3-minute demo script
+# Understudy — 3-minute demo script (v2, operations cut)
 
-**Environment**: ChatGPT's in-app browser (desktop app agent), signed in as `judge`.
-Before recording press **Start fresh demo** (playbooks are kept).
-Screen layout: demo app left, Understudy panel right, ChatGPT visible.
+**Environment**: ChatGPT's in-app browser (desktop app, ⌘⇧B), signed in as `judge`.
+Before recording: **Start fresh demo** (playbooks kept), fresh ChatGPT conversation,
+English prompts only, **Demo mode ON** for Scene 3.
+Screen layout: demo app left, Understudy panel right, ChatGPT chat visible.
 
-**The one thing this video must prove** (this is the winning scene, not the
-compliance features): *the human corrects the agent's understanding of the
-process, and the agent's behavior changes because of it.*
+**The two things this video must prove**
+1. *The human corrects the agent's understanding, and the agent's behavior
+   changes because of it* (teach).
+2. *The playbook then runs real work across real people — assigned, gated,
+   evidenced, signed off* (operate).
 
 ---
 
-## 0:00–0:15 — Cold open: the problem
+## 0:00–0:15 — Cold open
 
 > "In every team, how the work is really done lives in one veteran's head.
 > When they're away, steps get skipped — and skipped steps become incidents.
-> This is Understudy: a drop-in layer that lets an AI agent learn how your
-> experts actually work — on the same page, through WebMCP. Not to log the
-> event — to capture the process around it: what to prepare and prevent
-> before, what to verify and sign off after."
+> This is Understudy: a WebMCP layer that lets the agent you already use
+> learn how your experts work — and then run that knowledge as a process."
 
-*Screen: the demo workspace open, Understudy panel on the right, ChatGPT alongside.
-Briefly hover the "WebMCP connected" dot and ChatGPT's Site tools list (20
-tools).*
+*Screen: workspace + panel + chat, empty state visible ("the agent drafts the
+process around each event").*
 
-## 0:15–0:45 — Scene 1: The expert just works; the agent watches and maps
+## 0:15–0:50 — Scene 1: Capture (raw log → living map)
 
-*Type to ChatGPT:* **"Watch how I handle this incident and turn it into a playbook."**
+*Kim saves a one-line work log: "Ran the customer-table schema migration on
+the staging copy…". Send the invite, then the interview prompt.*
 
-*As Kim: log an orange-peel incident — type `orange peel`, check "right after
-a color change", viscosity 18.5, booth 23°C, urgent. Save. Send to Lee.
-Switch persona to Lee, approve.*
+> "One raw sentence. The agent reads the journal, drafts the process around
+> the event — and interviews me for what I'd never write down: what to
+> prepare before, the warning signs, the pass thresholds, who signs off."
 
-> "Kim just handles the defect the way he always does. Every action lands in
-> a journal the agent can read — no screenshots, no guessing at pixels.
-> Watch the right side."
+*Show: question card answered on the page → map grows → criteria chip
+appears → Captures line (data contract).*
 
-*Agent calls get_recent_actions → propose_process_map. The map appears
-beside the work.*
+## 0:50–1:20 — Scene 2 ★ Teach (the human corrects the agent)
 
-> "The agent turned ten minutes of real work into a five-step response
-> playbook — decision branch, approval line and all."
+*Click-rename a step on the panel. Then in chat: restructure the failure
+path (remediation branch). Show the amber "unsaved draft" pill → Save as vN.*
 
-## 0:45–1:30 — Scene 2 ★ THE CENTERPIECE: the human teaches the agent
+> "The map is mine to correct — by click, or by telling the agent. It reads
+> my edits back, and its questions and judgments change. Every save is an
+> immutable version of the team's knowledge."
 
-> "But the agent's draft is a guess. The expertise belongs to the human —
-> so the map is editable, live."
+*Optional flash: "Compare with v(N-1)" diff card.*
 
-*Kim clicks the branch condition and tightens it. Click the step note and
-type the judgment rule:*
-**"Lower viscosity to 17s only when it reads above 18 after a color change."**
+## 1:20–2:20 — Scene 3 ★★ Operate (the playbook runs real work)
 
-*Agent (having called get_map_edits) reacts — its follow-up question changes.
-It asks something like "Should the playbook treat readings under 18 as
-no-adjustment-needed?" and writes the confirmed rule into the step via
-update_step. Show the note appearing on the step card.*
+*Demo mode ON — the role relay strip appears. New entry → suggestion card
+(90%, reasons) → ▶ Run this playbook → run-start popup.*
 
-> "The agent reads the correction — the human's edit outranks its inference —
-> and its next question changes. The rule Kim just explained is now written
-> into the playbook itself. This is the part that wasn't possible before
-> WebMCP: the human works, the agent learns the organization's judgment,
-> on the same screen, in real time."
+> "Now the playbook operates. Each step belongs to a role — the relay shows
+> whose turn it is."
 
-*Press **Confirm & save to library**. Show "saved v1 to the shared library".*
+*Fast relay, following the strip's cues:*
+- Kim completes prep → **switch to Park (Operations)**: snapshot card asks
+  only for `snapshotId` — required, submit locked until filled.
+- **Kim**: migration card — enter `rowCountDelta 12`, verification false.
+- Agent resolves the health decision: **refused for the pass branch,
+  rerouted to remediation** (worklog shows the amber "Verification failed —
+  rerouted" note).
+- **Park** restores (must confirm "restore verified" — a required
+  confirmation), **Kim** diagnoses, **Lee** decides "no redesign" → the
+  migration step **reopens**; the old decision is marked *superseded by
+  retry* on the timeline.
+- Retry with `rowCountDelta 0`, verification true → passes → **the pending
+  review appears in Lee's inbox automatically**.
+- **Lee approves** → 🏁 run-complete summary: who did what, the values, the
+  decisions, the sign-off.
+- **⌘R** — everything comes back: same run, same roles, same history.
 
-## 1:30–2:00 — Scene 3: The knowledge finds the next worker
+> "Assigned by role, gated by evidence, recovered through the failure path,
+> signed off by a human — and it survives a reload."
 
-*Start fresh-ish: switch persona to Kim, start typing a new incident —
-`orange peel` + color change + urgent.*
+## 2:20–2:40 — Scene 4: The map is a runtime
 
-> "A week later, a different worker hits the same defect. They don't search
-> for a manual — the moment the conditions match, the playbook finds them."
+*Quick montage of refusals (pre-recorded moments are fine):*
+- checking a later step → red skip-confirm strip
+- resolving a decision early → `out_of_sequence` naming the live gate
+- approving an unfinished run → `process_incomplete`
+- editing an approved record → `approved_immutable`
 
-*The suggestion card appears: 92% match, with reasons. Click **Follow this
-playbook**. Save the incident log — step 1 checks itself off.*
+> "AI diagram tools draw the process you can already describe — and a
+> diagram can't refuse a bad pass decision. This playbook was captured from
+> real work, and it just did."
 
-> "Ninety-two percent match, and it says why. The worker's own form entry
-> just completed step one — human work and agent work advance the same run."
+## 2:40–3:00 — Scene 5: A layer, not an app
 
-## 2:00–2:40 — Scene 4: Skip a step — and get caught before it matters
+*Cuts: plain.html one script tag (view-source flash) → the 20-tool list →
+mini flowchart close-up.*
 
-*Skip the lead review. Ask ChatGPT to give final approval.*
-
-> "Now watch what happens when the final sign-off is attempted while the
-> corrective action was never logged."
-
-*Show the tool result: **"Process violation prevented: … earlier required
-steps are not done."** The agent explains and offers run-bound options; the
-skipped step is red in the panel.*
-
-*Click the agent's fix option → approval card shows the exact params →
-Approve → the red step turns green; corrective action attaches to the SAME
-incident. Then final approval card → Approve → "✓ Playbook run complete".*
-
-> "The layer refused to let the agent jump the process — before anything ran.
-> The agent proposes the fix, the human decides, one click repairs the run.
-> Coach, not enforcer."
-
-## 2:40–3:00 — Scene 5: This is a layer, not an app
-
-*Quick cuts: Playbooks tab (run history strip, version badges) →
-plain.html with its one script tag (view-source flash) → the tools list.*
-
-> "AI diagram tools draw the process you can already describe — and a diagram
-> can't refuse a bad pass decision. This playbook was captured from real work,
-> and it just did.
-> This build is the capture-and-enforce layer; the same playbook format seeds
-> the operations layer — because WebMCP gives every adopting app standard
-> tools, a step can bind to another app's tool the same way it runs this one's.
-> The work-log app is just a demo workspace. Understudy itself is one script tag —
-> twenty WebMCP tools, an action journal, and a live process panel that any
-> web app can adopt. Your team already knows how the work is done.
-> Understudy is how the agent learns it. You did it once — the agent can
-> do it forever, and it asks before it acts."
+> "The work-log app is just a demo workspace. Understudy itself is one
+> script tag — twenty WebMCP tools, an action journal, a live process panel.
+> No API keys: the page ships the stage and the hands, and every visitor
+> brings their own brain. Capture the knowledge once — then it assigns,
+> gates, and signs off the real work, forever."
 
 ---
 
 ### Recording notes
-- Narrate in English, unhurried; the centerpiece (Scene 2) may take the most
-  screen time — protect it.
-- Keep ChatGPT's tool-call chips visible when it calls get_map_edits /
-  update_step — that's the WebMCP evidence.
-- No copyrighted music. Total under 3:00.
+- Record long takes per scene (⌘⇧5, selected area); dead air is cut in edit.
+- Personas: Kim=Contributor, Park=Operations, Lee=Reviewer (switcher top-left).
+- Playbook: "Customer-table staging migration with remediation" latest version.
+- Keep the build id visible once (header) for authenticity.
+- One DevTools/Site-tools flash showing the tools list is worth 3 seconds.
