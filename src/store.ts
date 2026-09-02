@@ -403,8 +403,12 @@ export async function followPlaybook(
   if (opts?.resume) {
     try {
       const runs = await listRuns(processId)
-      const active = runs.find((r) => r.status === 'active' && Array.isArray(r.steps) && r.steps.length > 0)
-      if (active) resume = { runId: active.id, steps: active.steps, decisions: active.decisions }
+      // Newest run wins, completed included — a finished run's state (roles,
+      // decisions, timeline, sign-off) must survive a reload.
+      const target = runs.find(
+        (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
+      )
+      if (target) resume = { runId: target.id, steps: target.steps, decisions: target.decisions }
     } catch {
       /* no runs — fresh start */
     }
@@ -516,12 +520,15 @@ export function resumeLastPlaybook(): void {
   resumeAttempted = true
   if (window.Understudy.getLoadedProcess?.()) return
   void (async () => {
-    // Source of truth is the server: reattach the newest ACTIVE run.
+    // Source of truth is the server: reattach the newest non-abandoned run,
+    // completed included — its process, roles and history come back with it.
     try {
       const runs = await listRuns()
-      const active = runs.find((r) => r.status === 'active' && Array.isArray(r.steps) && r.steps.length > 0)
-      if (active) {
-        await followPlaybook(active.processId, { silent: true, resume: true })
+      const target = runs.find(
+        (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
+      )
+      if (target) {
+        await followPlaybook(target.processId, { silent: true, resume: true })
         return
       }
     } catch {
@@ -649,7 +656,7 @@ export interface ProcessRun {
   startedBy: string
   startedAt: number
   updatedAt: number
-  status: 'active' | 'completed'
+  status: 'active' | 'completed' | 'abandoned'
   steps: RunStep[]
   decisions?: unknown[]
   deviations: number

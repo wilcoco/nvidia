@@ -275,6 +275,14 @@ app.post('/api/runs', auth, async (req, res) => {
     startedBy: actor(req),
     steps: Array.isArray(steps) ? steps : [],
   })
+  // One live run per starter: older active runs are retired so a reload can
+  // trust "the newest run" as the workspace's real state.
+  const all = await db.listRuns()
+  for (const r of all) {
+    if (r.status === 'active' && r.startedBy === run.startedBy && String(r.id) !== String(run.id)) {
+      await db.updateRun(r.id, { status: 'abandoned' })
+    }
+  }
   res.json(run)
 })
 
@@ -296,7 +304,7 @@ app.post('/api/runs/:id', auth, async (req, res) => {
         )
       if (!ok) return res.status(400).json({ error: 'invalid_steps' })
     }
-    if (b.status !== undefined && !['active', 'completed'].includes(String(b.status)))
+    if (b.status !== undefined && !['active', 'completed', 'abandoned'].includes(String(b.status)))
       return res.status(400).json({ error: 'invalid_status' })
   }
   const run = await db.updateRun(req.params.id, {
