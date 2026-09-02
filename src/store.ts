@@ -267,7 +267,17 @@ export async function decideApproval(
     `${decision.toLowerCase()} worklog "${wl?.task ?? decided.worklogId}"${comment ? ` — "${comment}"` : ''}`,
     { approvalId },
   )
-  window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
+  // An approval advances the loaded run ONLY when it belongs to that run —
+  // approving unrelated work must never tick another run's sign-off step.
+  const runId = window.Understudy.currentRunId?.()
+  if (runId && wl?.data.runId != null && String(wl.data.runId) === String(runId)) {
+    window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
+  } else if (runId) {
+    window.Understudy.log(
+      `review decision on "${wl?.task ?? decided.worklogId}" recorded — unrelated to run #${runId}, so the run's sign-off step remains open`,
+      { approvalId },
+    )
+  }
   await refresh()
   return decided
 }

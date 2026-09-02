@@ -421,10 +421,27 @@ export function resolveDecision(
   // the right follow-up is "are the measurements wrong, or is this the
   // failure branch?", never "override anyway".
   if (edge.criteria && Object.keys(edge.criteria).length > 0) {
+    // The assignee's submitted step values are the authoritative record: a
+    // caller cannot 'improve' them in the resolve call.
+    const submitted: Record<string, unknown> = {}
+    for (const s of map.steps) if (s.done && s.resultData) Object.assign(submitted, s.resultData)
+    const contradictions: string[] = []
+    for (const key of Object.keys(edge.criteria)) {
+      if (key in submitted && measurements?.[key] !== undefined && measurements[key] !== submitted[key]) {
+        contradictions.push(`${key}: submitted ${submitted[key]}, claimed ${measurements[key]}`)
+      }
+    }
+    if (contradictions.length) {
+      record(by, 'map', `REFUSED branch at "${step.label}": claimed measurements contradict the assignee's submissions — ${contradictions.join('; ')}`)
+      return {
+        ok: false,
+        error: `evidence_conflict: your measurements contradict what the assignee actually submitted — ${contradictions.join('; ')}. The submitted values are the record; to change them the assignee must redo the step.`,
+      }
+    }
     const violated: string[] = []
     const missing: string[] = []
     for (const [key, rule] of Object.entries(edge.criteria)) {
-      const m = measurements?.[key]
+      const m = measurements?.[key] ?? submitted[key]
       if (m === undefined || m === null) {
         missing.push(key)
         continue
@@ -534,6 +551,17 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
 }
 
 /** Human checks a step off (or un-checks it) in the panel. */
+function mapLooksComplete(): boolean {
+  if (!map?.confirmed) return false
+  const statuses = progress()
+  const open = map.steps.filter(
+    (s) =>
+      s.type !== 'decision' &&
+      ['ready', 'blocked', 'skipped', 'pending'].includes(statuses.get(s.id) ?? ''),
+  )
+  return open.length === 0 && !lastPendingDecision
+}
+
 export function humanToggleStepDone(
   stepId: string,
   values?: Record<string, unknown>,
@@ -549,6 +577,11 @@ export function humanToggleStepDone(
     }
     if (step?.role && role && step.role !== role && !step.done) {
       record('user', 'map', `blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
+      notify()
+      return
+    }
+    if (step && step.done && mapLooksComplete()) {
+      record('user', 'map', `blocked: the run is complete — its record is frozen; start a new run to redo work`)
       notify()
       return
     }
@@ -843,6 +876,15 @@ export function resolveDeviation(
       throw new Error(`"${step.label}" belongs to the ${step.role} role; the active persona's role is ${role}. Switch persona first.`)
   }
   if (resolution === 'completed') {
+    if (step.fields?.length) {
+      const needed = (map?.fields ?? []).filter(
+        (f) => step.fields!.includes(f.key) && (f.required || f.confirm),
+      )
+      if (needed.length)
+        throw new Error(
+          `"${step.label}" requires ${needed.map((f) => f.label ?? f.key).join(', ')} — a deviation cannot skip required evidence; the assignee must complete it from their task card, or resolve it as not_applicable with a reason.`,
+        )
+    }
     step.done = true
     delete step.naReason
     record(by, 'map', `resolved step "${step.label}" as completed${reason ? ` — ${reason}` : ''}`)

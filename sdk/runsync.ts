@@ -89,6 +89,14 @@ function sync() {
 
 function scheduleSync() {
   if (syncTimer) clearTimeout(syncTimer)
+  // A finished run must not sit in the debounce window — a new run starting
+  // meanwhile would retire it as abandoned instead of completed.
+  const snap = snapshot()
+  if (snap?.isComplete && !completed) {
+    syncTimer = null
+    sync()
+    return
+  }
   syncTimer = setTimeout(sync, 700)
 }
 

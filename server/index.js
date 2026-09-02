@@ -151,7 +151,8 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
   const worklogs = await db.listWorklogs()
   const wl = worklogs.find((w) => w.id === req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
-  if (wl.status !== 'draft') return res.status(400).json({ error: `worklog is already ${wl.status}` })
+  if (wl.status !== 'draft' && wl.status !== 'rejected')
+    return res.status(400).json({ error: `worklog is already ${wl.status}` })
   const linked = await openRunStepsFor(wl.id, wl.data?.runId)
   if (linked && linked.open.length > 0) {
     return res.status(409).json({
@@ -296,8 +297,15 @@ app.post('/api/runs', auth, async (req, res) => {
   const all = await db.listRuns()
   for (const r of all) {
     if (r.status === 'active' && String(r.id) !== String(run.id)) {
-      await db.updateRun(r.id, { status: 'abandoned' })
-      await cancelPendingApprovalsForRun(r.id)
+      // A run whose synced steps show nothing open actually finished — its
+      // completed sync merely lost a race. Classify honestly.
+      const steps = Array.isArray(r.steps) ? r.steps : []
+      const open = steps.filter(
+        (s) => s && s.type !== 'approval' && ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
+      )
+      const finished = steps.length > 0 && open.length === 0
+      await db.updateRun(r.id, { status: finished ? 'completed' : 'abandoned' })
+      if (!finished) await cancelPendingApprovalsForRun(r.id)
     }
   }
   res.json(run)
