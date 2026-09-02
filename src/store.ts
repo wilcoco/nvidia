@@ -107,6 +107,11 @@ let state: AppState = {
 const listeners = new Set<() => void>()
 
 function commit(patch: Partial<AppState>) {
+  try {
+    window.dispatchEvent(new CustomEvent('understudy:host-state'))
+  } catch {
+    /* ignore */
+  }
   state = { ...state, ...patch }
   listeners.forEach((fn) => fn())
 }

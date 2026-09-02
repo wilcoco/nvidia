@@ -96,11 +96,40 @@ app.post('/api/worklogs', auth, async (req, res) => {
   res.json(row)
 })
 
+// A worklog produced inside a playbook run may only move toward approval when
+// that run has no open required steps left (approval steps themselves and
+// explicitly resolved deviations excluded). The engine syncs live statuses
+// into the run row; the server enforces them here so UI clicks and direct
+// API calls obey the same gate as agent tools.
+async function openRunStepsFor(worklogId) {
+  const runs = await db.listRuns()
+  for (const r of runs) {
+    const steps = r?.payload?.steps
+    if (!Array.isArray(steps)) continue
+    if (!steps.some((s) => s && s.resultId === worklogId)) continue
+    const open = steps.filter(
+      (s) =>
+        s &&
+        s.type !== 'approval' &&
+        ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
+    )
+    return { runId: r.id, open: open.map((s) => s.label || s.id) }
+  }
+  return null
+}
+
 app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
   const worklogs = await db.listWorklogs()
   const wl = worklogs.find((w) => w.id === req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   if (wl.status !== 'draft') return res.status(400).json({ error: `worklog is already ${wl.status}` })
+  const linked = await openRunStepsFor(wl.id)
+  if (linked && linked.open.length > 0) {
+    return res.status(409).json({
+      error: 'process_incomplete',
+      detail: `This entry belongs to playbook run #${linked.runId}, which still has required steps open: ${linked.open.join(' → ')}. Finish them (or resolve a deviation) before requesting review.`,
+    })
+  }
   const approval = await db.createApproval({
     worklogId: wl.id,
     requestedBy: actor(req),
@@ -151,6 +180,15 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   const existing = await db.getApproval(req.params.id)
   if (!existing) return res.status(404).json({ error: 'approval not found' })
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })
+  if (decision === 'APPROVED') {
+    const linked = await openRunStepsFor(existing.worklogId)
+    if (linked && linked.open.length > 0) {
+      return res.status(409).json({
+        error: 'process_incomplete',
+        detail: `Playbook run #${linked.runId} behind this entry still has required steps open: ${linked.open.join(' → ')}. Approving now would sign off unfinished work.`,
+      })
+    }
+  }
   const decided = await db.decideApproval(existing.id, decision, req.body?.comment)
   await db.setWorklogStatus(existing.worklogId, decision === 'APPROVED' ? 'approved' : 'rejected')
   res.json(decided)

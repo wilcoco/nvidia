@@ -66,6 +66,10 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .chip.blocked { background: #f97316; color: #431407; }
 .chip.na { background: #475569; color: #cbd5e1; }
 .step .blocked-reason { color: #fdba74; font-size: 10px; margin-top: 3px; }
+.skip-confirm { margin-top: 6px; background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.35); border-radius: 7px; padding: 6px 8px; font-size: 11px; color: #fca5a5; }
+.skip-confirm button { margin: 4px 6px 0 0; border: none; border-radius: 5px; padding: 3px 8px; font-size: 11px; cursor: pointer; }
+.skip-confirm .skip-yes { background: #dc2626; color: #fff; }
+.skip-confirm .skip-no { background: #334155; color: #cbd5e1; }
 .step .row { display: flex; align-items: flex-start; gap: 7px; }
 .step .row input.chk { margin-top: 2px; }
 .step .label { font-weight: 600; font-size: 13px; line-height: 1.35; color: #eef2f7; }
@@ -151,11 +155,13 @@ footer input { accent-color: #3b82f6; }
 
 let shadow: ShadowRoot | null = null
 let collapsed = false
+let skipConfirmId: string | null = null
 // The activity journal exists for the agent; humans see a collapsed summary.
 let activityOpen = false
 let renderQueued = false
 
 export function mountPanel(): void {
+  window.addEventListener('understudy:host-state', () => scheduleRender())
   if (document.getElementById(HOST_ID)) return
   const host = document.createElement('div')
   host.id = HOST_ID
@@ -216,7 +222,18 @@ function renderStep(
       chk.title = 'Approval steps complete only via a successful review action'
     } else {
       chk.title = 'Mark this step done'
-      chk.onchange = () => mapstore.humanToggleStepDone(step.id)
+      chk.onchange = () => {
+        // Checking a step ahead of unfinished earlier work is a skip — it is
+        // held for an explicit confirmation instead of silently reordering.
+        if (!step.done && status === 'pending') {
+          chk.checked = false
+          skipConfirmId = step.id
+          scheduleRender()
+          return
+        }
+        skipConfirmId = null
+        mapstore.humanToggleStepDone(step.id)
+      }
     }
     row.appendChild(chk)
   }
@@ -290,6 +307,25 @@ function renderStep(
   if (status === 'blocked' && step.action) {
     const reason = preconditionFor(step.action)
     if (reason) card.appendChild(el('div', 'blocked-reason', `⛔ ${reason}`))
+  }
+  if (skipConfirmId === step.id) {
+    const warn = el('div', 'skip-confirm')
+    warn.appendChild(
+      el('span', undefined, 'Earlier steps are not done — checking this records them as SKIPPED. '),
+    )
+    const yes = el('button', 'skip-yes', 'Skip anyway (recorded)')
+    yes.onclick = () => {
+      skipConfirmId = null
+      mapstore.humanToggleStepDone(step.id)
+    }
+    const no = el('button', 'skip-no', 'Cancel')
+    no.onclick = () => {
+      skipConfirmId = null
+      scheduleRender()
+    }
+    warn.appendChild(yes)
+    warn.appendChild(no)
+    card.appendChild(warn)
   }
 
   const branches = step.next ?? []

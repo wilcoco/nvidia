@@ -362,7 +362,16 @@ function IncidentList({ state }: { state: store.AppState }) {
           )}
           <VerificationBlock w={w} />
           {w.status === 'draft' && (
-            <button onClick={() => void store.requestApproval(w.id, 'lee')}>
+            <button
+              onClick={() =>
+                void store.requestApproval(w.id, 'lee').catch((err) => {
+                  window.Understudy.log(
+                    `review request refused: ${err instanceof Error ? err.message : err}`,
+                    { worklogId: w.id },
+                  )
+                })
+              }
+            >
               Send to Lee for review
             </button>
           )}
@@ -409,7 +418,16 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
                 />
                 <button
                   className="primary"
-                  onClick={() => void store.decideApproval(a.id, 'APPROVED', comments[a.id] || undefined)}
+                  onClick={() =>
+                    void store
+                      .decideApproval(a.id, 'APPROVED', comments[a.id] || undefined)
+                      .catch((err) => {
+                        window.Understudy.log(
+                          `approval refused: ${err instanceof Error ? err.message : err}`,
+                          { worklogId: a.worklogId },
+                        )
+                      })
+                  }
                 >
                   Approve
                 </button>
