@@ -20,11 +20,14 @@ questions and judgments change because of them.
 Proof: rename a step / restructure by chat, then ask the agent what changed.
 
 ## 3. Enforcement — the map is a runtime, not a picture
-Server-side, not decoration: decisions out of order are refused
+Not decoration: in the page engine (outside the agent's control), decisions
+out of order are refused
 (`out_of_sequence` names the live gate and unfinished steps), review requests
 and approvals on unfinished runs are refused (`process_incomplete`), pass
 choices that contradict measurements are refused (`evidence_conflict`), and
-skipping ahead in the UI demands an explicit, recorded confirmation.
+skipping ahead in the UI demands an explicit, recorded confirmation — and
+the server independently refuses reviews/approvals of unfinished runs,
+non-approver decisions, and edits to approved records.
 > *A diagram can't refuse a bad pass decision. This playbook does.*
 Proof: demo Scene 4; agent E2E audits reproduce every refusal.
 
@@ -63,7 +66,7 @@ engages — the remote control stays in their pocket.
 
 ## 9. A drop-in layer, not an app
 One script tag + `Understudy.init()` gives any web app the journal, the
-panel, and 19 WebMCP tools (imperative `registerTool` plus a declarative
+panel, and 20 WebMCP tools (imperative `registerTool` plus a declarative
 form). The second demo page (`plain.html` — no framework, no build step)
 proves the layer travels.
 

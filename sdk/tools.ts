@@ -222,7 +222,7 @@ const tools: ToolDef[] = [
         branch_criteria: {
           type: 'object',
           description:
-            'Machine-checkable criteria for that edge, e.g. {"testPassRate": {"gte": 100}} or {"contrastRatio": {"gte": 4.5}, "openCriticalIssues": {"eq": 0}} — resolve_decision then verifies measurements against them server-side. ALWAYS encode thresholds the human states.',
+            'Machine-checkable criteria for that edge, e.g. {"testPassRate": {"gte": 100}} or {"contrastRatio": {"gte": 4.5}, "openCriticalIssues": {"eq": 0}} — resolve_decision then verifies measurements against them in the process engine (outside your control) before any branch is taken. ALWAYS encode thresholds the human states.',
         },
         humanOnly: {
           type: 'boolean',
