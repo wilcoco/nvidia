@@ -144,6 +144,7 @@ export async function refresh(): Promise<void> {
       approvals: s.approvals,
       processes: s.processes,
     })
+    resumeLastPlaybook()
   } catch (err) {
     if (err instanceof ApiError && err.status === 401) {
       setToken(null)
@@ -260,7 +261,7 @@ export async function recordCorrectiveAction(
 export async function saveVerification(
   worklogId: string,
   measurements: Record<string, unknown>,
-  route?: { label?: string; pass?: boolean },
+  route?: { label?: string; pass?: boolean; checked?: boolean },
 ): Promise<void> {
   await api(`/api/worklogs/${worklogId}/verification`, { measurements, route })
   window.Understudy.log(
@@ -355,10 +356,16 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   return matches.sort((a, b) => b.confidence - a.confidence)
 }
 
-export async function followPlaybook(processId: string): Promise<void> {
+export async function followPlaybook(processId: string, opts?: { silent?: boolean }): Promise<void> {
   const p = await getProcess(processId)
   window.Understudy.loadProcess(p.map as never, { id: p.id, createdBy: p.createdBy })
   window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
+  try {
+    localStorage.setItem('understudy.lastPlaybook', processId)
+  } catch {
+    /* storage may be unavailable */
+  }
+  if (opts?.silent) return
   const loaded = window.Understudy.getLoadedProcess?.()
   const next = loaded?.steps?.find((st) => !st.done)
   commit({
@@ -367,6 +374,25 @@ export async function followPlaybook(processId: string): Promise<void> {
       version: (p as { version?: number }).version,
       next: next?.label,
     },
+  })
+}
+
+/** Demo stability: a reopened tab restores the map it was following. */
+export function resumeLastPlaybook(): void {
+  let id: string | null = null
+  try {
+    id = localStorage.getItem('understudy.lastPlaybook')
+  } catch {
+    return
+  }
+  if (!id) return
+  if (window.Understudy.getLoadedProcess?.()) return
+  void followPlaybook(id, { silent: true }).catch(() => {
+    try {
+      localStorage.removeItem('understudy.lastPlaybook')
+    } catch {
+      /* ignore */
+    }
   })
 }
 
@@ -506,6 +532,11 @@ export async function deleteProcess(id: string): Promise<void> {
 
 export async function resetDemoData(scope: 'worklogs' | 'all'): Promise<void> {
   await api('/api/admin/reset', { scope })
+  try {
+    localStorage.removeItem('understudy.lastPlaybook')
+  } catch {
+    /* ignore */
+  }
   window.Understudy.unloadProcess?.()
   window.Understudy.log(`reset demo data (${scope})`)
   await refresh()

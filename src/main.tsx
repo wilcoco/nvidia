@@ -44,6 +44,7 @@ window.Understudy.init({
         return store.saveVerification(target, measurements, {
           label: meta.branchLabel,
           pass: meta.toApproval,
+          checked: meta.criteriaChecked,
         })
     },
   },

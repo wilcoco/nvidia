@@ -322,6 +322,7 @@ export function resolveDecision(
         producedIds,
         branchLabel: targetStep?.label,
         toApproval: targetStep?.type === 'approval',
+        criteriaChecked: !!(edge.criteria && Object.keys(edge.criteria).length > 0),
       }),
     ).catch(() => {})
   }

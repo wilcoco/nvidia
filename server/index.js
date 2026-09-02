@@ -122,6 +122,7 @@ app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
     patch.verifiedRoute = {
       label: typeof req.body.route.label === 'string' ? req.body.route.label : undefined,
       pass: req.body.route.pass === true,
+      checked: req.body.route.checked === true,
     }
   }
   const row = await db.mergeWorklogData(req.params.id, patch)

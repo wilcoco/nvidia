@@ -24,6 +24,7 @@ interface UnderstudyProcessMap {
     detail?: string
     action?: string
     humanOnly?: boolean
+    done?: boolean
     next?: Array<{ to: string; condition?: string }>
   }>
   confirmed?: boolean
@@ -59,6 +60,7 @@ interface UnderstudyApi {
           producedIds: Array<{ step: string; action?: string; id: string }>
           branchLabel?: string
           toApproval?: boolean
+          criteriaChecked?: boolean
         },
       ) => void | Promise<unknown>
       startRun?: (processId: string, map: UnderstudyProcessMap) => Promise<{ id: string }>

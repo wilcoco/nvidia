@@ -124,6 +124,7 @@ export interface ProcessStoreAdapter {
       producedIds: Array<{ step: string; action?: string; id: string }>
       branchLabel?: string
       toApproval?: boolean
+      criteriaChecked?: boolean
     },
   ) => void | Promise<unknown>
   /** Optional run persistence: one record per execution of a playbook. */
