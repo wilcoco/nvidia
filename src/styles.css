@@ -128,3 +128,4 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .timeline .tl-decision { color: #b45309; }
 .diff-card .diff-add { color: #059669; }
 .diff-card .diff-del { color: #dc2626; }
+.buildid { color: #94a3b8; font-size: 10px; font-weight: 400; margin-left: 6px; }

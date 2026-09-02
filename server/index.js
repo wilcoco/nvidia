@@ -328,14 +328,20 @@ const dist = path.join(__dirname, '..', 'dist')
 app.use(
   express.static(dist, {
     setHeaders(res, filePath) {
-      if (filePath.endsWith('.html') || filePath.endsWith('understudy.js')) {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-store')
+      } else if (filePath.endsWith('understudy.js')) {
+        // Unhashed SDK bundle — always revalidate.
         res.setHeader('Cache-Control', 'no-cache')
+      } else if (/assets[\\/].+-[\w-]+\.(js|css)$/.test(filePath)) {
+        // Vite content-hashed assets are immutable.
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
       }
     },
   }),
 )
 app.get('*', (_req, res) => {
-  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Cache-Control', 'no-store')
   res.sendFile(path.join(dist, 'index.html'))
 })
 

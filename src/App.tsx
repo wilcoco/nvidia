@@ -928,7 +928,9 @@ export default function App() {
       <header className="topbar">
         <h1>
           🎭 Understudy{' '}
-          <span className="sub">turn work into living playbooks · demo workspace</span>
+          <span className="sub">
+            turn work into living playbooks · demo workspace <span className="buildid">build {__BUILD__}</span>
+          </span>
         </h1>
         <div className="userbox">
           <span>

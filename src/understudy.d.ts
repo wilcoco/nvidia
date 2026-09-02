@@ -1,3 +1,4 @@
+declare const __BUILD__: string
 interface UnderstudyHostAction {
   roles?: string[]
   name: string
