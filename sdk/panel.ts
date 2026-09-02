@@ -91,11 +91,11 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .branch .bglyph.fwd { color: #34d399; }
 .branch .bglyph.back { color: #f87171; }
 .branch .btarget { color: #cbd5e1; font-weight: 600; }
-.flow { display: flex; flex-direction: column; gap: 8px; }
-.flow-row { display: flex; gap: 8px; }
+.flow { display: flex; flex-direction: column; gap: 10px; position: relative; padding-left: 6px; }
+.flow svg.edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; overflow: visible; }
+.flow-row { display: flex; gap: 8px; position: relative; z-index: 1; }
 .flow-row .step { flex: 1; margin-bottom: 0; min-width: 0; }
-.node-col { width: 24px; flex: none; position: relative; display: flex; justify-content: center; }
-.flow-row:not(:last-child) .node-col::after { content: ''; position: absolute; top: 30px; bottom: -16px; left: 50%; transform: translateX(-50%); width: 2px; background: #334155; }
+.node-col { width: 26px; flex: none; position: relative; display: flex; justify-content: center; }
 .node { width: 20px; height: 20px; flex: none; border-radius: 50%; background: #0f172a; border: 2px solid #475569; color: #94a3b8; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; margin-top: 6px; z-index: 1; }
 .node.task { border-color: #3b82f6; }
 .node.decision { border-radius: 4px; transform: rotate(45deg); border-color: #d97706; }
@@ -302,6 +302,114 @@ function renderStep(
   rowWrap.appendChild(nodeCol)
   rowWrap.appendChild(card)
   container.appendChild(rowWrap)
+}
+
+const EDGE_COLORS: Array<[string, string]> = [
+  ['arr-gray', '#475569'],
+  ['arr-green', '#34d399'],
+  ['arr-amber', '#fbbf24'],
+  ['arr-red', '#f87171'],
+]
+
+// Draws every step-to-step edge as a real flowchart line over the node
+// column: straight gray for linear flow, green/amber curves for forward
+// branches (taken/undecided), dashed red loop-backs, dimmed when the
+// target ended up not applicable.
+function drawEdges(flow: HTMLElement) {
+  flow.querySelector('svg.edges')?.remove()
+  const map = mapstore.getMap()
+  if (!map || map.steps.length < 2) return
+  const statuses = mapstore.progress(preconditionFor)
+  const rows = Array.from(flow.querySelectorAll(':scope > .flow-row')) as HTMLElement[]
+  const flowRect = flow.getBoundingClientRect()
+  if (flowRect.height === 0) return
+  const pos = new Map<string, { x: number; top: number; bottom: number; mid: number }>()
+  map.steps.forEach((st, i) => {
+    const node = rows[i]?.querySelector('.node')
+    if (!node) return
+    const r = node.getBoundingClientRect()
+    pos.set(st.id, {
+      x: r.left - flowRect.left + r.width / 2,
+      top: r.top - flowRect.top,
+      bottom: r.bottom - flowRect.top,
+      mid: r.top - flowRect.top + r.height / 2,
+    })
+  })
+  const NS = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(NS, 'svg')
+  svg.setAttribute('class', 'edges')
+  const defs = document.createElementNS(NS, 'defs')
+  for (const [id, color] of EDGE_COLORS) {
+    const m = document.createElementNS(NS, 'marker')
+    m.setAttribute('id', id)
+    m.setAttribute('markerWidth', '7')
+    m.setAttribute('markerHeight', '7')
+    m.setAttribute('refX', '5.5')
+    m.setAttribute('refY', '3.5')
+    m.setAttribute('orient', 'auto')
+    const tri = document.createElementNS(NS, 'polygon')
+    tri.setAttribute('points', '0 0, 7 3.5, 0 7')
+    tri.setAttribute('fill', color)
+    m.appendChild(tri)
+    defs.appendChild(m)
+  }
+  svg.appendChild(defs)
+  const idx = new Map(map.steps.map((st, i) => [st.id, i] as const))
+  map.steps.forEach((st, i) => {
+    const edges =
+      st.next && st.next.length
+        ? st.next
+        : i < map.steps.length - 1
+          ? [{ to: map.steps[i + 1].id, condition: undefined }]
+          : []
+    for (const e of edges) {
+      const j = idx.get(e.to)
+      const a = pos.get(st.id)
+      const b = j === undefined ? undefined : pos.get(e.to)
+      if (j === undefined || !a || !b) continue
+      const back = j <= i
+      const isBranch = (st.next?.length ?? 0) > 1 || !!e.condition
+      const tStatus = statuses.get(e.to)
+      let color = '#475569'
+      let marker = 'arr-gray'
+      let dash = ''
+      let opacity = '1'
+      if (back) {
+        color = '#f87171'
+        marker = 'arr-red'
+        dash = '4 3'
+      } else if (isBranch) {
+        if (tStatus === 'conditional') {
+          color = '#fbbf24'
+          marker = 'arr-amber'
+        } else {
+          color = '#34d399'
+          marker = 'arr-green'
+        }
+      }
+      if (tStatus === 'not_applicable') opacity = '.3'
+      let d: string
+      if (!back && j === i + 1 && !isBranch) {
+        d = `M ${a.x} ${a.bottom + 2} L ${b.x} ${b.top - 4}`
+      } else if (!back) {
+        const bulge = 13 + Math.min(9, (j - i) * 3)
+        d = `M ${a.x} ${a.bottom + 2} C ${a.x - bulge} ${a.bottom + 22}, ${b.x - bulge} ${b.top - 22}, ${b.x} ${b.top - 4}`
+      } else {
+        const bulge = 24
+        d = `M ${a.x - 11} ${a.mid} C ${a.x - bulge} ${a.mid}, ${b.x - bulge} ${b.mid}, ${b.x - 12} ${b.mid}`
+      }
+      const path = document.createElementNS(NS, 'path')
+      path.setAttribute('d', d)
+      path.setAttribute('fill', 'none')
+      path.setAttribute('stroke', color)
+      path.setAttribute('stroke-width', '2')
+      if (dash) path.setAttribute('stroke-dasharray', dash)
+      path.setAttribute('opacity', opacity)
+      path.setAttribute('marker-end', `url(#${marker})`)
+      svg.appendChild(path)
+    }
+  })
+  flow.insertBefore(svg, flow.firstChild)
 }
 
 function render() {
@@ -522,4 +630,6 @@ function render() {
   panel.appendChild(footer)
 
   root.appendChild(panel)
+  const flowEl = panel.querySelector('.flow') as HTMLElement | null
+  if (flowEl) drawEdges(flowEl)
 }
