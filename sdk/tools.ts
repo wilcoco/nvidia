@@ -44,7 +44,7 @@ const STEP_SCHEMA = {
           criteria: {
             type: 'object',
             description:
-              'Machine-checkable pass criteria from the sign-off interview, e.g. {"testPassRate": {"gte": 100}, "openCriticalIssues": {"eq": 0}} or {"contrastRatio": {"gte": 4.5}, "rollbackReady": {"eq": true}}. resolve_decision verifies measurements against these server-side — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
+              'Machine-checkable pass criteria from the sign-off interview, e.g. {"testPassRate": {"gte": 100}, "openCriticalIssues": {"eq": 0}} or {"contrastRatio": {"gte": 4.5}, "rollbackReady": {"eq": true}}. resolve_decision verifies measurements against these in the process engine before any branch is taken — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
           },
         },
         required: ['to'],

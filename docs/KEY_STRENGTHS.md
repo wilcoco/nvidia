@@ -77,9 +77,12 @@ runtime.
 > *A picture of the process vs. an operating system for the process.*
 
 ## 11. Honest scope, seeded roadmap
-This build = the capture-and-enforce layer, including one real handoff
-(contributor → reviewer). The operations layer (per-step owners, worklists,
-cross-app runs) is seeded, not rewritten: WebMCP gives every adopting app
+This build = capture, teach, and a working operations core: per-step owner
+roles, role-scoped My-tasks worklists, automatic handoffs across three
+personas, and auto-created sign-off reviews. Deliberately roadmap:
+deadlines, notifications, reassignment — and cross-app runs, which is where
+WebMCP shines next: every adopting app exposes standard tools, so a playbook
+step can bind to *another app's* tool the same
 standard tools, so a playbook step can bind to *another app's* tool the same
 way `runs:` binds to this one's — the classic BPM connector problem
 dissolves into tool bindings.
