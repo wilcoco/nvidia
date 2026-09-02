@@ -71,6 +71,11 @@ function scheduleSync() {
 let subscribed = false
 
 /** Call right after a saved playbook is loaded; starts a run record for it. */
+export function stopRunTracking(): void {
+  runId = null
+  completed = false
+}
+
 export function startRunTracking(processId: string): void {
   const store = host.getProcessStore()
   runId = null

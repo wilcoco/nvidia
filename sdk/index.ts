@@ -14,8 +14,8 @@ import { startCapture } from './capture'
 import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, getMap, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking } from './runsync'
+import { loadSavedMap, recordActionSuccess, getMap, clearMap, subscribe as subscribeMap } from './mapstore'
+import { startRunTracking, stopRunTracking } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -58,6 +58,12 @@ function loadProcess(map: ProcessMap, meta?: { id?: string; createdBy?: string }
   if (meta?.id) startRunTracking(meta.id)
 }
 
+/** Host apps can clear the panel entirely (e.g. after a demo-data reset). */
+function unloadProcess(): void {
+  stopRunTracking()
+  clearMap('app')
+}
+
 /** Host apps report a successful semantic action (e.g. the human saved a form),
  *  so the matching step of a loaded process auto-completes. Call only on success. */
 function notifyAction(name: string, resultId?: string): void {
@@ -78,4 +84,4 @@ subscribeMap(() => {
   }
 })
 
-;(window as any).Understudy = { init, log, registerAction, loadProcess, notifyAction, getLoadedProcess }
+;(window as any).Understudy = { init, log, registerAction, loadProcess, unloadProcess, notifyAction, getLoadedProcess }

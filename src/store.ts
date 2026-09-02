@@ -491,6 +491,7 @@ export async function deleteProcess(id: string): Promise<void> {
 
 export async function resetDemoData(scope: 'worklogs' | 'all'): Promise<void> {
   await api('/api/admin/reset', { scope })
+  window.Understudy.unloadProcess?.()
   window.Understudy.log(`reset demo data (${scope})`)
   await refresh()
 }

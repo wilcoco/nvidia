@@ -73,6 +73,7 @@ interface UnderstudyApi {
   registerAction(action: UnderstudyHostAction): void
   loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string }): void
   notifyAction(name: string, resultId?: string): void
+  unloadProcess?(): void
   getLoadedProcess(): UnderstudyProcessMap | null
 }
 

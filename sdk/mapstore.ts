@@ -29,6 +29,15 @@ export function getMap(): ProcessMap | null {
   return map
 }
 
+/** Unload the current map/draft entirely (e.g. the host reset its demo data). */
+export function clearMap(by: 'user' | 'agent' | 'app' = 'app'): void {
+  if (!map) return
+  const title = map.title
+  map = null
+  record(by, 'map', `unloaded process "${title}" from the panel`)
+  notify()
+}
+
 export function subscribe(fn: Listener): () => void {
   listeners.add(fn)
   return () => listeners.delete(fn)
