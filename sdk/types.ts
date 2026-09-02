@@ -65,6 +65,8 @@ export interface ProcessMap {
   priorityWhen?: Record<string, unknown>
   /** The work entry that triggered creating this playbook. */
   sourceWorklogId?: string
+  /** The saved process this map was loaded from — a later save is its revision. */
+  sourceProcessId?: string
   /** Interview gaps the human already answered (kind[:stepId]) — not re-asked. */
   resolvedGaps?: string[]
   /** Explicit outcomes of branching steps in this run: which edge was taken and why. */

@@ -101,6 +101,7 @@ function memoryBackend() {
         appliesWhen: p.map?.appliesWhen,
         priorityWhen: p.map?.priorityWhen,
         version: p.map?.version ?? 1,
+        sourceProcessId: p.map?.sourceProcessId,
       }))
     },
     async getProcess(id) {
@@ -291,13 +292,15 @@ async function pgBackend(databaseUrl) {
       const { rows } = await pool.query(
         `SELECT id, title, created_by, created_at,
                 map->'appliesWhen' AS applies_when, map->'priorityWhen' AS priority_when,
-                COALESCE((map->>'version')::int, 1) AS version
+                COALESCE((map->>'version')::int, 1) AS version,
+                map->>'sourceProcessId' AS source_process_id
          FROM processes ORDER BY id DESC LIMIT 100`,
       )
       return rows.map((r) => ({
         id: String(r.id), title: r.title, createdBy: r.created_by, createdAt: new Date(r.created_at).getTime(),
         appliesWhen: r.applies_when ?? undefined, priorityWhen: r.priority_when ?? undefined,
         version: r.version ?? 1,
+        sourceProcessId: r.source_process_id ?? undefined,
       }))
     },
     async getProcess(id) {

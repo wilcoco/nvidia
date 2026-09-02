@@ -132,6 +132,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
 export function loadSavedMap(loaded: ProcessMap, meta?: { id?: string; createdBy?: string }): void {
   map = {
     ...loaded,
+    sourceProcessId: meta?.id ?? loaded.sourceProcessId,
     confirmed: true,
     steps: loaded.steps.map((s) => ({ ...s, done: false, naReason: undefined, resultId: undefined })),
   }
@@ -267,12 +268,34 @@ export function resolveDecision(
   evidence?: string,
   by: 'user' | 'agent' = 'user',
   measurements?: Record<string, unknown>,
-): { ok: boolean; error?: string; reopened?: string[] } {
+): { ok: boolean; error?: string; detail?: string; reopened?: string[] } {
   if (!map) return { ok: false, error: 'no process is loaded' }
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const edge = step.next?.find((e) => e.to === branchTo)
   if (!edge) return { ok: false, error: `step "${stepId}" has no edge to "${branchTo}"` }
+  // Order enforcement: a decision may only be resolved when it IS the live
+  // gate — recording outcomes for steps not yet reached is how audit trails
+  // get falsified, so it is refused, not warned.
+  const live = progress()
+  if (map.confirmed && lastPendingDecision?.id !== stepId) {
+    const orderNow = new Map(map.steps.map((s, i) => [s.id, i]))
+    const myIdx = orderNow.get(stepId) ?? 0
+    const unfinished = map.steps
+      .filter((s, i) => i < myIdx && s.type !== 'decision' && !s.done && !s.naReason)
+      .filter((s) => {
+        const st = live.get(s.id)
+        return st !== 'not_applicable' && st !== 'conditional'
+      })
+      .map((s) => s.label)
+    return {
+      ok: false,
+      error: 'out_of_sequence',
+      detail: `The decision "${step.label}" is not awaiting resolution${
+        lastPendingDecision ? ` — the live gate is "${lastPendingDecision.label}"` : ''
+      }.${unfinished.length ? ` Complete first: ${unfinished.join(' → ')}.` : ''} Check get_process_progress before resolving.`,
+    } as { ok: boolean; error: string; detail?: string }
+  }
 
   // Safety: a branch with machine-checkable criteria is verified HERE, not
   // trusted to the caller. Violated criteria refuse the branch outright —

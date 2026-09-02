@@ -53,6 +53,7 @@ export interface ProcessSummary {
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>
   version: number
+  sourceProcessId?: string
 }
 
 /** What the human is entering in the incident form right now. */
@@ -353,7 +354,21 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
       version: p.version || 1,
     })
   }
-  return matches.sort((a, b) => b.confidence - a.confidence)
+  // A renamed revision carries sourceProcessId; never recommend an ancestor
+  // next to its own successor.
+  const parentOf = new Map(state.processes.map((p) => [p.id, p.sourceProcessId]))
+  const superseded = new Set<string>()
+  for (const m of matches) {
+    let cur = parentOf.get(m.processId)
+    let hops = 0
+    while (cur && hops++ < 10) {
+      superseded.add(cur)
+      cur = parentOf.get(cur)
+    }
+  }
+  return matches
+    .filter((m) => !superseded.has(m.processId))
+    .sort((a, b) => b.confidence - a.confidence)
 }
 
 export async function followPlaybook(processId: string, opts?: { silent?: boolean }): Promise<void> {
