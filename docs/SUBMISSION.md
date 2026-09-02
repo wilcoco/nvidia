@@ -75,6 +75,15 @@ finds the matching playbook (with confidence and reasons), and joins the run:
   steps, deviations). Improvement stays human-verified: the agent proposes a
   revision from what the runs show, and confirming it saves a new version.
 
+**What people and agents can do together that was difficult or impossible
+before:** an agent could never *watch you work* on the web — it saw pixels,
+not meaning. With WebMCP the page gives the agent structured eyes and hands,
+so for the first time a human and an agent can co-author an enforceable
+business process from live work: the human works and answers; the agent
+observes, interviews, and structures; the human corrects; the runtime then
+assigns, gates and signs off the next runs. None of that lane existed
+before — agents could only be told about work, never apprenticed to it.
+
 ## Why WebMCP makes this possible
 
 This product cannot exist as a chatbot or a server-side integration:
