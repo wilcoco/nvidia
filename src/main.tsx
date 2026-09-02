@@ -25,6 +25,11 @@ window.Understudy.init({
     list: () => store.listProcesses(),
     load: async (id) => {
       const p = await store.getProcess(id)
+      try {
+        localStorage.setItem('understudy.lastPlaybook', id)
+      } catch {
+        /* storage unavailable */
+      }
       return { map: p.map as never, title: p.title, createdBy: p.createdBy }
     },
     findRelevant: () => {
@@ -219,5 +224,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 // The approval hand-off is process-driven: when a run reaches its sign-off
 // step, the pending review is created automatically.
-window.addEventListener('understudy:mapchange', () => setTimeout(() => store.autoSyncApproval(), 0))
-window.addEventListener('understudy:host-state', () => setTimeout(() => store.autoSyncApproval(), 0))
+window.addEventListener('understudy:mapchange', () => setTimeout(() => void store.autoSyncApproval(), 0))
+window.addEventListener('understudy:host-state', () => setTimeout(() => void store.autoSyncApproval(), 0))

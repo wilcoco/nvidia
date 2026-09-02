@@ -445,17 +445,44 @@ export async function followPlaybook(
 /** When the run reaches its approval step, the linked entry's review request
  *  is created automatically and routed to a persona of the step's role. */
 let approvalSyncInFlight = false
-export function autoSyncApproval(): void {
+export async function autoSyncApproval(): Promise<void> {
   if (approvalSyncInFlight) return
   const runId = window.Understudy.currentRunId?.()
   if (!runId) return
   const prog = window.Understudy.getProgress?.() ?? []
   const readyApproval = prog.find((p) => p.status === 'ready' && p.type === 'approval')
   if (!readyApproval) return
-  const wl = state.worklogs.find((w) => w.data.runId === runId && w.status === 'draft')
-  if (!wl) return
+  let wl = state.worklogs.find((w) => w.data.runId === runId && w.status === 'draft')
   const proc = window.Understudy.getLoadedProcess?.()
-  const role = proc?.steps.find((s) => s.id === readyApproval.id)?.role ?? 'Reviewer'
+  if (!proc) return
+  if (!wl) {
+    if (state.worklogs.some((w) => w.data.runId === runId)) return // already past review
+    // Pure task-card runs produce no entry of their own — synthesize the run's
+    // completion record (with every submitted step value as evidence) so the
+    // review has a subject. Server still enforces the Contributor role.
+    const me = state.users.find((u) => u.username === state.actingAs)
+    if (me?.role !== 'Contributor') return // retried when a Contributor persona is active
+    const evidence: Record<string, unknown> = {}
+    for (const s of proc.steps) if (s.resultData) Object.assign(evidence, s.resultData)
+    approvalSyncInFlight = true
+    try {
+      wl = await createWorklog({
+        date: new Date().toISOString().slice(0, 10),
+        line: 'A',
+        task: `${proc.title} — run #${runId} completion record`,
+        hours: 0,
+        note: '',
+        urgent: false,
+        kind: ((proc as { appliesWhen?: { kind?: string } }).appliesWhen?.kind as string) ?? 'development',
+        data: evidence,
+      })
+    } catch {
+      approvalSyncInFlight = false
+      return
+    }
+    approvalSyncInFlight = false
+  }
+  const role = proc.steps.find((s) => s.id === readyApproval.id)?.role ?? 'Reviewer'
   const approver =
     state.users.find((u) => u.role === role && u.username !== state.me?.username)?.username ?? 'lee'
   approvalSyncInFlight = true
@@ -479,21 +506,34 @@ let resumeAttempted = false
 export function resumeLastPlaybook(): void {
   if (resumeAttempted) return
   resumeAttempted = true
-  let id: string | null = null
-  try {
-    id = localStorage.getItem('understudy.lastPlaybook')
-  } catch {
-    return
-  }
-  if (!id) return
   if (window.Understudy.getLoadedProcess?.()) return
-  void followPlaybook(id, { silent: true, resume: true }).catch(() => {
+  void (async () => {
+    // Source of truth is the server: reattach the newest ACTIVE run.
     try {
-      localStorage.removeItem('understudy.lastPlaybook')
+      const runs = await listRuns()
+      const active = runs.find((r) => r.status === 'active' && Array.isArray(r.steps) && r.steps.length > 0)
+      if (active) {
+        await followPlaybook(active.processId, { silent: true, resume: true })
+        return
+      }
     } catch {
-      /* ignore */
+      /* fall through to the memo */
     }
-  })
+    let id: string | null = null
+    try {
+      id = localStorage.getItem('understudy.lastPlaybook')
+    } catch {
+      return
+    }
+    if (!id) return
+    await followPlaybook(id, { silent: true, resume: true }).catch(() => {
+      try {
+        localStorage.removeItem('understudy.lastPlaybook')
+      } catch {
+        /* ignore */
+      }
+    })
+  })()
 }
 
 export function dismissRunStarted(): void {
