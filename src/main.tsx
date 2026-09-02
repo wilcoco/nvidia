@@ -34,6 +34,15 @@ window.Understudy.init({
     },
     findRelevant: () => {
       const s = store.getState()
+      const isRunArtifact = /completion record|—\s*run\s*#\d+/i.test(s.draft.task ?? '')
+      if (isRunArtifact) {
+        return {
+          entering_now: s.draft,
+          matches: [],
+          system_generated: true,
+          note: 'This text refers to a run completion record — an output of a playbook, excluded from matching and from capture.',
+        }
+      }
       return {
         entering_now: s.draft,
         matches: store.computeMatches(),

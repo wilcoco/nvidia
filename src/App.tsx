@@ -396,6 +396,13 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
     <div className="list">
       {inbox.map((a) => {
         const wl = state.worklogs.find((w) => w.id === a.worklogId)
+        const evidence = wl
+          ? Object.entries(wl.data).filter(
+              ([k, v]) =>
+                !['runId', 'systemGenerated', 'verification', 'verifiedAt', 'verifiedRoute'].includes(k) &&
+                (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'),
+            )
+          : []
         return (
           <div key={a.id} className="card entry">
             <div className="entry-head">
@@ -404,6 +411,15 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               </span>
               <span className={`status ${a.status.toLowerCase()}`}>{a.status}</span>
             </div>
+            {evidence.length > 0 && (
+              <div className="meta review-evidence">
+                {evidence.map(([k, v]) => (
+                  <span key={k} className="verify-item">
+                    {k}: <b>{String(v)}</b>
+                  </span>
+                ))}
+              </div>
+            )}
             <div className="meta">
               from {state.users.find((u) => u.username === a.requestedBy)?.name ?? a.requestedBy}
               {wl ? ` · ${wl.date} · Area ${wl.line}` : ''}

@@ -113,6 +113,20 @@ app.post('/api/worklogs', auth, async (req, res) => {
 // explicitly resolved deviations excluded). The engine syncs live statuses
 // into the run row; the server enforces them here so UI clicks and direct
 // API calls obey the same gate as agent tools.
+// Single-active-run policy: an abandoned run's paperwork must not stay
+// approvable — its pending reviews are cancelled with a reason.
+async function cancelPendingApprovalsForRun(runId) {
+  const worklogs = await db.listWorklogs()
+  const linked = worklogs.filter((w) => w?.data?.runId != null && String(w.data.runId) === String(runId))
+  if (linked.length === 0) return
+  const approvals = await db.listApprovals()
+  for (const a of approvals) {
+    if (a.status === 'PENDING' && linked.some((w) => w.id === a.worklogId)) {
+      await db.decideApproval(a.id, 'CANCELLED', 'run superseded by a newer execution')
+    }
+  }
+}
+
 async function openRunStepsFor(worklogId, stampedRunId) {
   const runs = await db.listRuns()
   for (const r of runs) {
@@ -283,6 +297,7 @@ app.post('/api/runs', auth, async (req, res) => {
   for (const r of all) {
     if (r.status === 'active' && String(r.id) !== String(run.id)) {
       await db.updateRun(r.id, { status: 'abandoned' })
+      await cancelPendingApprovalsForRun(r.id)
     }
   }
   res.json(run)
@@ -316,6 +331,7 @@ app.post('/api/runs/:id', auth, async (req, res) => {
     deviations: typeof b.deviations === 'number' ? b.deviations : undefined,
   })
   if (!run) return res.status(404).json({ error: 'run not found' })
+  if (b.status === 'abandoned') await cancelPendingApprovalsForRun(run.id)
   res.json(run)
 })
 

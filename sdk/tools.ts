@@ -559,8 +559,16 @@ const tools: ToolDef[] = [
       if (!store?.findRelevant) {
         return { available: false, note: 'This app does not provide contextual matching. Use list_saved_processes instead.' }
       }
-      const result = (await store.findRelevant()) as { matches?: unknown[]; entering_now?: { hasInput?: boolean } } & Record<string, unknown>
+      const result = (await store.findRelevant()) as {
+        matches?: unknown[]
+        entering_now?: { hasInput?: boolean }
+        system_generated?: boolean
+      } & Record<string, unknown>
       const hasInput = result?.entering_now?.hasInput !== false
+      if (result?.system_generated) {
+        result.capture_opportunity = null
+        return result
+      }
       if (Array.isArray(result?.matches) && result.matches.length === 0 && hasInput) {
         result.capture_opportunity =
           'No saved playbook covers what the human is entering right now. This is the moment to CREATE one: draft an initial map from the entry and the journal (propose_process_map), then interview via get_map_gaps — which variables must be captured, what precedes and follows, warning signs, who approves. The map grows beside their work as they answer.'

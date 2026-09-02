@@ -40,7 +40,7 @@ export interface Approval {
   worklogId: string
   requestedBy: string
   approver: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED'
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   comment?: string
   ts: number
 }
