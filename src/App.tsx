@@ -313,10 +313,17 @@ function IncidentList({ state }: { state: store.AppState }) {
         <div
           key={w.id}
           className={`card entry clickable ${w.urgent ? 'urgent' : ''}`}
-          title="Click to look up the playbook that covers this entry"
-          onClick={() =>
+          title="Click to open this entry's playbook in the panel"
+          onClick={(e) => {
+            // Inner buttons/inputs keep their own meaning.
+            if ((e.target as HTMLElement).closest('button, input, select, textarea, a')) return
             store.setDraftContext({ kind: w.kind, urgent: w.urgent, task: w.task, hasInput: true })
-          }
+            const best = store.computeMatches().filter((m) => m.tier === 'strong')
+            // The click on a specific entry IS the human's decision: load the
+            // clear winner immediately; fall back to the suggestion card only
+            // when the match is ambiguous.
+            if (best.length > 0) void store.followPlaybook(best[0].processId)
+          }}
         >
           <div className="entry-head">
             <span className="task">
