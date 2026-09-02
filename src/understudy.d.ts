@@ -10,6 +10,7 @@ interface UnderstudyHostAction {
 }
 
 interface UnderstudyFieldDef {
+  confirm?: boolean
   key: string
   label?: string
   type: 'number' | 'string' | 'boolean'

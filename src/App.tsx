@@ -745,8 +745,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
           .filter((d): d is UnderstudyFieldDef => !!d)
         const raw = taskValues[p.id] ?? {}
         const missingRequired = defs.some((d) => {
+          if (d.type === 'boolean') return d.confirm === true && raw[d.key] !== true
           if (!d.required) return false
-          if (d.type === 'boolean') return raw[d.key] !== true
           return raw[d.key] === undefined || raw[d.key] === ''
         })
         const prev = prevDone(p.id)

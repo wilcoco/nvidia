@@ -55,6 +55,9 @@ export interface Step {
 /** One field of a playbook's data contract — captured via interview, rendered
  *  as a dynamic form when the playbook is followed. */
 export interface FieldDef {
+  /** Boolean-only: this is a confirmation — completing the step requires it checked true.
+   *  Plain boolean fields are measurements; false is a legitimate submission. */
+  confirm?: boolean
   key: string
   label?: string
   type: 'number' | 'string' | 'boolean'

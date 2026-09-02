@@ -559,12 +559,13 @@ export function humanToggleStepDone(
     }
     if (step && !step.done) {
       if (step.fields?.length) {
-        const required = (map?.fields ?? []).filter((f) => step.fields!.includes(f.key) && f.required)
-        const missing = required.filter((f) => {
+        const relevant = (map?.fields ?? []).filter((f) => step.fields!.includes(f.key))
+        const missing = relevant.filter((f) => {
           const v = values?.[f.key]
-          // A required boolean is a confirmation — it must be checked true.
-          if (f.type === 'boolean') return v !== true
-          return v === undefined || v === ''
+          // Confirmation checkboxes must be affirmed; measurement booleans may
+          // legitimately be false (that IS the reading).
+          if (f.type === 'boolean') return f.confirm === true && v !== true
+          return f.required ? v === undefined || v === '' : false
         })
         if (missing.length) {
           record(
