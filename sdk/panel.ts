@@ -47,7 +47,10 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .invite-hint { color: #94a3b8; font-size: 11px; margin-bottom: 6px; }
 .invite-text { color: #cbd5e1; font-size: 11px; font-style: italic; margin-bottom: 8px; user-select: text; }
 .invite-copy { background: #3b82f6; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
-.step { background: #1e293b; border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; position: relative; }
+.step { background: #1e293b; border: 1px solid #2b3a52; border-radius: 10px; padding: 8px 10px; margin-bottom: 4px; position: relative; }
+.step:hover { border-color: #3b5378; }
+.step .metarow { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.step .metarow .spacer { flex: 1; }
 .step.done { opacity: .55; border-left: 3px solid #34d399; }
 .step.done .label { text-decoration: line-through; }
 .step.ready { border-left: 3px solid #fbbf24; }
@@ -65,6 +68,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .chip.na { background: #475569; color: #cbd5e1; }
 .step .blocked-reason { color: #fdba74; font-size: 10px; margin-top: 3px; }
 .step .row { display: flex; align-items: center; gap: 6px; }
+.step .label { font-weight: 600; font-size: 13px; line-height: 1.35; }
 .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; font-weight: 600; flex: none; }
 .badge.task { background: #1d4ed8; color: #dbeafe; }
 .badge.decision { background: #b45309; color: #fef3c7; }
@@ -86,7 +90,8 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step:hover select, .step:hover button.del { opacity: 1; }
 .step .action-tag { display: none; }
 .step:hover .action-tag { display: block; }
-.branch { margin: 2px 0 2px 16px; color: #94a3b8; font-size: 11px; display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+.branch { margin: 5px 0 0; padding: 4px 7px; border-radius: 6px; color: #94a3b8; font-size: 11px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; background: rgba(52,211,153,.07); border: 1px solid rgba(52,211,153,.18); }
+.branch.back { background: rgba(248,113,113,.07); border-color: rgba(248,113,113,.2); }
 .branch .bglyph { font-weight: 700; flex: none; }
 .branch .bglyph.fwd { color: #34d399; }
 .branch .bglyph.back { color: #f87171; }
@@ -108,7 +113,8 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .node.conditional { border-style: dashed; }
 .node.not_applicable { opacity: .4; }
 @keyframes nodepulse { 0%,100% { box-shadow: 0 0 0 0 rgba(251,191,36,.55); } 50% { box-shadow: 0 0 0 6px rgba(251,191,36,0); } }
-.branch input { background: #0f172a; color: #fbbf24; border: 1px solid #334155; border-radius: 4px; padding: 1px 5px; font-size: 11px; width: 150px; }
+.branch input { background: transparent; color: #fbbf24; border: 1px solid transparent; border-radius: 4px; padding: 1px 5px; font-size: 11px; flex: 1; min-width: 110px; }
+.branch input:hover, .branch input:focus { border-color: #334155; background: #0f172a; outline: none; }
 .arrow { text-align: center; color: #475569; font-size: 11px; line-height: 1; margin: 1px 0; }
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .confirm-bar button { background: #059669; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
@@ -190,6 +196,7 @@ function renderStep(
   status?: mapstore.StepStatus,
 ) {
   const card = el('div', `step${status ? ` ${status}` : ''}`)
+  const meta = el('div', 'metarow')
   const row = el('div', 'row')
   if (mapstore.getMap()?.confirmed && step.type !== 'decision') {
     const chk = el('input', 'chk') as HTMLInputElement
@@ -206,12 +213,13 @@ function renderStep(
     }
     row.appendChild(chk)
   }
-  row.appendChild(el('span', `badge ${step.type}`, step.type))
-  if (status === 'ready') row.appendChild(el('span', 'chip ready', 'NEXT'))
-  if (status === 'skipped') row.appendChild(el('span', 'chip skipped', 'SKIPPED'))
-  if (status === 'conditional') row.appendChild(el('span', 'chip conditional', 'IF'))
-  if (status === 'blocked') row.appendChild(el('span', 'chip blocked', 'BLOCKED'))
-  if (status === 'not_applicable') row.appendChild(el('span', 'chip na', 'N/A'))
+  meta.appendChild(el('span', `badge ${step.type}`, step.type))
+  if (status === 'ready') meta.appendChild(el('span', 'chip ready', 'NEXT'))
+  if (status === 'skipped') meta.appendChild(el('span', 'chip skipped', 'SKIPPED'))
+  if (status === 'conditional') meta.appendChild(el('span', 'chip conditional', 'IF'))
+  if (status === 'blocked') meta.appendChild(el('span', 'chip blocked', 'BLOCKED'))
+  if (status === 'not_applicable') meta.appendChild(el('span', 'chip na', 'N/A'))
+  meta.appendChild(el('span', 'spacer'))
 
   const label = el('span', 'label', step.label)
   label.title = 'Click to rename'
@@ -238,13 +246,14 @@ function renderStep(
     typeSel.appendChild(opt)
   }
   typeSel.onchange = () => mapstore.humanEditStep(step.id, 'type', typeSel.value)
-  row.appendChild(typeSel)
+  meta.appendChild(typeSel)
 
   const del = el('button', 'del', '✕')
   del.title = 'Remove step'
   del.onclick = () => mapstore.humanRemoveStep(step.id)
-  row.appendChild(del)
+  meta.appendChild(del)
 
+  card.appendChild(meta)
   card.appendChild(row)
   if (step.type !== 'decision' || step.detail) {
     const detail = el('div', `detail${step.detail ? '' : ' detail-empty'}`, step.detail || '+ add note')
@@ -278,8 +287,8 @@ function renderStep(
     for (const b of branches) {
       const targetIdx = map?.steps.findIndex((s) => s.id === b.to) ?? -1
       const target = targetIdx >= 0 ? map?.steps[targetIdx] : undefined
-      const line = el('div', 'branch')
       const back = targetIdx >= 0 && targetIdx <= index
+      const line = el('div', `branch${back ? ' back' : ''}`)
       line.appendChild(el('span', `bglyph ${back ? 'back' : 'fwd'}`, back ? '⟲' : '↳'))
       line.appendChild(el('span', 'btarget', `${targetIdx >= 0 ? `#${targetIdx + 1} ` : ''}${target?.label ?? b.to}`))
       line.appendChild(el('span', undefined, 'if'))
