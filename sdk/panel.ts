@@ -166,7 +166,11 @@ h2.activity-toggle:hover { color: #94a3b8; }
    keyboard user moves focus into it. Invisible controls remain tabbable and
    become visible as soon as focus enters the card. */
 .step select, .step button.del { opacity: 0; transition: opacity .15s; }
-.step:hover select, .step:hover button.del, .step:focus-within select, .step:focus-within button.del { opacity: 1; }
+.step:hover select, .step:hover button.del { opacity: 1; }
+/* Keyboard controls must be visible in the same frame that focus reaches the
+   card. A hover fade is fine; a focus fade briefly presents an invisible
+   active control to keyboard and low-vision users. */
+.step:focus-within select, .step:focus-within button.del { opacity: 1; transition: none; }
 .step .action-tag { display: none; }
 .step:hover .action-tag { display: block; }
 .branch { margin: 5px 0 0; padding: 4px 8px; border-radius: 7px; color: #8b96a8; font-size: 11px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; background: rgba(52,211,153,.05); border: 1px solid rgba(52,211,153,.14); }

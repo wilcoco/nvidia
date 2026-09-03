@@ -35,6 +35,11 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     browser = await chromium.launch({executablePath: chrome, headless: true})
     const context = await browser.newContext({viewport: {width: 1280, height: 900}})
     const page = await context.newPage()
+    const browserErrors = []
+    page.on('console', message => {
+      if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`)
+    })
+    page.on('pageerror', error => browserErrors.push(`pageerror: ${error.message}`))
     const title = `Browser E2E ${Date.now()}`
     await page.goto(base)
     await page.getByRole('button', {name: /Enter demo workspace/}).click()
@@ -49,8 +54,14 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
           {key: 'handoffCode', label: 'Handoff code', type: 'string', required: true},
         ],
         steps: [
-          {id: 'prepare', label: 'Prepare packages', detail: 'Count every package.', type: 'task', role: 'Contributor', fields: ['packageCount'], next: [{to: 'handoff'}]},
+          {id: 'prepare', label: 'Prepare packages', detail: 'Count every package.', type: 'task', role: 'Contributor', fields: ['packageCount'], next: [{to: 'temporary'}]},
+          {id: 'temporary', label: 'Temporary inspection note', detail: 'Remove this draft-only step.', type: 'task', next: [{to: 'route'}]},
+          {id: 'route', label: 'Choose parcel route', type: 'decision', role: 'Contributor', next: [
+            {to: 'handoff', condition: 'Standard handoff', criteria: {packageCount: {lte: 5}}},
+            {to: 'bulk', condition: 'Bulk handoff', criteria: {packageCount: {gt: 5}}},
+          ]},
           {id: 'handoff', label: 'Record handoff', detail: 'Record the receiving code.', type: 'task', role: 'Operations', fields: ['handoffCode'], next: [{to: 'approve'}]},
+          {id: 'bulk', label: 'Arrange bulk handoff', type: 'task', role: 'Operations', next: [{to: 'approve'}]},
           {id: 'approve', label: 'Approve completed handoff', type: 'approval', role: 'Reviewer', approvalPurpose: 'work'},
         ],
       }, 'browser-e2e-draft')
@@ -66,11 +77,6 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     const waitForPanelFocus = (label) => page.waitForFunction((expected) => {
       const host = document.querySelector('#understudy-panel-host')
       return host?.shadowRoot?.activeElement?.getAttribute('aria-label') === expected
-    }, label)
-    const waitForPanelOpacity = (label) => page.waitForFunction((expected) => {
-      const host = document.querySelector('#understudy-panel-host')
-      const active = host?.shadowRoot?.activeElement
-      return active?.getAttribute('aria-label') === expected && getComputedStyle(active).opacity === '1'
     }, label)
     // Start from the page itself and enter the open Shadow DOM using only the
     // browser's sequential focus navigation. This catches focusout renders
@@ -108,18 +114,44 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.keyboard.press('Shift+Tab')
     assert.equal((await focusedPanelControl())?.label, 'Remove step: Prepare counted packages')
     assert.equal((await focusedPanelControl())?.focusVisible, true)
-    await waitForPanelOpacity('Remove step: Prepare counted packages')
     assert.equal((await focusedPanelControl())?.opacity, '1')
     await page.keyboard.press('Shift+Tab')
     assert.equal((await focusedPanelControl())?.label, 'Step type for Prepare counted packages')
     assert.equal((await focusedPanelControl())?.focusVisible, true)
-    await waitForPanelOpacity('Step type for Prepare counted packages')
     assert.equal((await focusedPanelControl())?.opacity, '1')
 
     const typeSelect = panel.getByRole('combobox', {name: 'Step type for Prepare counted packages'})
     assert.equal(await typeSelect.evaluate(el => getComputedStyle(el).opacity), '1')
     const remove = panel.getByRole('button', {name: 'Remove step: Prepare counted packages'})
     assert.equal(await remove.evaluate(el => getComputedStyle(el).opacity), '1')
+
+    // Reach the temporary step through natural navigation, change its real
+    // select value, then activate delete with Space. The saved v1 below proves
+    // both keyboard mutations reached the map instead of only changing focus.
+    let reachedTemporaryType = false
+    for (let i = 0; i < 20; i++) {
+      await page.keyboard.press('Tab')
+      if ((await focusedPanelControl())?.label === 'Step type for Temporary inspection note') { reachedTemporaryType = true; break }
+    }
+    assert.equal(reachedTemporaryType, true)
+    assert.equal((await focusedPanelControl())?.opacity, '1', 'focused type control must be immediately visible')
+    await panel.getByRole('combobox', {name: 'Step type for Temporary inspection note'}).selectOption('decision')
+    await page.waitForFunction(() => {
+      const host = document.querySelector('#understudy-panel-host')
+      const active = host?.shadowRoot?.activeElement
+      return window.Understudy.getLoadedProcess()?.steps.find(step => step.id === 'temporary')?.type === 'decision' &&
+        active?.getAttribute('aria-label') === 'Step type for Temporary inspection note' && active.value === 'decision'
+    })
+    assert.equal(await page.evaluate(() => window.Understudy.getLoadedProcess()?.steps.find(step => step.id === 'temporary')?.type), 'decision')
+    await page.keyboard.press('Tab')
+    assert.equal((await focusedPanelControl())?.label, 'Remove step: Temporary inspection note')
+    assert.equal((await focusedPanelControl())?.opacity, '1', 'focused delete control must be immediately visible')
+    await page.keyboard.press('Space')
+    await panel.getByRole('button', {name: 'Remove step: Temporary inspection note'}).waitFor({state: 'detached'})
+    assert.deepEqual(await page.evaluate(() => {
+      const map = window.Understudy.getLoadedProcess()
+      return {hasTemporary: map?.steps.some(step => step.id === 'temporary'), prepareNext: map?.steps.find(step => step.id === 'prepare')?.next?.[0]?.to}
+    }), {hasTemporary: false, prepareNext: 'route'})
 
     await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
     await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 1)
@@ -145,6 +177,23 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByRole('combobox', {name: 'Working as'}).selectOption('kim')
     await page.getByRole('spinbutton', {name: 'Package count*'}).fill('4')
     await page.getByRole('button', {name: 'Complete & submit'}).click()
+
+    // Exercise the public WebMCP tool implementation against assignee evidence.
+    // A fabricated value/route must be refused without mutating the decision;
+    // the matching route then unlocks Park's task.
+    const refused = await page.evaluate(() => window.__understudy.call('resolve_decision', {
+      stepId: 'route', branchTo: 'bulk', reason: 'claim bulk despite submitted count', measurements: {packageCount: 8},
+    }))
+    assert.equal(refused.ok, false)
+    assert.match(refused.error, /^evidence_conflict:/)
+    const beforeDecision = await page.evaluate(() => window.__understudy.call('get_process_progress'))
+    assert.equal(beforeDecision.branching_steps.find(step => step.id === 'route')?.chosen, null)
+    assert.equal(beforeDecision.awaiting_decision?.id, 'route')
+    const resolved = await page.evaluate(() => window.__understudy.call('resolve_decision', {
+      stepId: 'route', branchTo: 'handoff', reason: 'submitted count uses standard handoff', measurements: {packageCount: 4},
+    }))
+    assert.equal(resolved.ok, true)
+    await page.evaluate(() => window.Understudy.flushRun?.())
     await page.getByRole('combobox', {name: 'Working as'}).selectOption('park')
     await page.getByRole('textbox', {name: 'Handoff code*'}).fill('MOBILE-42')
     await page.getByRole('button', {name: 'Complete & submit'}).click()
@@ -162,6 +211,7 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.waitForFunction((expected) => window.Understudy.currentRunId?.() === expected && window.Understudy.isRunComplete?.() === true, runId)
     assert.equal(await page.evaluate(() => window.Understudy.getLoadedProcess()?.version), 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true)
+    assert.deepEqual(browserErrors, [], `browser emitted errors:\n${browserErrors.join('\n')}`)
   } finally {
     await browser?.close()
     server.kill()

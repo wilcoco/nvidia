@@ -185,6 +185,23 @@ under `CI=true`) to make a missing Chrome installation fail this required gate.
 Without `DATABASE_URL` the server still runs with an in-memory store, so
 nothing else is required to try it.
 
+### Verify a deployed revision
+
+1. Hard reload the live page (or open a fresh private tab). A tab opened before
+   deployment keeps executing its old JavaScript runtime.
+2. Compare the seven-character build shown in Settings with `git rev-parse
+   HEAD`. Do not run acceptance scenarios until they match.
+3. For an exact-build audit, download the live `index.html`, its referenced app
+   bundle, and `/understudy.js`, then compare their SHA-256 hashes with a local
+   production build made from that full commit.
+4. Start a new synthetic run only after those checks. Record the build, run and
+   review ids with the result so evidence from an older open tab is not mixed
+   into the new deployment.
+
+The automated memory/Chrome gates do not claim coverage of the conditional
+PostgreSQL suite, a physical phone, or an external WebMCP client. Report those
+only when they have been run separately.
+
 To exercise the tools without an agent, open the console:
 `__understudy.call('describe_workspace')`,
 `__understudy.call('propose_process_map', {...})`, etc.
