@@ -31,7 +31,9 @@ process enforceable.
 - Playbooks are versioned assets with lineage, a data contract that becomes
   real form fields, and explained suggestions (confidence + reasons).
 - Everything the next worker needs — suggestions, NEXT/SKIPPED guidance,
-  server gates — also works with **no agent at all**.
+  task cards, approvals, server gates — also works with **no agent at all**;
+  only resolving a decision branch goes through the agent, deliberately,
+  because that call is the evidence-checking gate itself.
 - The human always decides: unforgeable, persona-scoped approval clicks,
   role-gated actions, human-only saves, an auto-approve dial.
 - It is a layer: one script tag attaches it to a second, framework-free page.

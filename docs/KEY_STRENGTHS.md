@@ -52,11 +52,14 @@ their successors in suggestions), a per-playbook **data contract** that
 renders as real form fields, and applies-when matching that explains every
 suggestion (confidence + reasons).
 
-## 7. Works without an agent, too
-Suggestions, NEXT/SKIPPED guidance, required-data fields and every server
-gate run page/server-side — in any plain browser. The agent is how knowledge
-**enters**; the page is where it **lives**.
-> *The agent is the door; the page is the house.*
+## 7. Works without an agent, too (one honest boundary)
+Suggestions, NEXT/SKIPPED guidance, task cards, approvals and every server
+gate run page/server-side — in any plain browser. The one thing that
+requires an agent is resolving a DECISION branch: that goes through
+`resolve_decision` on purpose, because that call is the evidence-checking
+gate itself (a page button would be a back door around it).
+> *The agent is the door; the page is the house — and the branch points are
+> the doors.*
 
 ## 8. The human always decides
 Approval buttons are unforgeable page clicks the agent cannot press; saving
