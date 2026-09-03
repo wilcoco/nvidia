@@ -7,3 +7,6 @@ public/understudy.js
 .DS_Store
 qa-evidence/*
 !qa-evidence/README.md
+!qa-evidence/releases/
+qa-evidence/releases/*
+!qa-evidence/releases/c9716f9-manifest.md

@@ -1,6 +1,7 @@
 import {execFileSync, spawnSync} from 'node:child_process'
 import {createHash} from 'node:crypto'
 import {readFileSync} from 'node:fs'
+import {buildRefMatchesCommit, validateBuildRef} from './release-build-ref.mjs'
 
 const required = ['RUN_ID', 'REVIEW_ID', 'RUN_BUILD', 'VIDEO_BUILD', 'VIDEO_URL']
 const missing = required.filter(key => !process.env[key]?.trim())
@@ -8,6 +9,8 @@ if (missing.length) {
   console.error(`Missing required release evidence: ${missing.join(', ')}`)
   process.exit(1)
 }
+
+const runBuild = validateBuildRef(process.env.RUN_BUILD, 'RUN_BUILD')
 
 const git = (...args) => execFileSync('git', args, {encoding: 'utf8'}).trim()
 const commit = git('rev-parse', 'HEAD')
@@ -62,8 +65,7 @@ for (const [name, local, live] of artifacts) {
   if (!local.equals(live)) throw new Error(`Local and live ${name} differ for ${commit}.`)
 }
 
-const runBuild = process.env.RUN_BUILD.trim()
-const runMatches = commit.startsWith(runBuild)
+const runMatches = buildRefMatchesCommit(commit, runBuild, 'RUN_BUILD')
 const recordedAt = new Date().toISOString()
 const validation = process.env.VALIDATION_SUMMARY?.trim() || 'Record exact commands and counts before submission.'
 

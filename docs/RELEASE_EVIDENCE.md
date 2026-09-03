@@ -7,20 +7,23 @@ or mismatched build marker.
 
 ```bash
 mkdir -p qa-evidence/releases
-RUN_ID=52 \
-REVIEW_ID=63 \
-RUN_BUILD=5d925a8 \
+RUN_ID=53 \
+REVIEW_ID=64 \
+RUN_BUILD=c9716f9 \
 VIDEO_BUILD=1a9140b \
 VIDEO_URL=https://youtu.be/kKhdmuNePNM \
 VALIDATION_SUMMARY='check PASS; base 70/70; strict Chrome 1/1' \
 npm run --silent release:manifest > qa-evidence/releases/$(git rev-parse --short=7 HEAD)-manifest.md
 ```
 
-`RUN_BUILD` is deliberately separate from the release commit. A run from an
-older build remains useful history but is shown as a mismatch, never silently
-promoted to evidence for the current release. Perform a new qualification run
-or explicitly document that the intervening commit changes evidence tooling or
-documentation only.
+`RUN_BUILD` must be an exact lowercase hexadecimal Git SHA in either the
+seven-character display form or the full forty-character form. Shorter
+prefixes and non-hex labels are rejected before the build or network checks.
+It is deliberately separate from the release commit. A run from an older build
+remains useful history but is shown as a mismatch, never silently promoted to
+evidence for the current release. Perform a new qualification run or explicitly
+document that the intervening commit changes evidence tooling or documentation
+only.
 
 Before submitting:
 
