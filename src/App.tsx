@@ -779,6 +779,28 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         {runId ? ` · run #${runId}` : ''} · path {done}/{required} done · map {prog.length} nodes · your
         role: {myRole ?? '—'}
       </div>
+      {(() => {
+        const rejected = state.approvals.find(
+          (a) =>
+            a.status === 'REJECTED' &&
+            state.worklogs.some(
+              (w) => w.id === a.worklogId && w.status === 'rejected' && String(w.data.runId ?? '') === String(runId ?? ''),
+            ),
+        )
+        if (!rejected) return null
+        return (
+          <div className="card entry task-card">
+            <div className="entry-head">
+              <span className="task">✏️ Review rejected — rework needed</span>
+              <span className="status rejected">rejected</span>
+            </div>
+            {rejected.comment && <div className="meta">Reviewer: {rejected.comment}</div>}
+            <div className="meta">
+              Revise the entry on the Work log tab, then use “Resubmit to Lee for review”.
+            </div>
+          </div>
+        )
+      })()}
       {mine.length === 0 && theirs.length === 0 && (
         <p className="empty">
           {window.Understudy.isRunComplete?.()
@@ -1011,7 +1033,9 @@ function DemoStrip({ state }: { state: store.AppState }) {
 
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
-  const [tab, setTab] = useState<'incidents' | 'tasks' | 'approvals' | 'playbooks'>('incidents')
+  const [tab, setTab] = useState<'incidents' | 'tasks' | 'approvals' | 'playbooks'>(() =>
+    typeof window !== 'undefined' && window.innerWidth < 560 ? 'tasks' : 'incidents',
+  )
   const [demoMode, setDemoMode] = useState(false)
   const [resetFlash, setResetFlash] = useState(false)
 
