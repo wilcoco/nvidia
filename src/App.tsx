@@ -293,16 +293,19 @@ function VerificationBlock({ w }: { w: store.Worklog }) {
     | { label?: string; pass?: boolean; checked?: boolean }
     | undefined
   const t = w.data.verifiedAt ? new Date(w.data.verifiedAt).toLocaleTimeString('en-US') : ''
+  const escalation = route?.label ? /re-?plan|escalat|redesign/i.test(route.label) : false
   const verdict = !route
     ? '\u{1F4CA} Measurements recorded'
     : route.pass
-      ? route.checked
-        ? "\u2705 Passed verification \u2014 measurements met the playbook's criteria"
-        : '\u2611\uFE0F Routed to sign-off \u2014 this branch has no machine criteria saved (agent judgment)'
+      ? escalation
+        ? `\u{1F4CB} Approval requested: ${route.label} \u2014 the underlying checks did NOT pass; this approves the plan, not the work`
+        : route.checked
+          ? `\u2705 Criteria met \u2014 routed to sign-off${route.label ? `: ${route.label}` : ''}`
+          : '\u2611\uFE0F Routed to sign-off \u2014 this branch has no machine criteria saved (agent judgment)'
       : `\u26A0\uFE0F Verification failed \u2014 playbook rerouted to: ${route.label ?? 'remediation'}`
   return (
     <div
-      className={`note verify-note ${route ? (route.pass ? (route.checked ? '' : 'neutral') : 'reroute') : 'neutral'}`}
+      className={`note verify-note ${route ? (route.pass ? (escalation ? 'reroute' : route.checked ? '' : 'neutral') : 'reroute') : 'neutral'}`}
     >
       <div className="verify-head">
         {verdict}

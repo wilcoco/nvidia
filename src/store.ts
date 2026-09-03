@@ -535,11 +535,20 @@ export async function autoSyncApproval(): Promise<void> {
   // Everything before the sign-off must actually be handled.
   const before = prog.slice(0, prog.findIndex((p) => p.id === readyApproval.id))
   if (before.some((p) => !p.done && p.status !== 'not_applicable' && p.type !== 'decision')) return
-  let wl = state.worklogs.find((w) => w.data.runId === runId && w.status === 'draft')
+  let wl = state.worklogs.find(
+    (w) => String(w.data.runId ?? '') === String(runId) && w.status === 'draft' && w.data.systemGenerated !== true,
+  )
   const proc = window.Understudy.getLoadedProcess?.()
   if (!proc) return
   if (!wl) {
-    if (state.worklogs.some((w) => w.data.runId === runId)) return // already past review
+    // Only THIS run's own completion record counts as "already reviewed" —
+    // a stale runId on an old, unrelated entry must not suppress the review.
+    if (
+      state.worklogs.some(
+        (w) => String(w.data.runId ?? '') === String(runId) && w.data.systemGenerated === true,
+      )
+    )
+      return
     // Pure task-card runs produce no entry of their own — synthesize the run's
     // completion record (with every submitted step value as evidence) so the
     // review has a subject. Server still enforces the Contributor role.

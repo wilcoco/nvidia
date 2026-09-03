@@ -707,6 +707,45 @@ export function humanToggleStepDone(
       `${step.done ? 'completed' : 'reopened'} step "${step.label}"${persona ? ` (by ${persona})` : ''}${step.done ? vals : ''}`,
     )
   }
+  // A task whose outgoing edge points BACKWARD is a retry instruction: its
+  // completion reopens the loop body exactly like a decision loop-back —
+  // otherwise the run would silently read as finished with stale failures.
+  if (step.done && map) {
+    const idx = new Map(map.steps.map((s, i) => [s.id, i]))
+    const from = idx.get(step.id) ?? 0
+    for (const e of step.next ?? []) {
+      const to = idx.get(e.to) ?? 0
+      if (to > from) continue
+      const reopened: string[] = []
+      const resetDecisions: string[] = []
+      for (const s of map.steps) {
+        const i = idx.get(s.id) ?? 0
+        if (i < to || i >= from) continue
+        if (s.type !== 'decision' && (s.done || s.naReason)) {
+          s.done = false
+          delete s.naReason
+          s.completedBy = undefined
+          s.completedAt = undefined
+          s.resultData = undefined
+          reopened.push(s.label)
+        }
+        if ((s.next?.length ?? 0) > 1) {
+          let had = false
+          for (const d of map.decisions ?? []) {
+            if (d.stepId === s.id && !d.invalidated) {
+              d.invalidated = true
+              had = true
+            }
+          }
+          if (had) resetDecisions.push(s.label)
+        }
+      }
+      if (reopened.length)
+        record('user', 'map', `"${step.label}" loops back — re-opened for the retry: ${reopened.join('; ')}`)
+      if (resetDecisions.length)
+        record('user', 'map', `decision(s) reset for the retry — must be re-resolved: ${resetDecisions.join('; ')}`)
+    }
+  }
   notify()
 }
 

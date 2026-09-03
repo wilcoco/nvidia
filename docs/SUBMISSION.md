@@ -157,15 +157,15 @@ A diagram can't refuse a bad pass decision. This playbook does.
 
 ## Scope: this build is the capture layer — operations is the layer it seeds
 
-What this submission delivers end-to-end is **process construction and
-enforcement where the work happens**: observe → interview → map → save as a
-versioned playbook → suggest to the next worker → guide (NEXT/SKIPPED),
-block skipped prerequisites and evidence-contradicting pass decisions, and
-route one real handoff (contributor → reviewer sign-off).
+What this submission delivers end-to-end is **process construction,
+enforcement and a working operations core**: observe → interview → map →
+save as a versioned playbook → suggest to the next worker → assign steps by
+role with per-persona worklists (My tasks) → gate on order, evidence and
+required inputs → auto-create the sign-off review → human approval closes
+the run, and it all survives a reload.
 
-What it deliberately does **not** claim yet is a full **operations layer**:
-per-step owner assignment with personal worklists and notifications, and
-runs that travel across the org's other business apps. That is the next
+What it deliberately does **not** claim yet: deadlines, notifications and
+reassignment, and runs that travel across the org's other business apps. That is the next
 phase — and the reason WebMCP is the right foundation for it: every app
 that adopts WebMCP exposes its actions as standard tools, so a playbook
 step can bind to *another app's* tool the same way it binds to this one's

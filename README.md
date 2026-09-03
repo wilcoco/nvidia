@@ -109,6 +109,7 @@ reviewer play both sides of the flow (worker files, lead approves).
 | `propose_process_map` | Draw/replace the draft process map rendered in the panel. |
 | `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags. |
 | `get_process_progress` | Run-state of the loaded process: done / next-up / skipped steps, plus a suggested next action — the missed-step coach. |
+| `list_my_tasks` | The active persona's worklist: their ready steps (with required fields) and what the run is waiting on from other roles. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
 | `get_map_gaps` | The interview agenda: what the map does not yet know — missing before/after steps, undecided branches, no sign-off, steps without judgment rules. |
 | `update_step` | Refine one step in place — the agent writes the human's explained judgment rules into step notes. |
