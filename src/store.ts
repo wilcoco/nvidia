@@ -276,7 +276,7 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
     { worklogId: wl.id },
   )
   window.Understudy.notifyAction('log_work_item', wl.id)
-  if (!runId) commit({ captureContext: { id: wl.id, task: wl.task }, draft: {kind: wl.kind === 'routine work' ? undefined : wl.kind, urgent: wl.urgent, task: wl.task, hasInput: true} })
+  if (!runId) commit({ captureContext: { id: wl.id, task: wl.task }, draft: {kind: wl.kind, urgent: wl.urgent, task: wl.task, hasInput: true} })
   await refresh()
   return wl
 }
@@ -681,7 +681,7 @@ export function resumeLastPlaybook(): void {
 }
 
 export function setCaptureDraft(task: string, sample = false): void {
-  commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'operations' : undefined}})
+  commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'operations' : 'routine work'}})
 }
 
 export function dismissRunStarted(): void {

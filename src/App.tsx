@@ -1054,7 +1054,7 @@ function DemoStrip({ state }: { state: store.AppState }) {
   const personaOf = (role?: string) =>
     role ? state.users.find((u) => u.role === role)?.name ?? role : 'anyone'
   const ready = prog.find((p) => p.status === 'ready')
-  const doneCount = prog.filter((p) => p.done).length
+  const complete = window.Understudy.isRunComplete?.() === true
   return (
     <div className="demo-strip">
       <span className="demo-title">🎬 Role relay</span>
@@ -1072,7 +1072,7 @@ function DemoStrip({ state }: { state: store.AppState }) {
           ? ready.role && state.users.find((u) => u.username === state.actingAs)?.role !== ready.role
             ? `→ switch persona to ${personaOf(ready.role)} (${ready.role}): ${ready.label}`
             : `→ now: ${ready.label}`
-          : doneCount === prog.filter((p) => p.status !== 'not_applicable').length
+          : complete
             ? '✓ process complete'
             : '→ awaiting a decision (ask the agent)'}
       </span>

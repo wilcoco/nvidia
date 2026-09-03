@@ -23,9 +23,10 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const saved = proc ? store.latestPerTitle(state.processes).find((p) => p.title === proc.title) : undefined
   const contributor = state.users.find((u) => u.role === 'Contributor')
   const acting = state.users.find((u) => u.username === state.actingAs)
+  const captureKind = state.worklogs.find((work) => work.id === captured?.id)?.kind ?? (sample ? 'operations' : 'routine work')
   useEffect(() => {
-    if (editing && !proc) store.setDraftContext({kind: sample ? 'operations' : undefined, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
-  }, [editing, sample, note, proc, captured])
+    if (editing && !proc) store.setDraftContext({kind: captureKind, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
+  }, [editing, captureKind, note, proc, captured])
 
   const capture = () => action.run(async () => {
     if (!note.trim()) return

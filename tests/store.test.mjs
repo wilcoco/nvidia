@@ -100,6 +100,20 @@ test('a rejected delete is reported as a failure without refreshing as if it suc
   assert.equal(requests, 1)
 })
 
+test('starting-page work matches its saved playbook before submission', async () => {
+  const processes = [{id: 'delivery-v2', title: 'Customer order handoff', version: 2,
+    appliesWhen: {kind: 'routine work', keywords: ['customer', 'order', 'handoff', 'pickup', 'courier']}}]
+  const store = fixture(async () => response({me: {username: 'kim'}, users: [], worklogs: [], approvals: [], processes}))
+  await store.refresh()
+  store.setCaptureDraft('I have another customer order to prepare for pickup.')
+  assert.equal(store.computeMatches()[0]?.processId, 'delivery-v2')
+  assert.equal(store.computeMatches()[0]?.tier, 'strong')
+  store.setCaptureDraft('')
+  assert.equal(store.computeMatches().length, 0)
+  store.setCaptureDraft('I have another customer order to prepare for pickup.', true)
+  assert.equal(store.computeMatches().length, 0, 'the operations example must not match a routine-work-only playbook')
+})
+
 
 test('work input restores after reload and an empty unrelated form does not replace its saved draft', async () => {
   const entries = new Map()
