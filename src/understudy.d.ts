@@ -94,6 +94,7 @@ interface UnderstudyApi {
   notifyAction(name: string, resultId?: string): void
   unloadProcess?(): void
   currentRunId?(): string | null
+  isRunComplete?(): boolean
   getProgress?(): Array<{ id: string; label: string; type: string; role?: string; fields?: string[]; status?: string; done?: boolean }>
   completeStep?(stepId: string, values?: Record<string, unknown>): void
   reportProblem?(stepId: string, note: string): void

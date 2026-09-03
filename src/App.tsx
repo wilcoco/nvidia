@@ -453,7 +453,9 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
                 </button>
                 <button
                   className="danger"
-                  onClick={() => void store.decideApproval(a.id, 'REJECTED', comments[a.id] || 'rejected')}
+                  disabled={!(comments[a.id] ?? '').trim()}
+                  title={(comments[a.id] ?? '').trim() ? undefined : 'A rejection needs a reason — write a comment first'}
+                  onClick={() => void store.decideApproval(a.id, 'REJECTED', comments[a.id].trim())}
                 >
                   Reject
                 </button>
@@ -705,8 +707,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const attention = prog.filter((p) => p.status === 'ready' || p.status === 'blocked' || p.status === 'skipped')
   const mine = attention.filter((p) => !p.role || !myRole || p.role === myRole)
   const theirs = attention.filter((p) => p.role && myRole && p.role !== myRole)
-  const done = prog.filter((p) => p.done).length
-  const required = prog.filter(
+  const work = prog.filter((p) => p.type !== 'decision')
+  const done = work.filter((p) => p.done).length
+  const required = work.filter(
     (p) => p.done || (p.status !== 'not_applicable' && p.status !== 'conditional'),
   ).length
   const idxOf = (id: string) => prog.findIndex((p) => p.id === id)
@@ -746,8 +749,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             if (v === '' || v === undefined) return [d.key, undefined]
             return [d.key, v === true || v === 'true']
           }
-          if (v === undefined || v === '') return [d.key, undefined]
-          return [d.key, d.type === 'number' ? Number(v) : String(v)]
+          if (v === undefined || String(v).trim() === '') return [d.key, undefined]
+          return [d.key, d.type === 'number' ? Number(v) : String(v).trim()]
         })
         .filter(([, v]) => v !== undefined),
     )
@@ -779,7 +782,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             return d.required ? raw[d.key] === undefined || raw[d.key] === '' : false
           }
           if (!d.required) return false
-          return raw[d.key] === undefined || raw[d.key] === ''
+          return raw[d.key] === undefined || String(raw[d.key]).trim() === ''
         })
         const prev = prevDone(p.id)
         const next = nextUp(p.id)

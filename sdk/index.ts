@@ -15,7 +15,7 @@ import { mountPanel } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
 import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId } from './runsync'
+import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -128,6 +128,14 @@ subscribeMap(() => {
   }
 })
 
+// An unconfirmed draft is interview work in progress — warn before it is lost.
+window.addEventListener('beforeunload', (e) => {
+  const m = getMap()
+  if (m && !m.confirmed && m.steps.length > 0) {
+    e.preventDefault()
+  }
+})
+
 ;(window as any).Understudy = {
   init,
   log,
@@ -140,4 +148,5 @@ subscribeMap(() => {
   completeStep,
   reportProblem,
   currentRunId,
+  isRunComplete,
 }

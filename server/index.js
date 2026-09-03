@@ -225,6 +225,11 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   if (decision !== 'APPROVED' && decision !== 'REJECTED') {
     return res.status(400).json({ error: 'decision must be APPROVED or REJECTED' })
   }
+  if (decision === 'REJECTED') {
+    const c = String(req.body?.comment ?? '').trim()
+    if (!c || c.toLowerCase() === 'rejected')
+      return res.status(400).json({ error: 'comment_required', detail: 'A rejection needs a real reason the contributor can act on.' })
+  }
   const existing = await db.getApproval(req.params.id)
   if (!existing) return res.status(404).json({ error: 'approval not found' })
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })

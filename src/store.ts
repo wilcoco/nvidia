@@ -210,7 +210,9 @@ export interface WorklogInput {
 export async function createWorklog(input: WorklogInput): Promise<Worklog> {
   // Stamp the active playbook run on the entry so the server can gate its
   // review/approval against that run's live state, deterministically.
-  const runId = window.Understudy.currentRunId?.() ?? undefined
+  // A finished run stamps nothing — new entries are new work, not its paperwork.
+  const runComplete = window.Understudy.isRunComplete?.() === true
+  const runId = runComplete ? undefined : (window.Understudy.currentRunId?.() ?? undefined)
   const wl = await api<Worklog>('/api/worklogs', {
     ...input,
     data: { ...(input.data ?? {}), ...(runId ? { runId } : {}) },
@@ -384,12 +386,14 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
       }
     }
     if (confidence < 0.25) continue
+    // A shared generic kind alone is a hint, never a page-level suggestion.
+    const kindOnly = kindMatched && matched.length === 1 && !reasons.some((r) => r.startsWith('mentions:'))
     matches.push({
       processId: p.id,
       title: p.title,
       createdBy: p.createdBy,
       confidence: Math.min(0.95, Number(confidence.toFixed(2))),
-      tier: confidence >= 0.5 ? 'strong' : 'candidate',
+      tier: confidence >= 0.5 && !kindOnly ? 'strong' : 'candidate',
       reasons,
       version: p.version || 1,
     })

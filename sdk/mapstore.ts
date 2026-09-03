@@ -324,6 +324,18 @@ export function agentUpdateStep(
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const changed: string[] = []
+  if (patch.role !== undefined && patch.role !== '') {
+    const st = host.getState() as { users?: Array<{ role?: unknown }> } | null
+    const known = Array.isArray(st?.users)
+      ? [...new Set(st.users.map((u) => u?.role).filter((r): r is string => typeof r === 'string'))]
+      : []
+    if (known.length && !known.includes(patch.role)) {
+      return {
+        ok: false,
+        error: `unknown role "${patch.role}" — this workspace's roles are: ${known.join(', ')}`,
+      }
+    }
+  }
   for (const field of ['label', 'detail', 'action', 'role'] as const) {
     const value = patch[field]
     if (value !== undefined && value !== step[field]) {
@@ -332,6 +344,14 @@ export function agentUpdateStep(
     }
   }
   if (patch.fields !== undefined) {
+    const contract = new Set((map.fields ?? []).map((f) => f.key))
+    const bad = patch.fields.filter((k) => typeof k === 'string' && !contract.has(k))
+    if (bad.length) {
+      return {
+        ok: false,
+        error: `unknown field key(s) ${bad.join(', ')} — declare them first with update_map_fields; the contract currently has: ${[...contract].join(', ') || 'none'}`,
+      }
+    }
     step.fields = patch.fields.filter((k) => typeof k === 'string')
     changed.push('fields')
   }
@@ -614,7 +634,7 @@ export function humanToggleStepDone(
             if (f.confirm === true) return v !== true
             return f.required ? v === undefined : false
           }
-          return f.required ? v === undefined || v === '' : false
+          return f.required ? v === undefined || String(v).trim() === '' : false
         })
         if (missing.length) {
           record(

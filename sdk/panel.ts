@@ -846,6 +846,7 @@ function render() {
         const lines: string[] = [`# Run report — ${map.title}${map.version ? ` v${map.version}` : ''}`, '']
         lines.push('## Steps')
         for (const s of map.steps) {
+          if (s.type === 'decision') continue // decisions are reported in their own section
           const state = s.done ? 'done' : s.naReason ? `n/a (${s.naReason})` : 'not required'
           const who = s.completedBy ? ` — ${s.completedBy}` : ''
           const when = s.completedAt ? ` @ ${new Date(s.completedAt).toLocaleString('en-US')}` : ''
