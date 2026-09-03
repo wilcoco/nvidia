@@ -34,8 +34,9 @@ process enforceable.
   task cards, approvals, server gates — also works with **no agent at all**;
   only resolving a decision branch goes through the agent, deliberately,
   because that call is the evidence-checking gate itself. This is also the
-  mobile answer: WebMCP is desktop-today, so capture happens at the desk —
-  and the work still travels to any browser on any device.
+  mobile answer: mobile browsers do not support WebMCP today, so processes
+  are created and judged with the agent on desktop — while assignees' input,
+  handoffs and reviews still work on a phone's plain browser.
 - The human always decides: unforgeable, persona-scoped approval clicks,
   role-gated actions, human-only saves, an auto-approve dial.
 - It is a layer: one script tag attaches it to a second, framework-free page.

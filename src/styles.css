@@ -99,7 +99,7 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 .pf-grid input { padding: 5px 7px; border: 1px solid #bfdbfe; border-radius: 6px; font-size: 13px; }
 
 .verify-note { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
-.verify-item { margin-right: 10px; white-space: nowrap; }
+.verify-item { margin-right: 10px; white-space: normal; word-break: break-word; }
 .verify-item s { color: #b91c1c; }
 
 .card.entry.clickable { cursor: pointer; }
@@ -135,4 +135,8 @@ html[data-understudy-panel="collapsed"] .login-wrap { margin-right: 0; }
 @media (max-width: 560px) {
   input, select, button { min-height: 40px; font-size: 15px; }
   .task-fields input { width: 100%; }
+}
+@media (max-width: 560px) {
+  .topbar, .userbox { flex-wrap: wrap; row-gap: 6px; }
+  .app { padding-left: 10px; padding-right: 10px; }
 }

@@ -162,7 +162,8 @@ footer input { accent-color: #3b82f6; }
 `
 
 let shadow: ShadowRoot | null = null
-let collapsed = false
+// On phones the panel would cover ~86% of the screen — start collapsed there.
+let collapsed = typeof window !== 'undefined' && window.innerWidth < 560
 let skipConfirmId: string | null = null
 // The activity journal exists for the agent; humans see a collapsed summary.
 let activityOpen = false

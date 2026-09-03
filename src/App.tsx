@@ -796,8 +796,21 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             </div>
             {rejected.comment && <div className="meta">Reviewer: {rejected.comment}</div>}
             <div className="meta">
-              Revise the entry on the Work log tab, then use “Resubmit to Lee for review”.
+              Revise the entry on the Work log tab (add what changed), or resubmit directly:
             </div>
+            <button
+              className="primary"
+              onClick={() =>
+                void store.requestApproval(rejected.worklogId, 'lee').catch((err) => {
+                  window.Understudy.log(
+                    `resubmit refused: ${err instanceof Error ? err.message : err}`,
+                    { worklogId: rejected.worklogId },
+                  )
+                })
+              }
+            >
+              Resubmit for review
+            </button>
           </div>
         )
       })()}

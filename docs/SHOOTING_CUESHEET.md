@@ -43,10 +43,10 @@ Opening (0:00–0:25):
 Closing (2:40–2:55):
 > The agent cannot simply declare success — order, evidence and human
 > approval gate every run. The agent is the door; the page is the house:
-> capture happens at the desk with your agent, but the work travels — task
-> cards, approvals and every gate run in any plain browser, on any device,
-> no agent required. It starts from an ordinary work log — and ends as the
-> team's operating process.
+> processes are created and judged with your agent at the desk, and the
+> work travels — assignees' inputs, handoffs and reviews run in any plain
+> browser, phones included. It starts from an ordinary work log — and ends
+> as the team's operating process.
 
 ## Chat prompts (English, verbatim)
 

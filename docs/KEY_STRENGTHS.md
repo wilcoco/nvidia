@@ -61,10 +61,11 @@ gate itself (a page button would be a back door around it).
 > *The agent is the door; the page is the house — and the branch points are
 > the doors.*
 
-This is also the mobile story: WebMCP itself is desktop-today (origin
-trial, agent browsers), and that's fine — knowledge is captured at the
-desk; execution travels to any browser, phones included, because guidance
-and gates live page- and server-side.
+This is also the mobile story. Mobile browsers do not support WebMCP today
+(no origin trial, no agent surface), so the safe claim is exactly this:
+**processes are created and judged with the agent on desktop; assignees'
+input, handoffs and reviews also work on a phone's plain browser.** Decision
+branches stay agent-lane even on mobile — by design, not omission.
 
 ## 8. The human always decides
 Approval buttons are unforgeable page clicks the agent cannot press; saving
