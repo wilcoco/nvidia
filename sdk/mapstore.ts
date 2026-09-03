@@ -1124,7 +1124,15 @@ export function progress(
   for (const id of inactive) conditional.delete(id)
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   // Not-applicable steps count as handled for ordering purposes.
-  const lastHandledIdx = actionable.reduce((acc, s, i) => (s.done || s.naReason ? i : acc), -1)
+  // The ordering baseline counts only steps on the ACTIVE path: a completed
+  // step sitting on a now-inactive/conditional branch (e.g. the dry-run that
+  // just triggered a retry loop) must not make reopened earlier steps read
+  // as 'skipped' — they are the live work again.
+  const lastHandledIdx = actionable.reduce(
+    (acc, s, i) =>
+      (s.done || s.naReason) && !conditional.has(s.id) && !inactive.has(s.id) ? i : acc,
+    -1,
+  )
   // Any step with 2+ outgoing edges needs its outcome resolved — including the
   // common fail-loops-back / pass-goes-forward shape (1 forward + 1 back edge).
   const hasBranching = (s: Step) => (s.next?.length ?? 0) >= 2
