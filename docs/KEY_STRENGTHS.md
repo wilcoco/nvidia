@@ -61,6 +61,11 @@ gate itself (a page button would be a back door around it).
 > *The agent is the door; the page is the house — and the branch points are
 > the doors.*
 
+This is also the mobile story: WebMCP itself is desktop-today (origin
+trial, agent browsers), and that's fine — knowledge is captured at the
+desk; execution travels to any browser, phones included, because guidance
+and gates live page- and server-side.
+
 ## 8. The human always decides
 Approval buttons are unforgeable page clicks the agent cannot press; saving
 to the library is human-only; auto-approve is a dial in the human's hands;
