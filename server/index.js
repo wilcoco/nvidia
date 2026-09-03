@@ -14,6 +14,8 @@ const SECRET = process.env.SESSION_SECRET || (await db.getSessionSecret())
 const app = express()
 app.use(express.json())
 
+const asyncHandler = (fn) => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next)
+
 /* ---------------- auth ---------------- */
 
 function sign(username, exp) {
@@ -37,7 +39,7 @@ function readToken(token) {
   }
 }
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body ?? {}
   // Embedded-browser credential dialogs sometimes autocapitalize or add
   // whitespace — normalize defensively (demo accounts only).
@@ -50,16 +52,16 @@ app.post('/api/auth/login', async (req, res) => {
     token: issueToken(user.username),
     user: { username: user.username, name: user.name, role: user.role },
   })
-})
+}))
 
-async function auth(req, res, next) {
+const auth = asyncHandler(async (req, res, next) => {
   const header = req.get('authorization') ?? ''
   const username = header.startsWith('Bearer ') ? readToken(header.slice(7)) : null
   const user = username ? await db.getUser(username) : null
   if (!user) return res.status(401).json({ error: 'Not authenticated' })
   req.user = { username: user.username, name: user.name, role: user.role }
   next()
-}
+})
 
 /* ---------------- api ----------------
  * `actingAs` lets a logged-in session act as another demo persona (kim/lee)
@@ -72,14 +74,14 @@ const actor = (req) => String(req.body?.actingAs || req.user.username)
 // process. Validate up front and answer 400 instead.
 const intParam = (req, res) => {
   const n = Number(req.params.id)
-  if (!Number.isInteger(n) || n < 0) {
+  if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isSafeInteger(n) || n > 2147483647) {
     res.status(400).json({ error: 'invalid_id' })
     return null
   }
   return String(n)
 }
 
-app.get('/api/state', auth, async (req, res) => {
+app.get('/api/state', auth, asyncHandler(async (req, res) => {
   const [users, worklogs, approvals, processes] = await Promise.all([
     db.listUsers(),
     db.listWorklogs(),
@@ -87,7 +89,7 @@ app.get('/api/state', auth, async (req, res) => {
     db.listProcesses(),
   ])
   res.json({ me: req.user, users, worklogs, approvals, processes })
-})
+}))
 
 async function roleOfUser(username) {
   if (!username) return undefined
@@ -95,7 +97,7 @@ async function roleOfUser(username) {
   return users.find((u) => u.username === username)?.role
 }
 
-app.post('/api/worklogs', auth, async (req, res) => {
+app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
   const b = req.body ?? {}
   if (!b.date || !b.line || !b.task) return res.status(400).json({ error: 'date, line, task are required' })
   const role = await roleOfUser(b.actingAs)
@@ -117,7 +119,7 @@ app.post('/api/worklogs', auth, async (req, res) => {
     createdBy: actor(req),
   })
   res.json(row)
-})
+}))
 
 // A worklog produced inside a playbook run may only move toward approval when
 // that run has no open required steps left (approval steps themselves and
@@ -139,29 +141,18 @@ async function cancelPendingApprovalsForRun(runId) {
 }
 
 async function openRunStepsFor(worklogId, stampedRunId) {
-  const runs = await db.listRuns()
-  for (const r of runs) {
-    const steps = r?.steps
-    if (!Array.isArray(steps)) continue
-    const linked =
-      (stampedRunId && String(r.id) === String(stampedRunId)) ||
-      steps.some((s) => s && s.resultId === worklogId)
-    if (!linked) continue
-    const open = steps.filter(
-      (s) =>
-        s &&
-        s.type !== 'approval' &&
-        ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
-    )
-    return { runId: r.id, open: open.map((s) => s.label || s.id) }
-  }
-  return null
+  const r = stampedRunId != null ? await db.getRun(stampedRunId) : await db.findRunForWorklog(worklogId)
+  if (!r) return stampedRunId != null ? { runId: stampedRunId, open: ['linked run is unavailable'] } : null
+  if (r.status === 'abandoned') return { runId: r.id, open: ['run was abandoned'] }
+  const steps = Array.isArray(r.steps) ? r.steps : []
+  const open = steps.filter((s) => s.type !== 'approval' &&
+    !['done', 'not_applicable', 'conditional'].includes(s.status))
+  return { runId: r.id, open: steps.length ? open.map((s) => s.label || s.id) : ['run has not synced yet'] }
 }
 
-app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
+app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
-  const worklogs = await db.listWorklogs()
-  const wl = worklogs.find((w) => w.id === req.params.id)
+  const wl = await db.getWorklog(req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   if (wl.status !== 'draft' && wl.status !== 'rejected')
     return res.status(400).json({ error: `worklog is already ${wl.status}` })
@@ -188,12 +179,12 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
     requestedBy: actor(req),
     approver,
   })
-  await db.setWorklogStatus(wl.id, 'submitted')
+  if (!approval) return res.status(409).json({ error: 'duplicate_review' })
   res.json(approval)
-})
+}))
 
 // Persist the verified measurements that passed a decision's criteria.
-app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
+app.post('/api/worklogs/:id/verification', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const m = req.body?.measurements
   if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
@@ -216,10 +207,10 @@ app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
   const row = await db.mergeWorklogData(req.params.id, patch)
   if (!row) return res.status(404).json({ error: 'worklog not found' })
   res.json(row)
-})
+}))
 
 // Attach a corrective action to an EXISTING incident (instead of creating a new one).
-app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
+app.post('/api/worklogs/:id/corrective', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const b = req.body ?? {}
   if (!b.actionTaken) return res.status(400).json({ error: 'actionTaken is required' })
@@ -235,9 +226,9 @@ app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
   const row = await db.mergeWorklogData(req.params.id, patch)
   if (!row) return res.status(404).json({ error: 'worklog not found' })
   res.json(row)
-})
+}))
 
-app.post('/api/approvals/:id/decide', auth, async (req, res) => {
+app.post('/api/approvals/:id/decide', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const decision = String(req.body?.decision ?? '')
   if (decision !== 'APPROVED' && decision !== 'REJECTED') {
@@ -276,40 +267,45 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
   }
   const decided = await db.decideApproval(existing.id, decision, req.body?.comment)
   if (!decided || decided.status !== decision)
-    return res.status(409).json({ error: 'already_decided', detail: 'This review was decided by a concurrent request.' })
-  await db.setWorklogStatus(existing.worklogId, decision === 'APPROVED' ? 'approved' : 'rejected')
+    return res.status(409).json({ error: 'review_conflict', detail: 'This review was already decided or its evidence changed. Refresh and request a new review if needed.' })
   res.json(decided)
-})
+}))
 
-app.get('/api/processes', auth, async (_req, res) => {
+app.get('/api/processes', auth, asyncHandler(async (_req, res) => {
   res.json(await db.listProcesses())
-})
+}))
 
-app.post('/api/processes', auth, async (req, res) => {
+app.post('/api/processes', auth, asyncHandler(async (req, res) => {
   const { title, map } = req.body ?? {}
-  if (!title || !map?.steps?.length) return res.status(400).json({ error: 'title and map.steps are required' })
+  if (!title || !Array.isArray(map?.steps) || !map.steps.length ||
+      map.steps.some((s) => !s || typeof s.id !== 'string' || !['task', 'decision', 'approval'].includes(s.type)) ||
+      new Set(map.steps.map((s) => s.id)).size !== map.steps.length) return res.status(400).json({ error: 'title and map.steps are required' })
   res.json(await db.saveProcess({ title: String(title), map, createdBy: actor(req) }))
-})
+}))
 
-app.get('/api/processes/:id', auth, async (req, res) => {
+app.get('/api/processes/:id', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const row = await db.getProcess(req.params.id)
   if (!row) return res.status(404).json({ error: 'process not found' })
   res.json(row)
-})
+}))
 
-app.delete('/api/processes/:id', auth, async (req, res) => {
+app.delete('/api/processes/:id', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const ok = await db.deleteProcess(req.params.id)
   if (!ok) return res.status(404).json({ error: 'process not found' })
   res.json({ ok: true })
-})
+}))
 
 /* Process runs: one row per execution of a playbook, updated as steps progress. */
 
-app.post('/api/runs', auth, async (req, res) => {
-  const { processId, title, steps } = req.body ?? {}
+app.post('/api/runs', auth, asyncHandler(async (req, res) => {
+  const { processId, title } = req.body ?? {}
   if (!processId || !title) return res.status(400).json({ error: 'processId and title are required' })
+  const process = await db.getProcess(String(processId).match(/^[1-9]\d{0,8}$/) ? String(processId) : '0')
+  if (!process) return res.status(404).json({ error: 'process not found' })
+  const steps = process.map.steps.filter((s) => s.type !== 'decision')
+    .map((s) => ({ id: s.id, label: s.label, type: s.type, action: s.action, role: s.role, status: 'pending' }))
   // Ownership binds to the authenticated session (personas are a demo skin
   // and change mid-run — they must never break the sync lane).
   const run = await db.startRun({
@@ -322,7 +318,7 @@ app.post('/api/runs', auth, async (req, res) => {
   // reload can trust "the newest active" as the real state.
   const all = await db.listRuns()
   for (const r of all) {
-    if (r.status === 'active' && String(r.id) !== String(run.id)) {
+    if (r.status === 'active' && Number(r.id) < Number(run.id)) {
       // Three-way classification: real open work → abandoned (+ cancel its
       // reviews); everything done → completed; only sign-off outstanding →
       // stays ACTIVE awaiting approval (multi-pending is supported).
@@ -343,14 +339,13 @@ app.post('/api/runs', auth, async (req, res) => {
     }
   }
   res.json(run)
-})
+}))
 
-app.post('/api/runs/:id', auth, async (req, res) => {
+app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const b = req.body ?? {}
   {
-    const all = await db.listRuns()
-    const row = all.find((r) => String(r.id) === String(req.params.id))
+    const row = await db.getRun(req.params.id)
     if (!row) return res.status(404).json({ error: 'run not found' })
     if (row.startedBy && row.startedBy !== req.user.username)
       return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
@@ -362,9 +357,15 @@ app.post('/api/runs/:id', auth, async (req, res) => {
         b.steps.every(
           (s) =>
             s && typeof s === 'object' && typeof s.id === 'string' &&
-            (s.status === undefined || ['done', 'ready', 'blocked', 'skipped', 'pending', 'conditional', 'not_applicable'].includes(String(s.status))),
+            ['done', 'ready', 'blocked', 'skipped', 'pending', 'conditional', 'not_applicable'].includes(s.status),
         )
       if (!ok) return res.status(400).json({ error: 'invalid_steps' })
+      const fixed = (row.steps ?? []).filter((s) => s.type !== 'gate')
+      const incoming = Array.isArray(b.steps) ? b.steps : []
+      const sameDesign = fixed.every((s) => incoming.some((n) => n.id === s.id && n.type === s.type)) &&
+        incoming.every((n) => fixed.some((s) => s.id === n.id) || (n.type === 'gate' && n.id.startsWith('gate:'))) &&
+        new Set(incoming.map((s) => s.id)).size === incoming.length
+      if (!sameDesign) return res.status(400).json({ error: 'invalid_steps' })
     }
     if (b.status !== undefined && !['active', 'completed', 'abandoned'].includes(String(b.status)))
       return res.status(400).json({ error: 'invalid_status' })
@@ -378,18 +379,19 @@ app.post('/api/runs/:id', auth, async (req, res) => {
   if (!run) return res.status(404).json({ error: 'run not found' })
   if (b.status === 'abandoned') await cancelPendingApprovalsForRun(run.id)
   res.json(run)
-})
+}))
 
-app.get('/api/runs', auth, async (req, res) => {
+app.get('/api/runs', auth, asyncHandler(async (req, res) => {
+  if (req.query.processId && !/^[1-9]\d{0,8}$/.test(String(req.query.processId))) return res.status(400).json({ error: 'invalid_id' })
   res.json(await db.listRuns(req.query.processId ? String(req.query.processId) : undefined))
-})
+}))
 
 // Demo housekeeping: clear worklogs+approvals ('worklogs') or everything ('all').
-app.post('/api/admin/reset', auth, async (req, res) => {
+app.post('/api/admin/reset', auth, asyncHandler(async (req, res) => {
   const scope = req.body?.scope === 'all' ? 'all' : 'worklogs'
   await db.resetData(scope)
   res.json({ ok: true, scope })
-})
+}))
 
 /* ---------------- static ---------------- */
 
@@ -416,14 +418,12 @@ app.get('*', (_req, res) => {
   res.sendFile(path.join(dist, 'index.html'))
 })
 
-// Express 4 does not catch async throws — last-resort net so one bad request
-// can never take the process down.
+// Every async route and authentication middleware forwards failures here.
 app.use((err, _req, res, _next) => {
   console.error('request error:', err?.message ?? err)
-  if (!res.headersSent) res.status(500).json({ error: 'internal_error' })
-})
-process.on('unhandledRejection', (err) => {
-  console.error('unhandled rejection:', err?.message ?? err)
+  if (res.headersSent) return _next(err)
+  const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500
+  res.status(status).json({ error: status === 500 ? 'internal_error' : err.message })
 })
 
 app.listen(PORT, () => console.log(`[server] listening on :${PORT} (db: ${db.kind})`))

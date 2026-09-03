@@ -180,6 +180,8 @@ export function mountPanel(): void {
   host.id = HOST_ID
   document.body.appendChild(host)
   shadow = host.attachShadow({ mode: 'open' })
+  // Host polling must not detach the editor, steal focus or interrupt IME input.
+  shadow.addEventListener('focusout', () => scheduleRender())
   const style = document.createElement('style')
   style.textContent = CSS
   shadow.appendChild(style)
@@ -283,8 +285,12 @@ function renderStep(
     input.select()
     const commit = () => mapstore.humanEditStep(step.id, 'label', input.value.trim() || step.label)
     input.onkeydown = (e) => {
-      if (e.key === 'Enter') commit()
-      if (e.key === 'Escape') scheduleRender()
+      if (e.isComposing) return
+      if (e.key === 'Enter') input.blur()
+      if (e.key === 'Escape') {
+        input.onblur = null
+        input.blur()
+      }
     }
     input.onblur = commit
   }
@@ -320,8 +326,12 @@ function renderStep(
       input.focus()
       const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())
       input.onkeydown = (e) => {
-        if (e.key === 'Enter') commit()
-        if (e.key === 'Escape') scheduleRender()
+        if (e.isComposing) return
+        if (e.key === 'Enter') input.blur()
+        if (e.key === 'Escape') {
+          input.onblur = null
+          input.blur()
+        }
       }
       input.onblur = commit
     }
@@ -653,6 +663,9 @@ function drawEdges(flow: HTMLElement) {
 
 function render() {
   if (!shadow) return
+  const editing = shadow.activeElement
+  if (editing instanceof HTMLTextAreaElement ||
+      (editing instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(editing.type))) return
   const root = shadow.getElementById('root')
   if (!root) return
   root.innerHTML = ''
@@ -734,9 +747,10 @@ function render() {
         input.value = answerDrafts.get(ask.id) ?? ''
         input.oninput = () => answerDrafts.set(ask.id, input.value)
         input.onkeydown = (e) => {
-          if (e.key === 'Enter' && input.value.trim()) {
+          if (e.key === 'Enter' && !e.isComposing && input.value.trim()) {
             answerDrafts.delete(ask.id)
             asksStore.answerAsk(ask.id, input.value.trim())
+            input.blur()
           }
         }
         card.appendChild(input)

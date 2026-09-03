@@ -32,8 +32,9 @@ non-approver decisions, and edits to approved records.
 Proof: demo Scene 4; agent E2E audits reproduce every refusal.
 
 ## 4. Zero-API-key architecture
-The page ships tools, not a chatbot: no LLM key, no quota, no per-site AI
-cost. The brain is whatever agent the visitor already uses (ChatGPT, Gemini).
+The page ships tools without requiring a site-owned LLM API key or LLM
+backend. The visitor uses their own agent (ChatGPT, Gemini), whose usage
+limits and costs still apply.
 > *We built the stage and the hands. WebMCP lets every visitor bring their
 > own brain.*
 Proof: the site works identically from ChatGPT's browser and Chrome+Gemini.
@@ -68,10 +69,11 @@ input, handoffs and reviews also work on a phone's plain browser.** Decision
 branches stay agent-lane even on mobile — by design, not omission.
 
 ## 8. The human always decides
-Approval buttons are unforgeable page clicks the agent cannot press; saving
-to the library is human-only; auto-approve is a dial in the human's hands;
-the invitation utterance is the consent gate. Guidance fires when the human
-engages — the remote control stays in their pocket.
+The WebMCP toolset exposes proposals and pending approval cards; confirming
+a map or approving an action happens in the page UI. Auto-approve is an
+explicit UI option. These are interaction boundaries, not proof of human
+identity: browser automation can operate the same controls, and the demo
+persona switcher is not production authorization.
 
 ## 9. A drop-in layer, not an app
 One script tag + `Understudy.init()` gives any web app the journal, the
@@ -92,7 +94,6 @@ personas, and auto-created sign-off reviews. Deliberately roadmap:
 deadlines, notifications, reassignment — and cross-app runs, which is where
 WebMCP shines next: every adopting app exposes standard tools, so a playbook
 step can bind to *another app's* tool the same
-standard tools, so a playbook step can bind to *another app's* tool the same
 way `runs:` binds to this one's — the classic BPM connector problem
 dissolves into tool bindings.
 

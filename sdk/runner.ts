@@ -196,10 +196,16 @@ export function startHostAction(
   if (isAutoApprove() || name in BUILTIN_ACTIONS) {
     return executeCore(action, params, 'agent')
   }
+  const requestedMap = mapstore.getMap()
+  const requestedConfirmed = requestedMap?.confirmed
+  const requestedRole = host.actorRole()
   const actionId = requestApproval(action.name, params, () => {
     // The card may be approved long after it was requested — the world may
     // have moved (new playbook, prerequisites reopened). Revalidate now.
-    const gapNow = mapstore.prerequisiteGap(action.name)
+    if (mapstore.getMap() !== requestedMap || requestedMap?.confirmed !== requestedConfirmed || host.actorRole() !== requestedRole) {
+      return Promise.resolve({ ok: false, error: 'Stale approval: the process or acting role changed; request the action again.' })
+    }
+    const gapNow = force ? null : mapstore.prerequisiteGap(action.name)
     if (gapNow) {
       return Promise.resolve({
         ok: false,

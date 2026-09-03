@@ -31,12 +31,11 @@ records, then the tool takes over. Understudy's claim is different:
 **automation becomes something the human and the agent do together, at the
 same time, on the same screen.** The human keeps working while the map grows
 beside them; the human touches the map and the agent's next question changes.
-That simultaneity is exactly what WebMCP makes possible — and what nothing
-else provides.
+WebMCP gives this shared-page interaction an explicit tool contract.
 
 ## Why WebMCP
 
-This product cannot exist as a chatbot or a server-side MCP integration:
+WebMCP supports this product's shared-page interaction directly:
 
 - The agent must **see what the human is doing right now** in the UI — the
   journal is page state.
@@ -156,6 +155,11 @@ npm run dev        # builds sdk → public/understudy.js, starts Vite on :5173 (
 npm run build      # production build to dist/
 npm start          # serves dist/ + API from one process (production mode)
 ```
+
+Run `npm run check` for TypeScript and `npm test` for SDK, memory-store and
+HTTP regression tests. Set `TEST_DATABASE_URL` to a separate local test
+PostgreSQL database to run the same storage and HTTP checks against Postgres.
+The tests create records; do not point them at a production database.
 
 ## Deploy (Railway)
 

@@ -5,13 +5,16 @@ import * as mapstore from './mapstore'
 import * as host from './host'
 import { record } from './journal'
 import { preconditionFor } from './runner'
+import type { ProcessMap } from './types'
 
 let runId: string | null = null
 let completed = false
 let syncTimer: ReturnType<typeof setTimeout> | null = null
+let trackedMap: ProcessMap | null = null
+let writes: Promise<unknown> = Promise.resolve()
 
 export function currentRunId(): string | null {
-  return runId
+  return mapstore.getMap() === trackedMap && trackedMap?.confirmed ? runId : null
 }
 
 function snapshot() {
@@ -60,7 +63,7 @@ export function isRunComplete(): boolean {
 
 function sync() {
   const store = host.getProcessStore()
-  if (!runId || !store?.updateRun) return
+  if (!currentRunId() || !store?.updateRun) return
   const snap = snapshot()
   if (!snap) return
   const finishing = snap.isComplete && !completed
@@ -68,13 +71,18 @@ function sync() {
     completed = true
     record('user', 'map', `playbook run complete — all required steps handled`)
   }
-  void store
-    .updateRun(runId, {
+  const id = runId!
+  const seq = startSeq
+  const payload = structuredClone({
       steps: snap.steps,
       decisions: snap.decisions,
       deviations: snap.deviations,
-      status: snap.isComplete ? 'completed' : 'active',
+      status: snap.isComplete ? 'completed' as const : 'active' as const,
     })
+  writes = writes.catch(() => {}).then(() => {
+    if (seq !== startSeq || mapstore.getMap() !== trackedMap) return
+    return store.updateRun!(id, payload)
+  })
     .catch((err) => {
       if (!syncFailureLogged) {
         syncFailureLogged = true
@@ -88,6 +96,10 @@ function sync() {
 }
 
 function scheduleSync() {
+  if (trackedMap && (mapstore.getMap() !== trackedMap || !trackedMap.confirmed)) {
+    stopRunTracking()
+    return
+  }
   if (syncTimer) clearTimeout(syncTimer)
   // A finished run must not sit in the debounce window — a new run starting
   // meanwhile would retire it as abandoned instead of completed.
@@ -106,6 +118,10 @@ let subscribed = false
 let syncFailureLogged = false
 
 export function stopRunTracking(): void {
+  startSeq++
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = null
+  trackedMap = null
   runId = null
   completed = false
   syncFailureLogged = false
@@ -113,6 +129,8 @@ export function stopRunTracking(): void {
 
 /** Reattach to a run that already exists (page reload) instead of starting a new one. */
 export function resumeRunTracking(id: string): void {
+  stopRunTracking()
+  trackedMap = mapstore.getMap()
   runId = id
   completed = false
   if (!subscribed) {
@@ -125,12 +143,14 @@ let startSeq = 0
 
 export function startRunTracking(processId: string): void {
   const store = host.getProcessStore()
+  stopRunTracking()
   const seq = ++startSeq
   runId = null
   completed = false
   if (!store?.startRun) return
   const map = mapstore.getMap()
   if (!map) return
+  trackedMap = map
   if (!subscribed) {
     subscribed = true
     mapstore.subscribe(scheduleSync)

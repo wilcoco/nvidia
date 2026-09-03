@@ -1,5 +1,6 @@
 // Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
 import crypto from 'node:crypto'
+import { applySignoff, preserveSignoffs, reviewFingerprint, evidencePatch } from './runstate.js'
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex')
@@ -42,6 +43,7 @@ function memoryBackend() {
 
   return {
     kind: 'memory',
+    async close() {},
     async getSessionSecret() {
       return secret
     },
@@ -67,12 +69,18 @@ function memoryBackend() {
     async mergeWorklogData(id, patch) {
       const w = worklogs.find((x) => x.id === id)
       if (!w) return null
+      if (w.status === 'approved') throw Object.assign(new Error('approved_immutable'), { status: 409 })
       w.data = { ...(w.data ?? {}), ...patch }
       return w
     },
     async createApproval(a) {
-      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now() }
+      const w = worklogs.find((x) => x.id === a.worklogId)
+      if (!w || !['draft', 'rejected'].includes(w.status) ||
+          approvals.some((x) => x.worklogId === a.worklogId && x.status === 'PENDING')) return null
+      const linked = runs.find((r) => r.id === String(w.data?.runId))
+      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now(), reviewFingerprint: reviewFingerprint(linked) }
       approvals.unshift(row)
+      w.status = 'submitted'
       return row
     },
     async getWorklog(id) {
@@ -87,9 +95,20 @@ function memoryBackend() {
     async decideApproval(id, status, comment) {
       const a = approvals.find((x) => x.id === id)
       if (!a) return null
-      if (a.status !== 'PENDING') return a // conditional: losers see the settled state
+      if (a.status !== 'PENDING') return null
+      const subject = worklogs.find((x) => x.id === a.worklogId)
+      const linked = runs.find((r) => r.id === String(subject?.data?.runId))
+      if (status === 'APPROVED' && subject?.data?.runId != null &&
+          (!a.reviewFingerprint || a.reviewFingerprint !== reviewFingerprint(linked))) return null
       a.status = status
       a.comment = comment
+      const w = worklogs.find((x) => x.id === a.worklogId)
+      if (w && ['APPROVED', 'REJECTED'].includes(status)) {
+        w.status = status === 'APPROVED' ? 'approved' : 'rejected'
+        const run = runs.find((r) => r.id === String(w.data?.runId))
+        const patch = status === 'APPROVED' ? applySignoff(run, a) : null
+        if (patch) Object.assign(run, patch, { updatedAt: Date.now() })
+      }
       return a
     },
     async saveProcess(p) {
@@ -136,15 +155,36 @@ function memoryBackend() {
     async updateRun(id, patch) {
       const run = runs.find((x) => x.id === id)
       if (!run) return null
+      patch = preserveSignoffs(run, patch)
       if (patch.steps) run.steps = patch.steps
       if (patch.decisions) run.decisions = patch.decisions
       if (patch.status) run.status = patch.status
       if (patch.deviations !== undefined) run.deviations = patch.deviations
       run.updatedAt = Date.now()
+      for (const a of approvals) {
+        const w = worklogs.find((x) => x.id === a.worklogId)
+        if (a.status === 'PENDING' && String(w?.data?.runId) === run.id &&
+            a.reviewFingerprint !== reviewFingerprint(run)) {
+          a.status = 'CANCELLED'
+          a.comment = 'Evidence changed; a new review is required.'
+          if (w) {
+            w.status = 'draft'
+          }
+        }
+      }
+      for (const w of worklogs) {
+        if (String(w.data?.runId) === run.id && w.status === 'draft' && w.data.systemGenerated) {
+          w.data = { runId: run.id, systemGenerated: true, ...evidencePatch(run) }
+        }
+      }
       return run
     },
     async listRuns(processId) {
       return runs.filter((r) => !processId || r.processId === processId)
+    },
+    async getRun(id) { return runs.find((r) => r.id === String(id)) ?? null },
+    async findRunForWorklog(id) {
+      return runs.find((r) => r.steps.some((s) => s.resultId === id && s.action === 'log_work_item')) ?? null
     },
   }
 }
@@ -157,6 +197,18 @@ async function pgBackend(databaseUrl) {
     connectionString: databaseUrl,
     ssl: databaseUrl.includes('railway') ? { rejectUnauthorized: false } : undefined,
   })
+  async function transaction(fn) {
+    const client = await pool.connect()
+    try {
+      await client.query('BEGIN')
+      const value = await fn(client)
+      await client.query('COMMIT')
+      return value
+    } catch (err) {
+      await client.query('ROLLBACK')
+      throw err
+    } finally { client.release() }
+  }
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -194,6 +246,7 @@ async function pgBackend(databaseUrl) {
       deviations INT DEFAULT 0
     );
     ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS decisions JSONB DEFAULT '[]';
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_fingerprint TEXT;
   `)
 
   // Keep display roles in sync with the current neutral naming (idempotent).
@@ -202,25 +255,13 @@ async function pgBackend(databaseUrl) {
   // Every default account is seeded individually — a partial users table
   // (e.g. one row inserted first) must not suppress the rest.
   for (const u of seedRows()) {
-    const { rows: ex } = await pool.query('SELECT 1 FROM users WHERE username=$1', [u.username])
-    if (ex.length === 0) {
-      await pool.query('INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5)', [
-        u.username,
-        u.name,
-        u.role,
-        u.passHash,
-        u.salt,
-      ])
-    }
-  }
-  const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
-  if (rows[0].n === 0) {
-    for (const u of seedRows()) {
-      await pool.query(
-        'INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5)',
-        [u.username, u.name, u.role, u.passHash, u.salt],
-      )
-    }
+    await pool.query('INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING', [
+      u.username,
+      u.name,
+      u.role,
+      u.passHash,
+      u.salt,
+    ])
   }
 
   const wl = (r) => ({
@@ -237,6 +278,7 @@ async function pgBackend(databaseUrl) {
 
   return {
     kind: 'postgres',
+    close: () => pool.end(),
     // Session secret persists in the DB so logins survive redeploys/restarts.
     async getSessionSecret() {
       await pool.query(
@@ -274,19 +316,31 @@ async function pgBackend(databaseUrl) {
     },
     async mergeWorklogData(id, patch) {
       const { rows } = await pool.query(
-        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || $2::jsonb WHERE id=$1 RETURNING *`,
+        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || $2::jsonb WHERE id=$1 AND status <> 'approved' RETURNING *`,
         [id, JSON.stringify(patch)],
       )
-      return rows[0] ? wl(rows[0]) : null
+      if (rows[0]) return wl(rows[0])
+      const existing = await pool.query('SELECT status FROM worklogs WHERE id=$1', [id])
+      if (existing.rows[0]?.status === 'approved') throw Object.assign(new Error('approved_immutable'), { status: 409 })
+      return null
     },
     async createApproval(a) {
-      const { rows } = await pool.query(
-        `INSERT INTO approvals (worklog_id, requested_by, approver) VALUES ($1,$2,$3) RETURNING *`,
-        [a.worklogId, a.requestedBy, a.approver],
-      )
-      return ap(rows[0])
+      return transaction(async (client) => {
+        const { rows: work } = await client.query('SELECT status FROM worklogs WHERE id=$1 FOR UPDATE', [a.worklogId])
+        if (!work[0] || !['draft', 'rejected'].includes(work[0].status)) return null
+        const pending = await client.query("SELECT 1 FROM approvals WHERE worklog_id=$1 AND status='PENDING'", [a.worklogId])
+        if (pending.rows.length) return null
+        const subject = await client.query('SELECT data FROM worklogs WHERE id=$1', [a.worklogId])
+        const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1', [String(subject.rows[0]?.data?.runId ?? '')])
+        const { rows } = await client.query(
+          'INSERT INTO approvals (worklog_id, requested_by, approver, review_fingerprint) VALUES ($1,$2,$3,$4) RETURNING *',
+          [a.worklogId, a.requestedBy, a.approver, reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]))],
+        )
+        await client.query("UPDATE worklogs SET status='submitted' WHERE id=$1", [a.worklogId])
+        return ap(rows[0])
+      })
     },
-        async getWorklog(id) {
+    async getWorklog(id) {
       const { rows } = await pool.query('SELECT * FROM worklogs WHERE id=$1', [Number(id)])
       return rows[0] ? wl(rows[0]) : null
     },
@@ -299,11 +353,34 @@ async function pgBackend(databaseUrl) {
       return rows[0] ? ap(rows[0]) : null
     },
     async decideApproval(id, status, comment) {
-      const { rows } = await pool.query(
-        "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
-        [id, status, comment ?? null],
-      )
-      return rows[0] ? ap(rows[0]) : null
+      return transaction(async (client) => {
+        const before = await client.query('SELECT a.review_fingerprint,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
+        const linkedId = before.rows[0]?.data?.runId
+        if (status === 'APPROVED' && linkedId != null) {
+          // Legacy pending reviews have no evidence snapshot; require a fresh review.
+          if (!before.rows[0].review_fingerprint) return null
+          const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId ?? '')])
+          if (before.rows[0].review_fingerprint !== reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]))) return null
+        }
+        const { rows } = await client.query(
+          "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
+          [id, status, comment ?? null],
+        )
+        if (!rows[0]) return null
+        const approval = ap(rows[0])
+        if (['APPROVED', 'REJECTED'].includes(status)) {
+          const { rows: work } = await client.query('UPDATE worklogs SET status=$2 WHERE id=$1 RETURNING data',
+            [approval.worklogId, status === 'APPROVED' ? 'approved' : 'rejected'])
+          const linkedId = work[0]?.data?.runId
+          if (status === 'APPROVED' && linkedId != null) {
+            const { rows: linked } = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId)])
+            const patch = linked[0] && applySignoff(runRow(linked[0]), approval)
+            if (patch) await client.query('UPDATE process_runs SET steps=$2,status=$3,updated_at=now() WHERE id=$1',
+              [linked[0].id, JSON.stringify(patch.steps), patch.status])
+          }
+        }
+        return approval
+      })
     },
     async saveProcess(p) {
       const { rows } = await pool.query(
@@ -352,16 +429,42 @@ async function pgBackend(databaseUrl) {
       return runRow(rows[0])
     },
     async updateRun(id, patch) {
-      const { rows } = await pool.query(
-        `UPDATE process_runs SET
-           steps = COALESCE($2, steps),
-           status = COALESCE($3, status),
-           deviations = COALESCE($4, deviations),
-           decisions = COALESCE($5, decisions),
-           updated_at = now()
-         WHERE id=$1 RETURNING *`,
-        [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null, patch.deviations ?? null, patch.decisions ? JSON.stringify(patch.decisions) : null],
-      )
+      return transaction(async (client) => {
+        const current = await client.query('SELECT * FROM process_runs WHERE id=$1 FOR UPDATE', [id])
+        if (!current.rows[0]) return null
+        patch = preserveSignoffs(runRow(current.rows[0]), patch)
+        const { rows } = await client.query(
+          `UPDATE process_runs SET
+             steps = COALESCE($2, steps),
+             status = COALESCE($3, status),
+             deviations = COALESCE($4, deviations),
+             decisions = COALESCE($5, decisions),
+             updated_at = now()
+           WHERE id=$1 RETURNING *`,
+          [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null,
+           patch.deviations ?? null, patch.decisions ? JSON.stringify(patch.decisions) : null],
+        )
+        const updated = runRow(rows[0])
+        const cancelled = await client.query(`UPDATE approvals a SET status='CANCELLED', comment='Evidence changed; a new review is required.'
+          FROM worklogs w WHERE a.worklog_id=w.id AND w.data->>'runId'=$1 AND a.status='PENDING'
+          AND (a.review_fingerprint IS NULL OR a.review_fingerprint<>$2) RETURNING a.worklog_id`,
+          [String(id), reviewFingerprint(updated)])
+        for (const row of cancelled.rows) {
+          await client.query("UPDATE worklogs SET status='draft' WHERE id=$1 AND status<>'approved'", [row.worklog_id])
+        }
+        await client.query(`UPDATE worklogs SET data=jsonb_build_object('runId',data->'runId','systemGenerated',true) || $2::jsonb
+          WHERE data->>'runId'=$1 AND data->>'systemGenerated'='true' AND status='draft'`,
+          [String(id), JSON.stringify(evidencePatch(updated))])
+        return updated
+      })
+    },
+    async getRun(id) {
+      const { rows } = await pool.query('SELECT * FROM process_runs WHERE id::text=$1', [String(id)])
+      return rows[0] ? runRow(rows[0]) : null
+    },
+    async findRunForWorklog(id) {
+      const { rows } = await pool.query('SELECT * FROM process_runs WHERE steps @> $1::jsonb ORDER BY id DESC LIMIT 1',
+        [JSON.stringify([{ action: 'log_work_item', resultId: id }])])
       return rows[0] ? runRow(rows[0]) : null
     },
     async listRuns(processId) {

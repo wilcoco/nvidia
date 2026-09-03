@@ -37,8 +37,8 @@ process enforceable.
   mobile answer: mobile browsers do not support WebMCP today, so processes
   are created and judged with the agent on desktop — while assignees' input,
   handoffs and reviews still work on a phone's plain browser.
-- The human always decides: unforgeable, persona-scoped approval clicks,
-  role-gated actions, human-only saves, an auto-approve dial.
+- Explicit review controls: persona-scoped approval UI, role-gated actions,
+  UI-confirmed saves, and an auto-approve option. See the demo trust model below.
 - It is a layer: one script tag attaches it to a second, framework-free page.
 
 (Full list with proof points: `docs/KEY_STRENGTHS.md`.)
@@ -80,18 +80,16 @@ finds the matching playbook (with confidence and reasons), and joins the run:
   steps, deviations). Improvement stays human-verified: the agent proposes a
   revision from what the runs show, and confirming it saves a new version.
 
-**What people and agents can do together that was difficult or impossible
-before:** an agent could never *watch you work* on the web — it saw pixels,
-not meaning. With WebMCP the page gives the agent structured eyes and hands,
-so for the first time a human and an agent can co-author an enforceable
-business process from live work: the human works and answers; the agent
-observes, interviews, and structures; the human corrects; the runtime then
-assigns, gates and signs off the next runs. None of that lane existed
-before — agents could only be told about work, never apprenticed to it.
+**What people and agents can do together:** the page gives the agent
+structured observations and named actions. The human works and answers;
+the agent observes, interviews, and structures; the human corrects the map;
+the runtime then assigns steps, checks evidence and routes the next run
+for sign-off. WebMCP makes these interactions available through the page's
+explicit tool contract while both participants share the same workspace.
 
 ## Why WebMCP makes this possible
 
-This product cannot exist as a chatbot or a server-side integration:
+WebMCP supports this product's shared-page interaction directly:
 
 - The agent must see what the human is doing *right now* — the journal and
   live form context are page state, exposed as tools instead of guessed from
@@ -183,7 +181,8 @@ know: unknown personas cannot write, approvers must be existing Reviewers
 and never the author, runs are updated only by their owner, and run/step
 payloads are shape-validated. Production hardening (real per-user sessions,
 server-side progress recomputation) is the first item of the operations
-roadmap above.
+roadmap above. UI approval is an interaction safeguard, not an unforgeable
+human-presence check: browser automation can click the same controls.
 
 ## What's new vs. prior work
 

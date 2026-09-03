@@ -228,10 +228,9 @@ export function loadSavedMap(
   let linked = 0
   for (const ev of actionHistory) {
     if (ev.consumed || ev.ts < cutoff) continue
-    const step = map.steps.find((s) => s.action === ev.action && !s.done)
+    // Reuse the same path and evidence checks as live completion.
+    const step = markActionDone(ev.action, ev.resultId, 'user')
     if (step) {
-      step.done = true
-      if (ev.resultId) step.resultId = ev.resultId
       ev.consumed = true
       linked++
     }
@@ -725,6 +724,10 @@ export function humanToggleStepDone(
       step.completedAt = Date.now()
       if (values && Object.keys(values).length) step.resultData = values
     } else if (step && step.done) {
+      // A new submission needs new decisions, even while its old review is pending.
+      const idx = map!.steps.findIndex((s) => s.id === step.id)
+      const downstream = new Set(map!.steps.slice(idx).map((s) => s.id))
+      for (const d of map!.decisions ?? []) if (downstream.has(d.stepId)) d.invalidated = true
       step.completedBy = undefined
       step.completedAt = undefined
       step.resultData = undefined
@@ -761,7 +764,7 @@ export function humanToggleStepDone(
       const resetDecisions: string[] = []
       for (const s of map.steps) {
         const i = idx.get(s.id) ?? 0
-        if (i < to || i >= from) continue
+        if (i < to || i > from) continue
         if (s.type !== 'decision' && (s.done || s.naReason)) {
           s.done = false
           delete s.naReason
