@@ -13,7 +13,7 @@ RUN_BUILD=5d925a8 \
 VIDEO_BUILD=1a9140b \
 VIDEO_URL=https://youtu.be/kKhdmuNePNM \
 VALIDATION_SUMMARY='check PASS; base 70/70; strict Chrome 1/1' \
-npm run release:manifest > qa-evidence/releases/$(git rev-parse --short=7 HEAD)-manifest.md
+npm run --silent release:manifest > qa-evidence/releases/$(git rev-parse --short=7 HEAD)-manifest.md
 ```
 
 `RUN_BUILD` is deliberately separate from the release commit. A run from an
