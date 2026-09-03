@@ -159,3 +159,36 @@ test('a confirmed revision starts with fresh work instead of inheriting complete
   assert.equal(map.getMap().steps[0].resultData, undefined)
   assert.equal(map.getMap().steps[0].detail, 'Record the newly discovered preparation step.')
 })
+
+
+test('retry history and problem reports survive restore without becoming current evidence', async () => {
+ const {map,host,sync}=fixture(); let persisted
+ const design={title:'history',steps:[step('work'),step('check',{type:'decision',next:[{to:'repair'},{to:'approve'}]}),step('repair',{next:[{to:'work'}]}),step('approve',{type:'approval'})]}
+ host.setProcessStore({startRun:async()=>({id:'history-run'}),updateRun:async(_id,p)=>{persisted=structuredClone(p)}})
+ map.loadSavedMap(design);sync.startRunTracking('history');await tick()
+ map.humanToggleStepDone('work',{defects:3})
+ map.resolveDecision('check','repair','failed')
+ map.reportProblem('repair','Alignment step missing')
+ map.humanToggleStepDone('repair',{adjustment:'Aligned fixture'})
+ await sync.flushRun()
+ assert.equal(map.getMap().steps.find(s=>s.id==='work').resultData,undefined)
+ assert.equal(map.getMap().steps.find(s=>s.id==='repair').resultData,undefined)
+ assert.ok(persisted.events.some(e=>e.values?.adjustment==='Aligned fixture'))
+ assert.ok(persisted.events.some(e=>e.kind==='problem' && e.note==='Alignment step missing'))
+ sync.stopRunTracking();map.loadSavedMap(design);map.restoreRunState(persisted.steps,persisted.decisions,persisted.events)
+ assert.ok(map.getMap().events.some(e=>e.values?.defects===3))
+ assert.equal(map.progress().get('work'),'ready')
+ map.reopenAsDraft();map.humanConfirmMap()
+ assert.equal(map.getMap().events.length,0)
+})
+
+
+test('a middle approval freezes its evidence while allowing downstream work', () => {
+ const {map}=fixture()
+ map.loadSavedMap({title:'middle approval',steps:[step('work'),step('approve',{type:'approval',action:'approve_review'}),step('handoff')]})
+ map.humanToggleStepDone('work',{ok:true})
+ map.markActionDone('approve_review','review-1','user')
+ assert.equal(map.humanToggleStepDone('work'),false)
+ assert.equal(map.humanToggleStepDone('handoff',{recipient:'Park'}),true)
+ assert.equal(map.getMap().events.filter(e=>e.id==='approval:review-1').length,1)
+})

@@ -11,11 +11,11 @@
  */
 import { record } from './journal'
 import { startCapture } from './capture'
-import { mountPanel, openPanel, getInteractionState } from './panel'
+import { mountPanel, openPanel, closePanel, getInteractionState } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, getRunStartError } from './runsync'
+import { loadSavedMap, reopenAsDraft, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
+import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, getRunStartError, getRunSyncError, flushRun } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -59,12 +59,12 @@ function loadProcess(
   meta?: {
     id?: string
     createdBy?: string
-    resume?: { runId: string; steps?: unknown[]; decisions?: unknown[] }
+    resume?: { runId: string; steps?: unknown[]; decisions?: unknown[]; events?: ProcessMap['events'] }
   },
 ): void {
   loadSavedMap(map, meta?.resume ? { ...meta, quiet: true } : meta)
   if (meta?.resume?.runId) {
-    const applied = restoreRunState((meta.resume.steps ?? []) as never, meta.resume.decisions)
+    const applied = restoreRunState((meta.resume.steps ?? []) as never, meta.resume.decisions, meta.resume.events)
     resumeRunTracking(meta.resume.runId)
     record(
       'user',
@@ -80,6 +80,13 @@ function loadProcess(
 function unloadProcess(): void {
   stopRunTracking()
   clearMap('user')
+}
+
+function draftRevision(map: ProcessMap, sourceId: string): void {
+  stopRunTracking()
+  loadSavedMap(map, {id: sourceId, quiet: true})
+  reopenAsDraft()
+  openPanel()
 }
 
 /** Host apps report a successful semantic action (e.g. the human saved a form),
@@ -145,6 +152,7 @@ window.addEventListener('beforeunload', (e) => {
   log,
   registerAction,
   loadProcess,
+  draftRevision,
   unloadProcess,
   notifyAction,
   getLoadedProcess,
@@ -153,8 +161,11 @@ window.addEventListener('beforeunload', (e) => {
   reportProblem,
   currentRunId,
   getRunStartError,
+  getRunSyncError,
+  flushRun,
   isRunComplete,
   openPanel,
+  closePanel,
   getInteractionState,
   getPendingDecision: () => pendingDecision(),
 }

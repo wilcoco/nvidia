@@ -77,7 +77,7 @@ const tools: ToolDef[] = [
   {
     name: 'get_recent_actions',
     description:
-      "The action journal: what the human (and you) did in this app, in order — clicks, form submissions, app-level events, and the human's answers to your questions. Pass the cursor from the previous call to get only new entries.",
+      "Recent page actions and persistent run_events (completed attempts, retries and reported problems). Page entries use the numeric cursor; run_events are the loaded run's recent durable history and remain available after reload. Use their stable ids to deduplicate. Read reported problems before proposing a draft revision.",
     inputSchema: schema({
       since: { type: 'number', description: 'Return entries with id greater than this (default 0)' },
       limit: { type: 'number', description: 'Max entries (default 50)' },
@@ -86,6 +86,7 @@ const tools: ToolDef[] = [
       const entries = journal.since(Number(args.since ?? 0), Number(args.limit ?? 50))
       return {
         entries,
+        run_events: (mapstore.getMap()?.events ?? []).slice(-Number(args.limit ?? 50)),
         cursor: entries.length ? entries[entries.length - 1].id : Number(args.since ?? 0),
       }
     },

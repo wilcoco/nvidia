@@ -29,11 +29,16 @@ export function openPanel(): void {
   render()
 }
 
+export function closePanel(): void {
+  collapsed = true
+  render()
+}
+
 const CSS = `
 :host { all: initial; }
 * { box-sizing: border-box; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
 .panel {
-  position: fixed; top: 0; right: 0; height: 100vh; height: 100dvh; width: min(360px, 86vw); z-index: 2147483000;
+  position: fixed; top: 0; right: 0; height: 100vh; height: 100dvh; width: min(var(--understudy-panel-width, 420px), 86vw); z-index: 2147483000;
   background: #0f172a; color: #e2e8f0; display: flex; flex-direction: column;
   box-shadow: -4px 0 24px rgba(0,0,0,.35); font-size: 13px;
 }
@@ -65,7 +70,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step:hover { border-color: rgba(148,163,184,.25); }
 .step .metarow { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .step .metarow .spacer { flex: 1; }
-.step.done { opacity: .55; }
+.step.done { opacity: .9; }
 .step.ready { border-color: rgba(251,191,36,.55); background: #1a2130; box-shadow: 0 0 0 1px rgba(251,191,36,.12), 0 0 20px -8px rgba(251,191,36,.35); }
 .step.skipped { border-color: rgba(239,68,68,.45); }
 .step.conditional { border-style: dashed; }
@@ -178,6 +183,7 @@ footer input { accent-color: #3b82f6; }
 let shadow: ShadowRoot | null = null
 // On phones the panel would cover ~86% of the screen — start collapsed there.
 let collapsed = typeof window !== 'undefined' && window.innerWidth < 560
+let expanded = false
 let seenApprovalCount = 0
 let seenQuestionCount = 0
 // In-progress free-text answers, keyed by ask id — the 5s host-state poll
@@ -723,6 +729,16 @@ function render() {
   status.appendChild(dot)
   status.appendChild(el('span', undefined, webmcpStatus === 'connected' ? 'WebMCP ready' : 'WebMCP unavailable'))
   header.appendChild(status)
+  if (window.innerWidth >= 1000) {
+    const widen = el('button', 'close', expanded ? '⇥' : '⇤')
+    widen.setAttribute('aria-label', expanded ? 'Use standard process width' : 'Expand process view')
+    widen.onclick = () => {
+      expanded = !expanded
+      document.documentElement.style.setProperty('--understudy-panel-width', expanded ? '560px' : '420px')
+      render()
+    }
+    header.appendChild(widen)
+  }
   const close = el('button', 'close', '—')
   close.setAttribute('aria-label', 'Minimize conversation panel')
   close.onclick = () => {

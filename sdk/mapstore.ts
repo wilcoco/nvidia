@@ -1,4 +1,4 @@
-import type { FieldDef, MapEdit, ProcessMap, Step, StepType } from './types'
+import type { FieldDef, MapEdit, ProcessMap, Step, StepType, RunEvent } from './types'
 import { record } from './journal'
 import * as host from './host'
 import { onGapResolved } from './asks'
@@ -72,9 +72,20 @@ function actingPersona(): string | undefined {
 
 /** An assignee flags that their step cannot proceed — journaled for the agent
  *  and the rest of the team; the step stays open. */
+function appendRunEvent(step: Step, kind: RunEvent['kind'], note?: string): void {
+  if (!map?.confirmed) return
+  const signed = step.type === 'approval' && step.resultId && kind === 'completed'
+  const id = signed ? `approval:${step.resultId}` : globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  if (signed) kind = 'approval'
+  const event: RunEvent = { id, ts: Date.now(), kind, stepId: step.id, label: step.label, actor: actingPersona(), note,
+    ...(kind === 'completed' ? { values: structuredClone(step.resultData ?? {}), resultId: step.resultId } : {}) }
+  ;(map.events ??= []).push(event)
+}
+
 export function reportProblem(stepId: string, note: string): void {
   const step = map?.steps.find((s) => s.id === stepId)
-  if (!step) return
+  if (!step || !note.trim()) return
+  appendRunEvent(step, 'problem', note.trim())
   const persona = actingPersona()
   record(
     'user',
@@ -157,6 +168,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
     // A revised design is ready for a NEW execution. Do not present the
     // previous run's completed tasks or decisions as this version's work.
     current.decisions = []
+    current.events = []
     current.steps = current.steps.map((step) => ({ ...step, done: false, naReason: undefined, resultId: undefined, completedBy: undefined, completedAt: undefined, resultData: undefined }))
     current.confirmed = true
     current.saving = false
@@ -177,6 +189,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
       saveError: undefined,
       confirmed: true,
       decisions: [],
+      events: [],
       resolvedGaps: current.resolvedGaps,
       steps: current.steps.map((s) => ({
         ...s,
@@ -230,6 +243,7 @@ export function loadSavedMap(
     sourceProcessId: meta?.id ?? loaded.sourceProcessId,
     confirmed: true,
     decisions: [],
+    events: [],
     steps: loaded.steps.map((s) => ({
       ...s,
       done: false,
@@ -348,6 +362,7 @@ export function markActionDone(
   const persona = actingPersona()
   step.completedBy = persona ?? step.completedBy
   step.completedAt = Date.now()
+  appendRunEvent(step, 'completed')
   record(by, 'map', `completed step "${step.label}"${persona ? ` (by ${persona})` : ''}`)
   notify()
   return step
@@ -583,8 +598,12 @@ export function resolveDecision(
       const i = idx.get(s.id) ?? 0
       if (i < to || i > from) continue
       if (s.type !== 'decision' && (s.done || s.naReason)) {
+        appendRunEvent(s, 'reopened', `Retry from ${step.label}`)
         s.done = false
         delete s.naReason
+        s.completedBy = undefined
+        s.completedAt = undefined
+        s.resultData = undefined
         reopened.push(s.label)
       }
       if (s.id !== stepId && (s.next?.length ?? 0) > 1) {
@@ -659,6 +678,12 @@ export function humanToggleStepDone(
       return false
     }
     if (step && step.done) {
+      const index = map!.steps.indexOf(step)
+      if (map!.steps.slice(index + 1).some((s) => s.type === 'approval' && s.done)) {
+        record('user', 'map', 'This work has already been signed off. Start a new execution to record a correction.')
+        notify()
+        return false
+      }
       // Un-completing is reserved for the persona who did it (or its owning role).
       const persona = actingPersona()
       const allowed = !step.completedBy || step.completedBy === persona || (step.role && role && step.role === role)
@@ -758,6 +783,7 @@ export function humanToggleStepDone(
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return false
   step.done = !step.done
+  appendRunEvent(step, step.done ? 'completed' : 'reopened')
   pushEdit({ stepId, field: 'done', to: String(step.done) })
   {
     const persona = actingPersona()
@@ -787,6 +813,7 @@ export function humanToggleStepDone(
         const i = idx.get(s.id) ?? 0
         if (i < to || i > from) continue
         if (s.type !== 'decision' && (s.done || s.naReason)) {
+          appendRunEvent(s, 'reopened', `Retry from ${step.label}`)
           s.done = false
           delete s.naReason
           s.completedBy = undefined
@@ -962,6 +989,7 @@ export function restoreRunState(
     resultData?: unknown
   }>,
   decisions?: unknown[],
+  events?: RunEvent[],
 ): number {
   if (!map) return 0
   let applied = 0
@@ -983,6 +1011,7 @@ export function restoreRunState(
   if (Array.isArray(decisions) && decisions.length) {
     map.decisions = decisions as typeof map.decisions
   }
+  map.events = structuredClone(events ?? [])
   notify()
   return applied
 }

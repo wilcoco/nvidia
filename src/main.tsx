@@ -263,3 +263,4 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 // step, the pending review is created automatically.
 window.addEventListener('understudy:mapchange', () => setTimeout(() => void store.autoSyncApproval(), 0))
 window.addEventListener('understudy:host-state', () => setTimeout(() => void store.autoSyncApproval(), 0))
+window.addEventListener('understudy:run-state', () => setTimeout(() => void store.autoSyncApproval(), 0))

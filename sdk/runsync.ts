@@ -13,8 +13,17 @@ let syncTimer: ReturnType<typeof setTimeout> | null = null
 let trackedMap: ProcessMap | null = null
 let writes: Promise<unknown> = Promise.resolve()
 let startError: string | null = null
+let syncError: string | null = null
 
 export function getRunStartError(): string | null { return startError }
+export function getRunSyncError(): string | null { return syncError }
+export async function flushRun(): Promise<void> {
+  if (syncTimer) clearTimeout(syncTimer)
+  syncTimer = null
+  sync()
+  await writes
+  if (syncError) throw new Error(syncError)
+}
 
 function announceRunState() {
   if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('understudy:run-state'))
@@ -58,6 +67,7 @@ function snapshot() {
   return {
     steps: outSteps,
     decisions: map.decisions ?? [],
+    events: map.events ?? [],
     deviations: steps.filter((s) => s.status === 'skipped' || s.naReason).length,
     isComplete: steps.length > 0 && open.length === 0 && !gate,
   }
@@ -83,14 +93,21 @@ function sync() {
   const payload = structuredClone({
       steps: snap.steps,
       decisions: snap.decisions,
+      events: snap.events,
       deviations: snap.deviations,
       status: snap.isComplete ? 'completed' as const : 'active' as const,
     })
   writes = writes.catch(() => {}).then(() => {
     if (seq !== startSeq || mapstore.getMap() !== trackedMap) return
-    return store.updateRun!(id, payload)
+    return store.updateRun!(id, payload).then(() => {
+      syncError = null
+      syncFailureLogged = false
+      announceRunState()
+    })
   })
     .catch((err) => {
+      syncError = `Progress could not be saved: ${err instanceof Error ? err.message : err}`
+      announceRunState()
       if (!syncFailureLogged) {
         syncFailureLogged = true
         record(
@@ -133,6 +150,7 @@ export function stopRunTracking(): void {
   completed = false
   syncFailureLogged = false
   startError = null
+  syncError = null
   announceRunState()
 }
 

@@ -66,6 +66,7 @@ export interface FieldDef {
 }
 
 export interface ProcessMap {
+  events?: RunEvent[]
   title: string
   steps: Step[]
   /** The playbook's own data contract: what must be captured when following it. */
@@ -94,6 +95,18 @@ export interface ProcessMap {
     invalidated?: boolean
   }>
   version?: number
+}
+
+export interface RunEvent {
+  id: string
+  ts: number
+  kind: 'completed' | 'reopened' | 'problem' | 'approval' | 'deviation'
+  stepId: string
+  label: string
+  actor?: string
+  note?: string
+  values?: Record<string, unknown>
+  resultId?: string
 }
 
 export interface MapEdit {
@@ -163,6 +176,7 @@ export interface ProcessStoreAdapter {
     payload: {
       steps: unknown[]
       decisions?: unknown[]
+      events?: RunEvent[]
       status?: 'active' | 'completed'
       deviations?: number
     },

@@ -3,6 +3,7 @@ import crypto from 'node:crypto'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDb, verifyPassword } from './db.js'
+import { approvalGate, reviewFingerprint } from './runstate.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 8787)
@@ -121,11 +122,8 @@ app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
   res.json(row)
 }))
 
-// A worklog produced inside a playbook run may only move toward approval when
-// that run has no open required steps left (approval steps themselves and
-// explicitly resolved deviations excluded). The engine syncs live statuses
-// into the run row; the server enforces them here so UI clicks and direct
-// API calls obey the same gate as agent tools.
+// A review signs off its own predecessor work on the active route. Work after
+// that approval remains pending until the reviewer hands it to the next owner.
 // Single-active-run policy: an abandoned run's paperwork must not stay
 // approvable — its pending reviews are cancelled with a reason.
 async function cancelPendingApprovalsForRun(runId) {
@@ -140,14 +138,11 @@ async function cancelPendingApprovalsForRun(runId) {
   }
 }
 
-async function openRunStepsFor(worklogId, stampedRunId) {
+async function openRunStepsFor(worklogId, stampedRunId, stepId) {
   const r = stampedRunId != null ? await db.getRun(stampedRunId) : await db.findRunForWorklog(worklogId)
   if (!r) return stampedRunId != null ? { runId: stampedRunId, open: ['linked run is unavailable'] } : null
-  if (r.status === 'abandoned') return { runId: r.id, open: ['run was abandoned'] }
-  const steps = Array.isArray(r.steps) ? r.steps : []
-  const open = steps.filter((s) => s.type !== 'approval' &&
-    !['done', 'not_applicable', 'conditional'].includes(s.status))
-  return { runId: r.id, open: steps.length ? open.map((s) => s.label || s.id) : ['run has not synced yet'] }
+  const process = await db.getProcess(r.processId)
+  return { runId: r.id, ...approvalGate(r, process?.map, stepId) }
 }
 
 app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
@@ -156,7 +151,7 @@ app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   if (wl.status !== 'draft' && wl.status !== 'rejected')
     return res.status(400).json({ error: `worklog is already ${wl.status}` })
-  const linked = await openRunStepsFor(wl.id, wl.data?.runId)
+  const linked = await openRunStepsFor(wl.id, wl.data?.runId, req.body?.stepId ?? wl.data?.approvalStepId)
   if (linked && linked.open.length > 0) {
     return res.status(409).json({
       error: 'process_incomplete',
@@ -178,6 +173,8 @@ app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
     worklogId: wl.id,
     requestedBy: actor(req),
     approver,
+    stepId: linked?.stepId,
+    scope: linked?.scope,
   })
   if (!approval) return res.status(409).json({ error: 'duplicate_review' })
   res.json(approval)
@@ -257,7 +254,7 @@ app.post('/api/approvals/:id/decide', auth, asyncHandler(async (req, res) => {
   }
   if (decision === 'APPROVED') {
     const wlRow = await db.getWorklog(existing.worklogId)
-    const linked = await openRunStepsFor(existing.worklogId, wlRow?.data?.runId)
+    const linked = await openRunStepsFor(existing.worklogId, wlRow?.data?.runId, existing.stepId)
     if (linked && linked.open.length > 0) {
       return res.status(409).json({
         error: 'process_incomplete',
@@ -349,6 +346,9 @@ app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
     if (!row) return res.status(404).json({ error: 'run not found' })
     if (row.startedBy && row.startedBy !== req.user.username)
       return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
+    if (b.decisions !== undefined && (!Array.isArray(b.decisions) || b.decisions.some((d) =>
+      !d || typeof d.stepId !== 'string' || typeof d.to !== 'string')))
+      return res.status(400).json({error: 'invalid_decisions'})
     if (b.steps !== undefined) {
       if (Array.isArray(b.steps) && b.steps.length === 0 && Array.isArray(row.steps) && row.steps.length > 0)
         return res.status(400).json({ error: 'invalid_steps', detail: 'A run\u2019s recorded steps cannot be cleared.' })
@@ -367,14 +367,33 @@ app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
         new Set(incoming.map((s) => s.id)).size === incoming.length
       if (!sameDesign) return res.status(400).json({ error: 'invalid_steps' })
     }
+    if (b.steps !== undefined || b.decisions !== undefined) {
+      const incoming = b.steps ?? row.steps
+      const process = await db.getProcess(row.processId)
+      const design = process?.map?.steps ?? row.steps
+      const lastSigned = design.reduce((last, s, i) =>
+        s.type === 'approval' && row.steps.some((r) => r.id === s.id && r.status === 'done' && r.resultId) ? i : last, -1)
+      if (lastSigned >= 0) {
+        const scope = design.slice(0, lastSigned).flatMap((s) => [s.id, `gate:${s.id}`])
+        if (reviewFingerprint(row, scope) !== reviewFingerprint({...row, steps: incoming, decisions: b.decisions ?? row.decisions}, scope))
+          return res.status(409).json({error: 'signed_work_immutable', detail: 'Work already signed off cannot be changed in this run. Start a new execution to record a correction.'})
+      }
+    }
     if (b.status !== undefined && !['active', 'completed', 'abandoned'].includes(String(b.status)))
       return res.status(400).json({ error: 'invalid_status' })
+    if (b.events !== undefined && (!Array.isArray(b.events) || b.events.length > 5000 || b.events.some((e) =>
+      !e || typeof e.id !== 'string' || e.id.length > 100 || !Number.isFinite(e.ts) ||
+      !['completed', 'reopened', 'problem', 'approval', 'deviation'].includes(e.kind) ||
+      typeof e.stepId !== 'string' || typeof e.label !== 'string' ||
+      (e.note !== undefined && (typeof e.note !== 'string' || e.note.length > 10000)))))
+      return res.status(400).json({ error: 'invalid_events' })
   }
   const run = await db.updateRun(req.params.id, {
     steps: Array.isArray(b.steps) ? b.steps : undefined,
     decisions: Array.isArray(b.decisions) ? b.decisions : undefined,
     status: typeof b.status === 'string' ? b.status : undefined,
     deviations: typeof b.deviations === 'number' ? b.deviations : undefined,
+    events: b.events,
   })
   if (!run) return res.status(404).json({ error: 'run not found' })
   if (b.status === 'abandoned') await cancelPendingApprovalsForRun(run.id)

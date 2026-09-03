@@ -20,6 +20,7 @@ interface UnderstudyFieldDef {
 }
 
 interface UnderstudyProcessMap {
+  events?: import('../sdk/types').RunEvent[]
   title: string
   steps: Array<{
     id: string
@@ -84,6 +85,7 @@ interface UnderstudyApi {
         payload: {
       steps: unknown[]
       decisions?: unknown[]
+      events?: import('../sdk/types').RunEvent[]
       status?: 'active' | 'completed'
       deviations?: number
     },
@@ -94,16 +96,20 @@ interface UnderstudyApi {
   log(label: string, detail?: unknown): void
   registerAction(action: UnderstudyHostAction): void
   loadProcess(map: UnderstudyProcessMap, meta?: { id?: string; createdBy?: string
-      resume?: { runId: string; steps?: unknown[]; decisions?: unknown[] }
+      resume?: { runId: string; steps?: unknown[]; decisions?: unknown[]; events?: import('../sdk/types').RunEvent[] }
     }): void
   notifyAction(name: string, resultId?: string): void
+  draftRevision?(map: UnderstudyProcessMap, sourceId: string): void
   unloadProcess?(): void
   currentRunId?(): string | null
   getRunStartError?(): string | null
+  getRunSyncError?(): string | null
+  flushRun?(): Promise<void>
   isRunComplete?(): boolean
   getProgress?(): Array<{ id: string; label: string; type: string; role?: string; fields?: string[]; status?: string; done?: boolean }>
   completeStep?(stepId: string, values?: Record<string, unknown>): { ok: boolean; error?: string }
   openPanel?(): void
+  closePanel?(): void
   getInteractionState?(): { connected: boolean; questions: number; approvals: number }
   getPendingDecision?(): { id: string; label: string } | null
   reportProblem?(stepId: string, note: string): void

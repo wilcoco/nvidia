@@ -36,6 +36,7 @@ export interface Worklog {
 }
 
 export interface Approval {
+  stepId?: string
   id: string
   worklogId: string
   requestedBy: string
@@ -79,6 +80,9 @@ export interface PlaybookMatch {
 }
 
 export interface AppState {
+  captureDraft: { task: string; sample: boolean }
+  recentRuns: ProcessRun[]
+  reviewSync: { runId: string; stepId: string; status: 'requesting' | 'ready' | 'error'; message?: string } | null
   me: UserInfo | null
   authChecked: boolean
   actingAs: string
@@ -88,11 +92,14 @@ export interface AppState {
   processes: ProcessSummary[]
   draft: DraftContext
   dismissedSuggestions: string[]
-  runStarted: { title: string; version?: number; next?: string } | null
+  runStarted: { title: string; version?: number; next?: string; resumed?: boolean } | null
   captureContext: { id: string; task: string; creationRequested?: boolean } | null
 }
 
 let state: AppState = {
+  captureDraft: {task: '', sample: false},
+  recentRuns: [],
+  reviewSync: null,
   me: null,
   authChecked: false,
   actingAs: '',
@@ -110,6 +117,10 @@ const listeners = new Set<() => void>()
 
 function commit(patch: Partial<AppState>) {
   state = { ...state, ...patch }
+  if ('captureDraft' in patch || 'captureContext' in patch || 'draft' in patch) {
+    try { sessionStorage.setItem('understudy.workspace', JSON.stringify({username: state.me?.username,
+      captureDraft: state.captureDraft, captureContext: state.captureContext, draft: state.draft})) } catch { /* memory remains usable */ }
+  }
   try {
     window.dispatchEvent(new CustomEvent('understudy:host-state'))
   } catch {
@@ -156,6 +167,14 @@ export async function refresh(): Promise<void> {
       approvals: s.approvals,
       processes: s.processes,
     })
+    if (!workspaceRestored) {
+      workspaceRestored = true
+      try {
+        const saved = JSON.parse(sessionStorage.getItem('understudy.workspace') ?? 'null')
+        if (saved?.username === s.me.username && typeof saved.captureDraft?.task === 'string')
+          commit({captureDraft: saved.captureDraft, captureContext: saved.captureContext ?? null, draft: saved.draft ?? {}})
+      } catch { /* Ignore stale or unavailable browser storage. */ }
+    }
     resumeLastPlaybook()
   } catch (err) {
     if (gen !== sessionGen) return
@@ -188,11 +207,15 @@ export function logout(): void {
   setToken(null)
   try {
     localStorage.removeItem('understudy.lastPlaybook')
+    sessionStorage.removeItem('understudy.workspace')
   } catch {
     /* ignore */
   }
   window.Understudy.unloadProcess?.()
-  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null })
+  window.Understudy.closePanel?.()
+  resumeAttempted = false
+  workspaceRestored = false
+  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, recentRuns: [], reviewSync: null })
 }
 
 export function switchActingAs(username: string): void {
@@ -249,9 +272,11 @@ export async function requestApproval(
   worklogId: string,
   approver: string,
   asPersona?: string,
+  stepId?: string,
 ): Promise<Approval> {
   const approval = await api<Approval>(`/api/worklogs/${worklogId}/submit`, {
     approver,
+    stepId,
     actingAs: asPersona ?? state.actingAs,
   })
   const wl = state.worklogs.find((w) => w.id === worklogId)
@@ -282,7 +307,8 @@ export async function decideApproval(
   // approving unrelated work must never tick another run's sign-off step.
   const runId = window.Understudy.currentRunId?.()
   const targetRunId = wl?.data.runId != null ? String(wl.data.runId) : null
-  if (runId && targetRunId === String(runId)) {
+  const liveApproval = window.Understudy.getProgress?.().find((s) => s.type === 'approval' && ['ready', 'blocked'].includes(s.status ?? ''))
+  if (runId && targetRunId === String(runId) && (!decided.stepId || liveApproval?.id === decided.stepId)) {
     window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
   } else if (runId) {
     window.Understudy.log(
@@ -459,11 +485,12 @@ export async function cancellableReviewCount(): Promise<number> {
 
 export async function followPlaybook(
   processId: string,
-  opts?: { silent?: boolean; resume?: boolean },
+  opts?: { silent?: boolean; resume?: boolean; run?: ProcessRun },
 ): Promise<void> {
   const p = await getProcess(processId)
-  let resume: { runId: string; steps?: unknown[]; decisions?: unknown[] } | undefined
-  if (opts?.resume) {
+  let resume: { runId: string; steps?: unknown[]; decisions?: unknown[]; events?: ProcessRun['events'] } | undefined
+  if (opts?.run) resume = {runId: opts.run.id, steps: opts.run.steps, decisions: opts.run.decisions, events: opts.run.events}
+  if (opts?.resume && !resume) {
     try {
       const runs = await listRuns(processId)
       // Active first; a completed run only when nothing is in progress.
@@ -471,7 +498,7 @@ export async function followPlaybook(
         (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
       )
       const target = usable.find((r) => r.status === 'active') ?? usable[0]
-      if (target) resume = { runId: target.id, steps: target.steps, decisions: target.decisions }
+      if (target) resume = { runId: target.id, steps: target.steps, decisions: target.decisions, events: target.events }
     } catch {
       /* no runs — fresh start */
     }
@@ -490,6 +517,7 @@ export async function followPlaybook(
     createdBy: p.createdBy,
     ...(resume ? { resume } : {}),
   })
+  commit({ reviewSync: null, captureContext: null })
   if (!opts?.silent)
     window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
   try {
@@ -503,6 +531,7 @@ export async function followPlaybook(
   commit({
     runStarted: {
       title: p.title,
+      resumed: Boolean(resume),
       version: (p as { version?: number }).version,
       next: next?.label,
     },
@@ -512,146 +541,110 @@ export async function followPlaybook(
 /** When the run reaches its approval step, the linked entry's review request
  *  is created automatically and routed to a persona of the step's role. */
 let approvalSyncInFlight = false
+const reviewAttempts = new Map<string, number>()
 function contributorPersonaFor(): string | undefined {
   const me = state.users.find((u) => u.username === state.actingAs)
-  if (me?.role === 'Contributor') return me.username
-  return state.users.find((u) => u.role === 'Contributor')?.username
+  return me?.role === 'Contributor' ? me.username : state.users.find((u) => u.role === 'Contributor')?.username
+}
+
+export function retryReview(): Promise<void> {
+  if (state.reviewSync) reviewAttempts.delete(`${state.reviewSync.runId}:${state.reviewSync.stepId}`)
+  commit({reviewSync: null})
+  return autoSyncApproval()
 }
 
 export async function autoSyncApproval(): Promise<void> {
   if (approvalSyncInFlight) return
   const runId = window.Understudy.currentRunId?.()
-  if (!runId) return
-  const prog = window.Understudy.getProgress?.() ?? []
-  // The sign-off step shows 'blocked' (no pending review) until we create one —
-  // both statuses mean "the run has arrived at sign-off".
-  const readyApproval = prog.find(
-    (p) => p.type === 'approval' && (p.status === 'ready' || p.status === 'blocked'),
-  )
-  if (!readyApproval) return
-  // Everything before the sign-off must actually be handled.
-  const before = prog.slice(0, prog.findIndex((p) => p.id === readyApproval.id))
-  if (before.some((p) => !p.done && p.status !== 'not_applicable' && p.type !== 'decision')) return
-  // Any draft of this run — the synthesized completion record included — is
-  // the review subject; a retry after a failed first request must find it.
-  let wl = state.worklogs.find(
-    (w) => String(w.data.runId ?? '') === String(runId) && w.status === 'draft',
-  )
   const proc = window.Understudy.getLoadedProcess?.()
-  if (!proc) return
-  if (!wl) {
-    // Review already requested/decided only when this run's OWN record has
-    // moved past draft — a stale runId on an old, unrelated entry never
-    // suppresses the review.
-    if (
-      state.worklogs.some(
-        (w) =>
-          String(w.data.runId ?? '') === String(runId) &&
-          w.data.systemGenerated === true &&
-          w.status !== 'draft',
-      )
-    )
-      return
-    // Pure task-card runs produce no entry of their own — synthesize the run's
-    // completion record (with every submitted step value as evidence) so the
-    // review has a subject. Server still enforces the Contributor role.
-    // The record is attributed to a Contributor persona (the run's doer) even
-    // if a Reviewer persona is active when the run reaches sign-off.
-    const contributor =
-      state.users.find((u) => u.username === state.actingAs && u.role === 'Contributor')?.username ??
-      state.users.find((u) => u.role === 'Contributor')?.username
-    if (!contributor) return
-    const evidence: Record<string, unknown> = {}
-    for (const s of proc.steps) if (s.resultData) Object.assign(evidence, s.resultData)
-    approvalSyncInFlight = true
-    try {
-      wl = await api<Worklog>('/api/worklogs', {
-        date: new Date().toISOString().slice(0, 10),
-        line: 'A',
-        task: `${proc.title} — run #${runId} completion record`,
-        hours: 0,
-        note: '',
-        urgent: false,
-        kind: ((proc as { appliesWhen?: { kind?: string } }).appliesWhen?.kind as string) ?? 'development',
-        data: { ...evidence, runId, systemGenerated: true },
-        progressPct: 100,
-        actingAs: contributor,
-      })
-      window.Understudy.log(
-        `completion record for run #${runId} created automatically (attributed to ${contributor})`,
-        { worklogId: wl.id },
-      )
-      await refresh()
-    } catch {
-      approvalSyncInFlight = false
-      return
-    }
-    approvalSyncInFlight = false
+  if (!runId || !proc) return
+  const prog = window.Understudy.getProgress?.() ?? []
+  const ready = prog.find((p) => p.type === 'approval' && ['ready', 'blocked'].includes(p.status ?? ''))
+  if (!ready) {
+    if (state.reviewSync?.runId === runId) commit({reviewSync: null})
+    return
   }
-  const role = proc.steps.find((s) => s.id === readyApproval.id)?.role ?? 'Reviewer'
-  const approver =
-    state.users.find((u) => u.role === role && u.username !== state.me?.username)?.username ?? 'lee'
+  const before = prog.slice(0, prog.findIndex((p) => p.id === ready.id))
+  if (before.some((p) => !p.done && !['not_applicable', 'conditional'].includes(p.status ?? '') && p.type !== 'decision')) return
+  const key = `${runId}:${ready.id}`
+  const isCurrent = () => window.Understudy.currentRunId?.() === runId && window.Understudy.getLoadedProcess?.() === proc
+  if (state.reviewSync?.runId === runId && state.reviewSync.stepId === ready.id && state.reviewSync.status === 'error') return
+  const firstApproval = !before.some((p) => p.type === 'approval' && p.done)
+  let wl = state.worklogs.find((w) => String(w.data.runId ?? '') === String(runId) &&
+    (w.data.approvalStepId === ready.id || (firstApproval && !w.data.approvalStepId)))
+  if (wl && wl.status !== 'draft') {
+    if (wl.status === 'submitted' && state.reviewSync?.status !== 'ready')
+      commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
+    return
+  }
+  const contributor = contributorPersonaFor()
+  if (!contributor) return
   approvalSyncInFlight = true
-  void requestApproval(wl.id, approver, contributorPersonaFor())
-    .then(() => {
-      window.Understudy.log(
-        `review request created automatically — the run reached "${readyApproval.label}" and was routed to ${approver}`,
-        { worklogId: wl.id },
-      )
-    })
-    .catch(() => {
-      // The 700ms run-sync can lag the server gate — retry once it settles.
-      setTimeout(() => void autoSyncApproval(), 1500)
-    })
-    .finally(() => {
-      approvalSyncInFlight = false
-    })
+  commit({reviewSync: {runId, stepId: ready.id, status: 'requesting'}})
+  try {
+    // Flush before submitting, so the server checks the same completed work.
+    await window.Understudy.flushRun?.()
+    if (!isCurrent()) return
+    if (!wl) {
+      const evidence: Record<string, unknown> = {}
+      for (const s of proc.steps.slice(0, proc.steps.findIndex((s) => s.id === ready.id)))
+        if (s.done && s.resultData) Object.assign(evidence, s.resultData)
+      wl = await api<Worklog>('/api/worklogs', {
+        date: new Date().toISOString().slice(0, 10), line: 'A',
+        task: `${proc.title} — ${ready.label} — run #${runId} review record`,
+        hours: 0, note: '', urgent: false,
+        kind: String(proc.appliesWhen?.kind ?? 'routine work'),
+        data: {...evidence, runId, approvalStepId: ready.id, systemGenerated: true},
+        progressPct: 100, actingAs: contributor,
+      })
+      await refresh()
+    }
+    if (!isCurrent()) return
+    const role = proc.steps.find((s) => s.id === ready.id)?.role ?? 'Reviewer'
+    const approver = state.users.find((u) => u.role === role && u.username !== wl!.createdBy)?.username ?? 'lee'
+    await requestApproval(wl.id, approver, contributor, ready.id)
+    if (isCurrent()) commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
+    reviewAttempts.delete(key)
+  } catch (err) {
+    if (!isCurrent()) return
+    const message = err instanceof Error ? err.message : String(err)
+    const attempts = (reviewAttempts.get(key) ?? 0) + 1
+    reviewAttempts.set(key, attempts)
+    commit({reviewSync: {runId, stepId: ready.id, status: 'error', message}})
+    window.Understudy.log(`Review request failed for "${ready.label}": ${message}`)
+    // Permanent validation failures need a correction, not an endless retry.
+    if ((!(err instanceof ApiError) || err.status >= 500) && attempts < 3)
+      setTimeout(() => {
+        if (isCurrent() && state.reviewSync?.status === 'error') {
+          commit({reviewSync: null}); void autoSyncApproval()
+        }
+      }, 1500 * attempts)
+  } finally { approvalSyncInFlight = false }
 }
 
-/** Demo stability: a reopened tab restores the map it was following. */
 let resumeAttempted = false
+let workspaceRestored = false
 export function resumeLastPlaybook(): void {
   if (resumeAttempted) return
   resumeAttempted = true
-  if (window.Understudy.getLoadedProcess?.()) return
+  const gen = sessionGen
   void (async () => {
-    // Source of truth is the server. Priority: the newest ACTIVE run (work in
-    // progress always beats finished work); otherwise the newest completed
-    // run, so a finished state still survives a reload.
     try {
-      let runs = await listRuns()
-      const newestActive = runs.find((r) => r.status === 'active')
-      if (newestActive && (!Array.isArray(newestActive.steps) || newestActive.steps.length === 0)) {
-        // Its sync may still be in flight — give it one beat and re-read.
-        await new Promise((r) => setTimeout(r, 900))
-        runs = await listRuns()
-      }
-      const usable = runs.filter(
-        (r) => r.status !== 'abandoned' && Array.isArray(r.steps) && r.steps.length > 0,
-      )
-      const target = usable.find((r) => r.status === 'active') ?? usable[0]
-      if (target) {
-        await followPlaybook(target.processId, { silent: true, resume: true })
-        return
-      }
-    } catch {
-      /* fall through to the memo */
-    }
-    let id: string | null = null
-    try {
-      id = localStorage.getItem('understudy.lastPlaybook')
-    } catch {
-      return
-    }
-    if (!id) return
-    await followPlaybook(id, { silent: true, resume: true }).catch(() => {
-      try {
-        localStorage.removeItem('understudy.lastPlaybook')
-      } catch {
-        /* ignore */
-      }
-    })
+      const runs = await listRuns()
+      if (gen !== sessionGen) return
+      commit({recentRuns: runs.filter((r) => r.status !== 'abandoned')})
+      // Only this browser's explicitly chosen playbook resumes automatically.
+      // Shared demo history remains an optional choice on the start screen.
+      let id: string | null = null
+      try { id = localStorage.getItem('understudy.lastPlaybook') } catch { /* optional */ }
+      if (id && runs.some((r) => r.processId === id && r.status !== 'abandoned') && !window.Understudy.getLoadedProcess?.())
+        await followPlaybook(id, {silent: true, resume: true})
+    } catch { /* The work input stays usable if history cannot be loaded. */ }
   })()
+}
+
+export function setCaptureDraft(task: string, sample = false): void {
+  commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'development' : undefined}})
 }
 
 export function dismissRunStarted(): void {
@@ -659,7 +652,8 @@ export function dismissRunStarted(): void {
 }
 
 export function clearCaptureContext(): void {
-  commit({ captureContext: null, draft: {} })
+  commit({ captureContext: null, draft: {}, captureDraft: {task:'',sample:false} })
+  try { localStorage.removeItem('understudy.lastPlaybook') } catch { /* optional */ }
 }
 
 /** Explicit page intent for the visitor's WebMCP agent to pick up. */
@@ -766,6 +760,7 @@ export interface RunStep {
 }
 
 export interface ProcessRun {
+  events?: import('../sdk/types').RunEvent[]
   id: string
   processId: string
   title: string
@@ -791,6 +786,16 @@ export async function updateRun(
 
 export async function listRuns(processId?: string): Promise<ProcessRun[]> {
   return api<ProcessRun[]>(`/api/runs${processId ? `?processId=${processId}` : ''}`)
+}
+
+export async function reviseFromProblem(run: ProcessRun, event: NonNullable<ProcessRun['events']>[number]): Promise<void> {
+  await window.Understudy.flushRun?.()
+  const latest = latestPerTitle(state.processes).find((p) => p.title === run.title)
+  const p = await getProcess(latest?.id ?? run.processId)
+  window.Understudy.draftRevision?.({...p.map as UnderstudyProcessMap,
+    ...{revisionContext: {runId: run.id, stepId: event.stepId, problem: event.note}}}, p.id)
+  try { localStorage.removeItem('understudy.lastPlaybook') } catch { /* optional */ }
+  window.Understudy.log(`Draft revision from run #${run.id}: ${event.note}. Ask the human how to improve the procedure, then show the change for confirmation.`, {problem: event})
 }
 
 export async function listProcessesRaw(): Promise<ProcessSummary[]> {
@@ -827,11 +832,15 @@ export async function diffWithPrevious(p: {
     const c: string[] = []
     if (o.label !== s.label) c.push(`renamed from “${o.label}”`)
     if (o.type !== s.type) c.push(`type ${o.type} → ${s.type}`)
+    if ((o.detail ?? '') !== (s.detail ?? '')) c.push(`instructions: “${o.detail ?? '—'}” → “${s.detail ?? '—'}”`)
+    if ((o.action ?? '') !== (s.action ?? '')) c.push(`action ${o.action ?? 'manual'} → ${s.action ?? 'manual'}`)
     if ((o.role ?? '') !== (s.role ?? '')) c.push(`owner ${o.role ?? 'anyone'} → ${s.role ?? 'anyone'}`)
     const of_ = (o.fields ?? []).join(','), nf = (s.fields ?? []).join(',')
     if (of_ !== nf) c.push(`captures [${nf || '—'}] (was [${of_ || '—'}])`)
     const oe = (o.next ?? []).length, ne = (s.next ?? []).length
     if (oe !== ne) c.push(`${ne} outgoing branch(es) (was ${oe})`)
+    if (JSON.stringify((o.next ?? []).map((e) => e.to)) !== JSON.stringify((s.next ?? []).map((e) => e.to)))
+      c.push(`next steps: ${(o.next ?? []).map((e) => e.to).join(', ') || 'end'} → ${(s.next ?? []).map((e) => e.to).join(', ') || 'end'}`)
     for (const edge of s.next ?? []) {
       const oldEdge = (o.next ?? []).find((x) => x.to === edge.to)
       if (!oldEdge) continue
@@ -842,6 +851,10 @@ export async function diffWithPrevious(p: {
       if (oc !== nc) c.push(`criteria → ${edge.to}: ${nc} (was ${oc})`)
     }
     if (c.length) changed.push({ label: s.label, changes: c })
+  }
+  for (const key of ['fields', 'appliesWhen', 'priorityWhen'] as const) {
+    if (JSON.stringify(prevMap[key] ?? null) !== JSON.stringify(p.map[key] ?? null))
+      changed.push({label: key === 'fields' ? 'Required inputs and definitions' : 'When to use this playbook', changes: [`${JSON.stringify(prevMap[key] ?? null)} → ${JSON.stringify(p.map[key] ?? null)}`]})
   }
   return { prevVersion: prior.version || 1, added, removed, changed }
 }

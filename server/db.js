@@ -1,6 +1,6 @@
 // Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
 import crypto from 'node:crypto'
-import { applySignoff, preserveSignoffs, reviewFingerprint, evidencePatch } from './runstate.js'
+import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, mergeRunEvents } from './runstate.js'
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex')
@@ -78,7 +78,7 @@ function memoryBackend() {
       if (!w || !['draft', 'rejected'].includes(w.status) ||
           approvals.some((x) => x.worklogId === a.worklogId && x.status === 'PENDING')) return null
       const linked = runs.find((r) => r.id === String(w.data?.runId))
-      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now(), reviewFingerprint: reviewFingerprint(linked) }
+      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now(), reviewFingerprint: reviewFingerprint(linked, a.scope) }
       approvals.unshift(row)
       w.status = 'submitted'
       return row
@@ -99,7 +99,7 @@ function memoryBackend() {
       const subject = worklogs.find((x) => x.id === a.worklogId)
       const linked = runs.find((r) => r.id === String(subject?.data?.runId))
       if (status === 'APPROVED' && subject?.data?.runId != null &&
-          (!a.reviewFingerprint || a.reviewFingerprint !== reviewFingerprint(linked))) return null
+          !matchesReviewFingerprint(a.reviewFingerprint, linked, a.scope)) return null
       a.status = status
       a.comment = comment
       const w = worklogs.find((x) => x.id === a.worklogId)
@@ -147,7 +147,7 @@ function memoryBackend() {
     async startRun(r) {
       const row = {
         id: String(seq++), processId: r.processId, title: r.title, startedBy: r.startedBy,
-        startedAt: Date.now(), updatedAt: Date.now(), status: 'active', steps: r.steps ?? [], decisions: [], deviations: 0,
+        startedAt: Date.now(), updatedAt: Date.now(), status: 'active', steps: r.steps ?? [], decisions: [], events: [], deviations: 0,
       }
       runs.unshift(row)
       return row
@@ -158,13 +158,14 @@ function memoryBackend() {
       patch = preserveSignoffs(run, patch)
       if (patch.steps) run.steps = patch.steps
       if (patch.decisions) run.decisions = patch.decisions
+      if (patch.events) run.events = mergeRunEvents(run.events, patch.events)
       if (patch.status) run.status = patch.status
       if (patch.deviations !== undefined) run.deviations = patch.deviations
       run.updatedAt = Date.now()
       for (const a of approvals) {
         const w = worklogs.find((x) => x.id === a.worklogId)
         if (a.status === 'PENDING' && String(w?.data?.runId) === run.id &&
-            a.reviewFingerprint !== reviewFingerprint(run)) {
+            !matchesReviewFingerprint(a.reviewFingerprint, run, a.scope)) {
           a.status = 'CANCELLED'
           a.comment = 'Evidence changed; a new review is required.'
           if (w) {
@@ -174,7 +175,7 @@ function memoryBackend() {
       }
       for (const w of worklogs) {
         if (String(w.data?.runId) === run.id && w.status === 'draft' && w.data.systemGenerated) {
-          w.data = { runId: run.id, systemGenerated: true, ...evidencePatch(run) }
+          w.data = { runId: run.id, systemGenerated: true, approvalStepId: w.data.approvalStepId, ...evidencePatch(run) }
         }
       }
       return run
@@ -247,6 +248,9 @@ async function pgBackend(databaseUrl) {
     );
     ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS decisions JSONB DEFAULT '[]';
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_fingerprint TEXT;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS step_id TEXT;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_scope JSONB;
+    ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '[]';
   `)
 
   // Keep display roles in sync with the current neutral naming (idempotent).
@@ -273,6 +277,7 @@ async function pgBackend(databaseUrl) {
   const ap = (r) => ({
     id: String(r.id), worklogId: String(r.worklog_id), requestedBy: r.requested_by,
     approver: r.approver, status: r.status, comment: r.comment ?? undefined,
+    stepId: r.step_id ?? undefined, scope: r.review_scope ?? undefined,
     ts: new Date(r.ts).getTime(),
   })
 
@@ -333,8 +338,8 @@ async function pgBackend(databaseUrl) {
         const subject = await client.query('SELECT data FROM worklogs WHERE id=$1', [a.worklogId])
         const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1', [String(subject.rows[0]?.data?.runId ?? '')])
         const { rows } = await client.query(
-          'INSERT INTO approvals (worklog_id, requested_by, approver, review_fingerprint) VALUES ($1,$2,$3,$4) RETURNING *',
-          [a.worklogId, a.requestedBy, a.approver, reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]))],
+          'INSERT INTO approvals (worklog_id, requested_by, approver, review_fingerprint, step_id, review_scope) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+          [a.worklogId, a.requestedBy, a.approver, reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]), a.scope), a.stepId ?? null, a.scope ? JSON.stringify(a.scope) : null],
         )
         await client.query("UPDATE worklogs SET status='submitted' WHERE id=$1", [a.worklogId])
         return ap(rows[0])
@@ -354,13 +359,13 @@ async function pgBackend(databaseUrl) {
     },
     async decideApproval(id, status, comment) {
       return transaction(async (client) => {
-        const before = await client.query('SELECT a.review_fingerprint,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
+        const before = await client.query('SELECT a.review_fingerprint,a.review_scope,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
         const linkedId = before.rows[0]?.data?.runId
         if (status === 'APPROVED' && linkedId != null) {
           // Legacy pending reviews have no evidence snapshot; require a fresh review.
           if (!before.rows[0].review_fingerprint) return null
           const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId ?? '')])
-          if (before.rows[0].review_fingerprint !== reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]))) return null
+          if (!matchesReviewFingerprint(before.rows[0].review_fingerprint, linked.rows[0] && runRow(linked.rows[0]), before.rows[0].review_scope)) return null
         }
         const { rows } = await client.query(
           "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
@@ -375,8 +380,8 @@ async function pgBackend(databaseUrl) {
           if (status === 'APPROVED' && linkedId != null) {
             const { rows: linked } = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId)])
             const patch = linked[0] && applySignoff(runRow(linked[0]), approval)
-            if (patch) await client.query('UPDATE process_runs SET steps=$2,status=$3,updated_at=now() WHERE id=$1',
-              [linked[0].id, JSON.stringify(patch.steps), patch.status])
+            if (patch) await client.query('UPDATE process_runs SET steps=$2,status=$3,events=$4,updated_at=now() WHERE id=$1',
+              [linked[0].id, JSON.stringify(patch.steps), patch.status, JSON.stringify(patch.events)])
           }
         }
         return approval
@@ -439,20 +444,22 @@ async function pgBackend(databaseUrl) {
              status = COALESCE($3, status),
              deviations = COALESCE($4, deviations),
              decisions = COALESCE($5, decisions),
+             events = $6,
              updated_at = now()
            WHERE id=$1 RETURNING *`,
           [id, patch.steps ? JSON.stringify(patch.steps) : null, patch.status ?? null,
-           patch.deviations ?? null, patch.decisions ? JSON.stringify(patch.decisions) : null],
+           patch.deviations ?? null, patch.decisions ? JSON.stringify(patch.decisions) : null,
+           JSON.stringify(mergeRunEvents(current.rows[0].events ?? [], patch.events ?? []))],
         )
         const updated = runRow(rows[0])
-        const cancelled = await client.query(`UPDATE approvals a SET status='CANCELLED', comment='Evidence changed; a new review is required.'
-          FROM worklogs w WHERE a.worklog_id=w.id AND w.data->>'runId'=$1 AND a.status='PENDING'
-          AND (a.review_fingerprint IS NULL OR a.review_fingerprint<>$2) RETURNING a.worklog_id`,
-          [String(id), reviewFingerprint(updated)])
-        for (const row of cancelled.rows) {
+        const pending = await client.query(`SELECT a.* FROM approvals a JOIN worklogs w ON a.worklog_id=w.id
+          WHERE w.data->>'runId'=$1 AND a.status='PENDING'`, [String(id)])
+        for (const row of pending.rows) {
+          if (matchesReviewFingerprint(row.review_fingerprint, updated, row.review_scope)) continue
+          await client.query("UPDATE approvals SET status='CANCELLED',comment='Evidence changed; a new review is required.' WHERE id=$1 AND status='PENDING'", [row.id])
           await client.query("UPDATE worklogs SET status='draft' WHERE id=$1 AND status<>'approved'", [row.worklog_id])
         }
-        await client.query(`UPDATE worklogs SET data=jsonb_build_object('runId',data->'runId','systemGenerated',true) || $2::jsonb
+        await client.query(`UPDATE worklogs SET data=jsonb_build_object('runId',data->'runId','systemGenerated',true,'approvalStepId',data->'approvalStepId') || $2::jsonb
           WHERE data->>'runId'=$1 AND data->>'systemGenerated'='true' AND status='draft'`,
           [String(id), JSON.stringify(evidencePatch(updated))])
         return updated
@@ -490,6 +497,7 @@ function runRow(r) {
     status: r.status,
     steps: r.steps ?? [],
     decisions: r.decisions ?? [],
+    events: r.events ?? [],
     deviations: r.deviations ?? 0,
   }
 }

@@ -9,8 +9,8 @@ const JOURNEY = ['Describe your work', 'Ask what comes before & after', 'Agree o
 
 export default function Overview({ state, navigate }: { state: store.AppState; navigate: (tab: WorkspaceTab) => void }) {
   const [editing, setEditing] = useState(true)
-  const [note, setNote] = useState('')
-  const [sample, setSample] = useState(false)
+  const {task: note, sample} = state.captureDraft
+  const setNote = (task: string) => store.setCaptureDraft(task, sample)
   const captured = state.captureContext
   const action = useAction()
   const proc = window.Understudy.getLoadedProcess()
@@ -24,7 +24,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const contributor = state.users.find((u) => u.role === 'Contributor')
   const acting = state.users.find((u) => u.username === state.actingAs)
   useEffect(() => {
-    if (editing && !proc && !captured) store.setDraftContext({kind: sample ? 'development' : undefined, task: note, hasInput: Boolean(note.trim())})
+    if (editing && !proc) store.setDraftContext({kind: sample ? 'development' : undefined, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
   }, [editing, sample, note, proc, captured])
 
   const capture = () => action.run(async () => {
@@ -45,12 +45,12 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
     <div className="overview">
       <section className={`hero${proc || captured ? ' compact' : ''}`}>
         <div className="eyebrow">HUMAN + AGENT · POWERED BY WEBMCP</div>
-        <h1>{proc ? done ? 'Good work. Ready to reuse.' : 'One step at a time.' : captured ? 'Your work, made repeatable.' : <>One task.<br /><span>The whole workflow.</span></>}</h1>
-        <p className="hero-description">Start with what you’re working on. Your agent asks what should happen before and after, learns the rules, and builds a process with you. Each person follows their steps. When similar work comes up, choose a relevant playbook and use it again.</p>
-        <div className="chat-first"><span>New here? Ask in your agent’s chat:</span><strong>“What is this, and how do I use it?”</strong><p>No special prompt needed. Your agent can read this page through WebMCP and help you choose where to start.</p></div>
-        <ol className="journey" aria-label="How Understudy works">
-          {JOURNEY.map((label, i) => <li key={label}><span>{i + 1}</span>{label}</li>)}
-        </ol>
+        <h1>{proc ? done ? 'Good work. Ready to reuse.' : 'One step at a time.' : captured ? 'Your work, made repeatable.' : <>One task. <span>The whole workflow.</span></>}</h1>
+        <p className="hero-description">Describe one task. Discover what comes before and after, agree on the process, and let each person follow their steps.</p>
+        <details className="intro-help"><summary>New here? How does this work?</summary>
+          <p>Ask “What is this, and how do I use it?” in your agent’s chat. Its questions appear beside your work.</p>
+          <ol className="journey" aria-label="How Understudy works">{JOURNEY.map((label, i) => <li key={label}><span>{i + 1}</span>{label}</li>)}</ol>
+        </details>
       </section>
 
       {interaction && (interaction.questions > 0 || interaction.approvals > 0) && (
@@ -95,16 +95,16 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         <section className="start-grid">
           <div className="card capture-card">
             <div className="eyebrow">START WITH ONE PIECE OF WORK</div>
-            <h2>What did you do?<br />What should happen next?</h2>
+            <h2>What are you working on?</h2>
             <p>A sentence is enough. Discover the preparation, next steps and owners around your work, or choose a related playbook to follow.</p>
             {editing ? <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
               <label htmlFor="capture-note">{sample ? 'Release example · fictional sample' : 'Describe your work'}</label>
-              <textarea id="capture-note" rows={4} value={note} onChange={(e) => setNote(e.target.value)} placeholder="We finished… Before someone signs off, we need to…" required />
+              <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="We finished… Before someone signs off, we need to…" required />
               {acting?.role !== 'Contributor' ? <button type="button" className="primary" disabled={!contributor} onClick={() => contributor && store.switchActingAs(contributor.username)}>Continue as {contributor?.name ?? 'Contributor'}</button>
                 : <button className="primary" disabled={action.busy || !note.trim()}>{action.busy ? 'Saving your starting point…' : 'Create a new playbook →'}</button>}
               <p className="meta">Work → questions & answers → draft → your confirmation.</p>
               <ErrorNotice message={action.error} />
-            </form> : <div className="button-row"><button className="primary" onClick={() => { setEditing(true); setSample(false) }}>Teach from my work →</button></div>}
+            </form> : <div className="button-row"><button className="primary" onClick={() => { setEditing(true); store.setCaptureDraft(note, false) }}>Teach from my work →</button></div>}
             {editing && note.trim() && <SuggestionCard includeCandidates />}
           </div>
           <div className="example-card">
@@ -117,11 +117,16 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
               <div><span>Next step</span><b>Fix → recheck → review</b></div>
             </div>
             <p className="example-caption">Illustrative scenario. You and your agent define and run the actual playbook.</p>
-            <button className="secondary" onClick={() => { setNote(EXAMPLE); setSample(true); setEditing(true) }}>Use this example →</button>
+            <button className="secondary" onClick={() => { store.setCaptureDraft(EXAMPLE, true); setEditing(true) }}>Use this example →</button>
           </div>
         </section>
       )}
 
+      {!proc && state.recentRuns.length > 0 && <details className="recent-runs"><summary>Continue an earlier run</summary>
+        <p className="meta">Choose the work you want to return to.</p>
+        {state.recentRuns.slice(0, 5).map((run) => <button key={run.id} className="secondary" disabled={action.busy}
+          onClick={() => void action.run(() => store.followPlaybook(run.processId, {run}))}>{run.title} · #{run.id} · {run.status}</button>)}
+      </details>}
       <section className="overview-bottom">
         <div><b>Discover the work around the work.</b><p>Answer questions about preparation, next steps and who takes over. Correct the process together.</p></div>
         <div><b>Follow it. Find it again.</b><p>Each owner gets their next step. Related playbooks are suggested when similar work comes up — you choose what to use.</p></div>

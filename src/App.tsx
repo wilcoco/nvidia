@@ -102,6 +102,7 @@ function IncidentForm() {
   // Keep the live draft context in the store so playbook matching (and the
   // agent, via find_relevant_processes) sees what is being entered right now.
   useEffect(() => {
+    if (!task.trim() && !urgent && kind === 'routine work') return
     store.setDraftContext({
       kind,
       urgent,
@@ -379,7 +380,7 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
         const evidence = wl
           ? Object.entries(wl.data).filter(
               ([k, v]) =>
-                !['runId', 'systemGenerated', 'verification', 'verifiedAt', 'verifiedRoute'].includes(k) &&
+                !['runId', 'systemGenerated', 'approvalStepId', 'verification', 'verifiedAt', 'verifiedRoute'].includes(k) &&
                 (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'),
             )
           : []
@@ -460,9 +461,11 @@ const STATUS_ICON: Record<string, string> = {
 }
 
 function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
+  const action = useAction()
   if (runs.length === 0) return <p className="empty">Not run yet.</p>
   return (
     <div className="run-history">
+      <ErrorNotice message={action.error} />
       {runs.map((r) => (
         <div key={r.id} className="run-row">
           <div className="meta">
@@ -479,6 +482,13 @@ function RunHistory({ runs }: { runs: store.ProcessRun[] }) {
               </span>
             ))}
           </div>
+          <details><summary>View evidence and reported problems</summary>
+            {(r.events ?? []).map((e) => <div key={e.id} className="history-event"><b>{e.kind} · {e.label}</b><span>{e.actor} · {new Date(e.ts).toLocaleString()}</span>
+              {e.note && <p>{e.note}</p>}{e.values && <p>{Object.entries(e.values).map(([k,v]) => `${k}: ${v}`).join(', ')}</p>}
+              {e.kind === 'problem' && <button disabled={action.busy} onClick={() => void action.run(() => store.reviseFromProblem(r, e))}>Use this problem in a draft revision</button>}
+            </div>)}
+            {!r.events?.length && <p className="meta">No detailed events were recorded for this older run.</p>}
+          </details>
         </div>
       ))}
     </div>
@@ -611,6 +621,11 @@ function PlaybookList({ state }: { state: store.AppState }) {
               {deleteArmed && <button className="ghost" onClick={() => setDeleteArmed(false)}>Keep revision</button>}
             </span>
           </div>
+          <label className="version-picker">Version and execution history
+            <select aria-label="Playbook version" value={selected.id} onChange={(e) => void open(e.target.value)}>
+              {state.processes.filter((p) => p.title === selected.title).sort((a,b) => b.version - a.version).map((p) => <option key={p.id} value={p.id}>v{p.version} · {p.createdBy}</option>)}
+            </select>
+          </label>
           <p className="meta">
             Loads into the Understudy panel — work along it yourself (check steps off), or ask the
             agent to run it for you. Skipped steps stay visible, so nothing gets missed.
@@ -647,7 +662,7 @@ function RunStartedNotice({ info }: { info: NonNullable<store.AppState['runStart
   }, [info])
   return (
     <div className="run-notice" role="status">
-      <span><b>{window.Understudy.getRunStartError?.() ? 'Run could not start.' : window.Understudy.currentRunId?.() ? 'Run started.' : 'Starting run…'}</b> {info.title}</span>
+      <span><b>{info.resumed ? 'Saved run opened.' : window.Understudy.getRunStartError?.() ? 'Run could not start.' : window.Understudy.currentRunId?.() ? 'Run started.' : 'Starting run…'}</b> {info.title}</span>
       <button className="ghost" aria-label="Dismiss run notification" onClick={() => store.dismissRunStarted()}>×</button>
     </div>
   )
@@ -721,7 +736,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       return undefined
     }
   }
-  const complete = (p: { id: string; fields?: string[] }) => {
+  const complete = async (p: { id: string; fields?: string[] }) => {
     const defs = (p.fields ?? [])
       .map((k) => fieldDefs.find((f) => f.key === k))
       .filter((d): d is UnderstudyFieldDef => !!d)
@@ -742,6 +757,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     )
     const outcome = window.Understudy.completeStep?.(p.id, values)
     if (!outcome?.ok) { setTaskError(outcome?.error ?? 'Could not complete this task.'); return }
+    await window.Understudy.flushRun?.()
     setTaskError('')
     rememberValues(values)
     setTaskValues((prev) => ({ ...prev, [p.id]: {} }))
@@ -751,7 +767,14 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       <div className="page-intro"><div className="eyebrow">{myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1><p>{done} of {required} required tasks complete{runId ? ` · run #${runId}` : runError ? ' · execution not started' : ' · starting execution…'}</p><progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" /></div>
       <ErrorNotice message={runError ?? undefined} />
       {runError && proc.sourceProcessId && <button disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(proc.sourceProcessId!))}>Retry starting this run</button>}
-      <ErrorNotice message={taskError || action.error} />
+      <ErrorNotice message={taskError || action.error || window.Understudy.getRunSyncError?.() || ''} />
+      {window.Understudy.getRunSyncError?.() && <button disabled={action.busy} onClick={() => void action.run(() => window.Understudy.flushRun?.())}>Retry saving progress</button>}
+      {state.reviewSync && state.reviewSync.runId === runId && <div className="card review-sync" role="status">
+        {state.reviewSync.status === 'requesting' ? 'Preparing the review request…' : state.reviewSync.status === 'ready' ? 'Review requested — waiting for the assigned reviewer.' : <>
+          <strong>Review request could not be sent.</strong><ErrorNotice message={state.reviewSync.message} />
+          <button onClick={() => store.retryReview()}>Retry review request</button>
+        </>}
+      </div>}
       {(() => {
         const rejected = state.approvals.find(
           (a) =>
@@ -885,14 +908,14 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
               </div>
             )}
             {p.type === 'approval' ? (
-              <button className="primary" onClick={goReviews}>
+              <button className="primary" onClick={goReviews} disabled={!state.approvals.some((a) => a.status === 'PENDING' && state.worklogs.some((w) => w.id === a.worklogId && String(w.data.runId) === String(runId)))}>
                 Open Reviews to decide
               </button>
             ) : p.type === 'decision' ? (
               <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
             ) : (
               <div className="decide">
-                <button className="primary" disabled={missingRequired || p.status !== 'ready' || !runId} onClick={() => complete(p)}>
+                <button className="primary" disabled={action.busy || missingRequired || p.status !== 'ready' || !runId} onClick={() => void action.run(() => complete(p))}>
                   {p.status !== 'ready' ? 'Resolve the blocker first' : missingRequired ? 'Fill required fields…' : 'Complete & submit'}
                 </button>
                 <button className="ghost" data-flow-ignore onClick={() => setProblemFor(problemFor === p.id ? null : p.id)}>
@@ -908,13 +931,13 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                   onChange={(e) => setProblemText(e.target.value)}
                 />
                 <button
-                  onClick={() => {
-                    if (problemText.trim()) {
-                      window.Understudy.reportProblem?.(p.id, problemText.trim())
-                      setProblemText('')
-                      setProblemFor(null)
-                    }
-                  }}
+                  disabled={action.busy || !problemText.trim()}
+                  onClick={() => void action.run(async () => {
+                    window.Understudy.reportProblem?.(p.id, problemText.trim())
+                    await window.Understudy.flushRun?.()
+                    setProblemText('')
+                    setProblemFor(null)
+                  })}
                 >
                   Send
                 </button>
@@ -932,7 +955,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       {theirs.map((p) => (
         <div key={p.id} className="card entry waiting-card">
           <div className="entry-head">
-            <span className="task">⏳ Waiting on {p.role}</span>
+            <span className="task">{p.type === 'approval' && state.reviewSync && state.reviewSync.runId === runId && state.reviewSync.status !== 'ready'
+              ? 'Review request needs attention' : `⏳ Waiting on ${p.role}`}</span>
           </div>
           <div className="meta">
             {p.label}
@@ -948,9 +972,10 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
 function RunTimeline({ proc }: { proc: UnderstudyProcessMap }) {
   const events: Array<{ ts: number; text: string; kind: 'step' | 'decision' }> = []
   for (const s of proc.steps) {
-    if (s.done && s.completedAt)
+    if (!proc.events?.length && s.done && s.completedAt)
       events.push({ ts: s.completedAt, kind: 'step', text: `✓ ${s.label}${s.completedBy ? ` — ${s.completedBy}` : ''}` })
   }
+  for (const e of proc.events ?? []) events.push({ts: e.ts, kind: 'step', text: `${e.kind === 'problem' ? '⚑ Problem' : e.kind === 'reopened' ? '↻ Retry' : '✓ Completed'}: ${e.label}${e.actor ? ` — ${e.actor}` : ''}${e.note ? ` · ${e.note}` : ''}${e.values && Object.keys(e.values).length ? ` · ${Object.entries(e.values).map(([k,v]) => `${k}: ${v}`).join(', ')}` : ''}`})
   for (const d of proc.decisions ?? []) {
     const target = proc.steps.find((s) => s.id === d.to)?.label ?? d.to
     events.push({
