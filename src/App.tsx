@@ -557,6 +557,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
   const [runs, setRuns] = useState<store.ProcessRun[]>([])
   const [followFlash, setFollowFlash] = useState(false)
+  const [armCancel, setArmCancel] = useState(false)
   const visible = latestPerTitle(state.processes)
   const historyCount = (title: string) => state.processes.filter((p) => p.title === title).length - 1
 
@@ -567,6 +568,13 @@ function PlaybookList({ state }: { state: store.AppState }) {
   }
 
   const follow = (p: LoadedProcess) => {
+    const pending = store.pendingReviewCount()
+    if (pending > 0 && !armCancel) {
+      setArmCancel(true)
+      setTimeout(() => setArmCancel(false), 6000)
+      return
+    }
+    setArmCancel(false)
     void store.followPlaybook(p.id).then(() => {
       setFollowFlash(true)
       setTimeout(() => setFollowFlash(false), 2500)
@@ -607,8 +615,12 @@ function PlaybookList({ state }: { state: store.AppState }) {
           <div className="entry-head">
             <span className="task">{selected.title}</span>
             <span>
-              <button className="primary" onClick={() => follow(selected)}>
-                {followFlash ? '✓ Run started — see the panel →' : '▶ Run this playbook'}
+              <button className={armCancel ? 'danger' : 'primary'} onClick={() => follow(selected)}>
+                {followFlash
+                  ? '✓ Run started — see the panel →'
+                  : armCancel
+                    ? `⚠ Cancels ${store.pendingReviewCount()} pending review(s) — click again`
+                    : '▶ Run this playbook'}
               </button>
               <VersionDiffView proc={selected} />{' '}
               <button
@@ -769,8 +781,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       </div>
       {mine.length === 0 && theirs.length === 0 && (
         <p className="empty">
-          Nothing is waiting on anyone — the run may be complete or awaiting a decision (ask the
-          agent).
+          {window.Understudy.isRunComplete?.()
+            ? '✅ Run complete — every required step is handled and signed off.'
+            : 'Nothing is assignable right now — a decision is awaiting resolution (ask the agent).'}
         </p>
       )}
       {mine.map((p) => {
