@@ -133,13 +133,17 @@ interface ServerState {
   processes: ProcessSummary[]
 }
 
+let sessionGen = 0
+
 export async function refresh(): Promise<void> {
   if (!getToken()) {
     commit({ authChecked: true, me: null })
     return
   }
+  const gen = sessionGen
   try {
     const s = await api<ServerState>('/api/state')
+    if (gen !== sessionGen) return // logged out while in flight — drop the stale state
     commit({
       authChecked: true,
       me: s.me,
@@ -177,6 +181,7 @@ export async function login(username: string, password: string): Promise<void> {
 }
 
 export function logout(): void {
+  sessionGen++
   setToken(null)
   try {
     localStorage.removeItem('understudy.lastPlaybook')
@@ -184,7 +189,7 @@ export function logout(): void {
     /* ignore */
   }
   window.Understudy.unloadProcess?.()
-  commit({ me: null })
+  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null })
 }
 
 export function switchActingAs(username: string): void {

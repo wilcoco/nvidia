@@ -142,7 +142,7 @@ async function executeCore(
       result && typeof result === 'object' && 'id' in (result as Record<string, unknown>)
         ? String((result as Record<string, unknown>).id)
         : undefined
-    if (!(action.name in BUILTIN_ACTIONS)) {
+    if (!(action.name in BUILTIN_ACTIONS) && !action.selfReporting) {
       mapstore.recordActionSuccess(action.name, resultId, actor)
     }
     return { ok: true, result }
@@ -196,7 +196,22 @@ export function startHostAction(
   if (isAutoApprove() || name in BUILTIN_ACTIONS) {
     return executeCore(action, params, 'agent')
   }
-  const actionId = requestApproval(action.name, params, () => executeCore(action, params, 'agent'))
+  const actionId = requestApproval(action.name, params, () => {
+    // The card may be approved long after it was requested — the world may
+    // have moved (new playbook, prerequisites reopened). Revalidate now.
+    const gapNow = mapstore.prerequisiteGap(action.name)
+    if (gapNow) {
+      return Promise.resolve({
+        ok: false,
+        error: `Stale approval: "${gapNow.target}" would now skip ${gapNow.missing.join(', ')} — request it again from the current state.`,
+      } as RunOutcome)
+    }
+    const precondNow = action.precondition?.()
+    if (precondNow) {
+      return Promise.resolve({ ok: false, error: `Stale approval: ${precondNow}` } as RunOutcome)
+    }
+    return executeCore(action, params, 'agent')
+  })
   return {
     status: 'pending_approval',
     actionId,

@@ -165,6 +165,9 @@ let shadow: ShadowRoot | null = null
 // On phones the panel would cover ~86% of the screen — start collapsed there.
 let collapsed = typeof window !== 'undefined' && window.innerWidth < 560
 let seenApprovalCount = 0
+// In-progress free-text answers, keyed by ask id — the 5s host-state poll
+// rebuilds the DOM and must not eat what the human is typing.
+const answerDrafts = new Map<string, string>()
 let skipConfirmId: string | null = null
 // The activity journal exists for the agent; humans see a collapsed summary.
 let activityOpen = false
@@ -230,6 +233,9 @@ function renderStep(
       // successful review action.
       chk.disabled = true
       chk.title = 'Approval steps complete only via a successful review action'
+    } else if (!step.done && (status === 'not_applicable' || status === 'conditional')) {
+      chk.disabled = true
+      chk.title = 'This step is not on the active path'
     } else if (step.role && host.actorRole() && step.role !== host.actorRole() && !step.done) {
       chk.disabled = true
       chk.title = `This step belongs to the ${step.role} role — switch persona to complete it`
@@ -725,8 +731,13 @@ function render() {
       if (ask.allowText) {
         const input = el('input', 'freetext') as HTMLInputElement
         input.placeholder = 'Type an answer and press Enter…'
+        input.value = answerDrafts.get(ask.id) ?? ''
+        input.oninput = () => answerDrafts.set(ask.id, input.value)
         input.onkeydown = (e) => {
-          if (e.key === 'Enter' && input.value.trim()) asksStore.answerAsk(ask.id, input.value.trim())
+          if (e.key === 'Enter' && input.value.trim()) {
+            answerDrafts.delete(ask.id)
+            asksStore.answerAsk(ask.id, input.value.trim())
+          }
         }
         card.appendChild(input)
       }

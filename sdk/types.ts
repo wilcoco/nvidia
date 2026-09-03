@@ -112,6 +112,9 @@ export interface HostActionParam {
 export interface HostAction {
   /** Personas whose ROLE may run this action (checked against the host state's users/actingAs). */
   roles?: string[]
+  /** The handler reports its own success via Understudy.notifyAction — the
+   *  runner must not auto-record by action name (prevents cross-run bleed). */
+  selfReporting?: boolean
   name: string
   description: string
   params?: Record<string, HostActionParam>

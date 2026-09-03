@@ -68,6 +68,17 @@ async function auth(req, res, next) {
 
 const actor = (req) => String(req.body?.actingAs || req.user.username)
 
+// PostgreSQL throws on non-integer ids; an unhandled async throw kills the
+// process. Validate up front and answer 400 instead.
+const intParam = (req, res) => {
+  const n = Number(req.params.id)
+  if (!Number.isInteger(n) || n < 0) {
+    res.status(400).json({ error: 'invalid_id' })
+    return null
+  }
+  return String(n)
+}
+
 app.get('/api/state', auth, async (req, res) => {
   const [users, worklogs, approvals, processes] = await Promise.all([
     db.listUsers(),
@@ -148,6 +159,7 @@ async function openRunStepsFor(worklogId, stampedRunId) {
 }
 
 app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const worklogs = await db.listWorklogs()
   const wl = worklogs.find((w) => w.id === req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
@@ -159,6 +171,11 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
       error: 'process_incomplete',
       detail: `This entry belongs to playbook run #${linked.runId}, which still has required steps open: ${linked.open.join(' → ')}. Finish them (or resolve a deviation) before requesting review.`,
     })
+  }
+  {
+    const approvals = await db.listApprovals()
+    if (approvals.some((a) => a.worklogId === wl.id && a.status === 'PENDING'))
+      return res.status(409).json({ error: 'duplicate_review', detail: 'A review for this entry is already pending.' })
   }
   const approver = String(req.body?.approver ?? 'lee')
   const approverRole = await roleOfUser(approver)
@@ -177,11 +194,11 @@ app.post('/api/worklogs/:id/submit', auth, async (req, res) => {
 
 // Persist the verified measurements that passed a decision's criteria.
 app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const m = req.body?.measurements
   if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
   {
-    const all = await db.listWorklogs()
-    const row = all.find((w) => w.id === req.params.id)
+    const row = await db.getWorklog(req.params.id)
     if (row?.status === 'approved')
       return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
   }
@@ -203,11 +220,11 @@ app.post('/api/worklogs/:id/verification', auth, async (req, res) => {
 
 // Attach a corrective action to an EXISTING incident (instead of creating a new one).
 app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const b = req.body ?? {}
   if (!b.actionTaken) return res.status(400).json({ error: 'actionTaken is required' })
   {
-    const all = await db.listWorklogs()
-    const row = all.find((w) => w.id === req.params.id)
+    const row = await db.getWorklog(req.params.id)
     if (row?.status === 'approved')
       return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
   }
@@ -221,6 +238,7 @@ app.post('/api/worklogs/:id/corrective', auth, async (req, res) => {
 })
 
 app.post('/api/approvals/:id/decide', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const decision = String(req.body?.decision ?? '')
   if (decision !== 'APPROVED' && decision !== 'REJECTED') {
     return res.status(400).json({ error: 'decision must be APPROVED or REJECTED' })
@@ -247,8 +265,7 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
       return res.status(403).json({ error: 'role_mismatch', detail: `Only a Reviewer may decide; ${actingAs} is ${r ?? 'unknown'}.` })
   }
   if (decision === 'APPROVED') {
-    const wlAll = await db.listWorklogs()
-    const wlRow = wlAll.find((w) => w.id === existing.worklogId)
+    const wlRow = await db.getWorklog(existing.worklogId)
     const linked = await openRunStepsFor(existing.worklogId, wlRow?.data?.runId)
     if (linked && linked.open.length > 0) {
       return res.status(409).json({
@@ -258,6 +275,8 @@ app.post('/api/approvals/:id/decide', auth, async (req, res) => {
     }
   }
   const decided = await db.decideApproval(existing.id, decision, req.body?.comment)
+  if (!decided || decided.status !== decision)
+    return res.status(409).json({ error: 'already_decided', detail: 'This review was decided by a concurrent request.' })
   await db.setWorklogStatus(existing.worklogId, decision === 'APPROVED' ? 'approved' : 'rejected')
   res.json(decided)
 })
@@ -273,12 +292,14 @@ app.post('/api/processes', auth, async (req, res) => {
 })
 
 app.get('/api/processes/:id', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const row = await db.getProcess(req.params.id)
   if (!row) return res.status(404).json({ error: 'process not found' })
   res.json(row)
 })
 
 app.delete('/api/processes/:id', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const ok = await db.deleteProcess(req.params.id)
   if (!ok) return res.status(404).json({ error: 'process not found' })
   res.json({ ok: true })
@@ -325,6 +346,7 @@ app.post('/api/runs', auth, async (req, res) => {
 })
 
 app.post('/api/runs/:id', auth, async (req, res) => {
+  if (intParam(req, res) === null) return
   const b = req.body ?? {}
   {
     const all = await db.listRuns()
@@ -333,6 +355,8 @@ app.post('/api/runs/:id', auth, async (req, res) => {
     if (row.startedBy && row.startedBy !== req.user.username)
       return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
     if (b.steps !== undefined) {
+      if (Array.isArray(b.steps) && b.steps.length === 0 && Array.isArray(row.steps) && row.steps.length > 0)
+        return res.status(400).json({ error: 'invalid_steps', detail: 'A run\u2019s recorded steps cannot be cleared.' })
       const ok =
         Array.isArray(b.steps) &&
         b.steps.every(
@@ -390,6 +414,16 @@ app.use(
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-store')
   res.sendFile(path.join(dist, 'index.html'))
+})
+
+// Express 4 does not catch async throws — last-resort net so one bad request
+// can never take the process down.
+app.use((err, _req, res, _next) => {
+  console.error('request error:', err?.message ?? err)
+  if (!res.headersSent) res.status(500).json({ error: 'internal_error' })
+})
+process.on('unhandledRejection', (err) => {
+  console.error('unhandled rejection:', err?.message ?? err)
 })
 
 app.listen(PORT, () => console.log(`[server] listening on :${PORT} (db: ${db.kind})`))

@@ -185,7 +185,17 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
             : `saved "${current.title}" to the shared process library (id ${saved.id})`,
         ),
       )
-      .catch((err) => record('user', 'map', `saving "${current.title}" failed: ${err instanceof Error ? err.message : err}`))
+      .catch((err) => {
+        record(
+          'user',
+          'map',
+          `saving "${current.title}" FAILED: ${err instanceof Error ? err.message : err} — the map is back to draft; fix and confirm again`,
+        )
+        if (map === current) {
+          current.confirmed = false
+          notify()
+        }
+      })
   }
 }
 
@@ -258,8 +268,10 @@ export function recordActionSuccess(
   // The same success can be reported twice (the app's notifyAction inside the
   // handler AND the runner around it). A duplicate would sit unconsumed and
   // later bleed into the next loaded playbook — record each result only once.
+  const boundOpen = map?.confirmed && map.steps.some((s) => s.action === actionName && !s.done)
   if (
     resultId &&
+    !boundOpen &&
     actionHistory.some((e) => e.action === actionName && e.resultId === resultId)
   ) {
     return
@@ -289,6 +301,27 @@ export function markActionDone(
       return st !== 'not_applicable' && st !== 'conditional'
     })
   if (!step) return null
+  // A step that demands evidence completes only through its task card —
+  // an action success carries no measured values.
+  if (step.fields?.length) {
+    const needed = (map.fields ?? []).filter(
+      (f) => step.fields!.includes(f.key) && (f.required || f.confirm),
+    )
+    if (needed.length) {
+      record(
+        by,
+        'map',
+        `"${step.label}" was performed but needs ${needed.map((f) => f.label ?? f.key).join(', ')} — complete it from the assignee's task card`,
+      )
+      notify()
+      return null
+    }
+  }
+  if ((step.next?.length ?? 0) === 1 && step.next![0].criteria && Object.keys(step.next![0].criteria!).length) {
+    record(by, 'map', `"${step.label}" has exit criteria — complete it from the task card with the measured values`)
+    notify()
+    return null
+  }
   step.done = true
   delete step.naReason
   if (resultId) step.resultId = resultId
@@ -646,6 +679,14 @@ export function humanToggleStepDone(
           notify()
           return
         }
+      }
+    }
+    if (step && !step.done && map?.confirmed) {
+      const st0 = progress().get(stepId)
+      if (st0 === 'not_applicable' || st0 === 'conditional') {
+        record('user', 'map', `blocked: "${step.label}" is not on the active path — its branch was not taken`)
+        notify()
+        return
       }
     }
     if (step && !step.done && !opts?.allowSkip && map?.confirmed) {

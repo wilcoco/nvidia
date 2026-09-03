@@ -89,6 +89,7 @@ window.Understudy.init({
   actions: [
     {
       name: 'log_work_item',
+      selfReporting: true,
       roles: ['Contributor'],
       description:
         'Create a work log entry (as the active persona): what was done or observed, its category, and any structured values. When a playbook with a fields contract is loaded, pass those fields as additional params — they are stored on the entry. Returns the new entry including its id.',
@@ -124,6 +125,7 @@ window.Understudy.init({
     },
     {
       name: 'record_step_result',
+      selfReporting: true,
       roles: ['Contributor'],
       description:
         'Attach a step\'s result (what was done and its outcome) to an EXISTING work log entry — use this for fix/remediation/completion steps instead of creating a new entry.',
@@ -182,6 +184,7 @@ window.Understudy.init({
     },
     {
       name: 'request_review',
+      selfReporting: true,
       roles: ['Contributor'],
       description: 'Send a work log entry to the reviewer for approval.',
       params: {
@@ -196,6 +199,7 @@ window.Understudy.init({
     },
     {
       name: 'approve_review',
+      selfReporting: true,
       roles: ['Reviewer'],
       description:
         'Approve a pending review (switch persona to the reviewer first). Use for sign-off steps.',
@@ -212,6 +216,7 @@ window.Understudy.init({
     },
     {
       name: 'reject_review',
+      selfReporting: true,
       roles: ['Reviewer'],
       description: 'Reject a pending review with a comment explaining why.',
       params: {

@@ -1,6 +1,7 @@
 declare const __BUILD__: string
 interface UnderstudyHostAction {
   roles?: string[]
+  selfReporting?: boolean
   name: string
   description: string
   params?: Record<string, { type: 'string' | 'number' | 'boolean'; description?: string; required?: boolean }>

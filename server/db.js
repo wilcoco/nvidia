@@ -75,6 +75,9 @@ function memoryBackend() {
       approvals.unshift(row)
       return row
     },
+    async getWorklog(id) {
+      return worklogs.find((w) => w.id === id) ?? null
+    },
     async listApprovals() {
       return approvals
     },
@@ -84,6 +87,7 @@ function memoryBackend() {
     async decideApproval(id, status, comment) {
       const a = approvals.find((x) => x.id === id)
       if (!a) return null
+      if (a.status !== 'PENDING') return a // conditional: losers see the settled state
       a.status = status
       a.comment = comment
       return a
@@ -195,18 +199,18 @@ async function pgBackend(databaseUrl) {
   // Keep display roles in sync with the current neutral naming (idempotent).
   await pool.query(`UPDATE users SET role='Contributor' WHERE username='kim' AND role<>'Contributor'`)
   await pool.query(`UPDATE users SET role='Reviewer' WHERE username='lee' AND role<>'Reviewer'`)
-  {
-    const { rows: pk } = await pool.query(`SELECT 1 FROM users WHERE username='park'`)
-    if (pk.length === 0) {
-      const u = seedRows().find((x) => x.username === 'park')
-      if (u)
-        await pool.query('INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5)', [
-          u.username,
-          u.name,
-          u.role,
-          u.passHash,
-          u.salt,
-        ])
+  // Every default account is seeded individually — a partial users table
+  // (e.g. one row inserted first) must not suppress the rest.
+  for (const u of seedRows()) {
+    const { rows: ex } = await pool.query('SELECT 1 FROM users WHERE username=$1', [u.username])
+    if (ex.length === 0) {
+      await pool.query('INSERT INTO users (username, name, role, pass_hash, salt) VALUES ($1,$2,$3,$4,$5)', [
+        u.username,
+        u.name,
+        u.role,
+        u.passHash,
+        u.salt,
+      ])
     }
   }
   const { rows } = await pool.query('SELECT count(*)::int AS n FROM users')
@@ -282,6 +286,10 @@ async function pgBackend(databaseUrl) {
       )
       return ap(rows[0])
     },
+        async getWorklog(id) {
+      const { rows } = await pool.query('SELECT * FROM worklogs WHERE id=$1', [Number(id)])
+      return rows[0] ? wl(rows[0]) : null
+    },
     async listApprovals() {
       const { rows } = await pool.query('SELECT * FROM approvals ORDER BY id DESC LIMIT 200')
       return rows.map(ap)
@@ -292,7 +300,7 @@ async function pgBackend(databaseUrl) {
     },
     async decideApproval(id, status, comment) {
       const { rows } = await pool.query(
-        'UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 RETURNING *',
+        "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
         [id, status, comment ?? null],
       )
       return rows[0] ? ap(rows[0]) : null

@@ -121,8 +121,11 @@ export function resumeRunTracking(id: string): void {
   }
 }
 
+let startSeq = 0
+
 export function startRunTracking(processId: string): void {
   const store = host.getProcessStore()
+  const seq = ++startSeq
   runId = null
   completed = false
   if (!store?.startRun) return
@@ -135,6 +138,7 @@ export function startRunTracking(processId: string): void {
   void store
     .startRun(processId, map)
     .then((run) => {
+      if (seq !== startSeq) return // a newer load superseded this start — ignore the late response
       runId = run.id
       record('user', 'map', `started run ${run.id} of "${map.title}"`)
       sync()
