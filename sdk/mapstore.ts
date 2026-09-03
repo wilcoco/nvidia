@@ -1358,6 +1358,21 @@ export function progress(
   return statuses
 }
 
+/** The decision that still describes the run's current route.
+ *
+ * Decisions remain in `map.decisions` as an audit trail after a later branch
+ * makes their step conditional or not applicable. Agent-facing current-state
+ * views must not present those historical records as the active choice.
+ */
+export function currentDecision(
+  stepId: string,
+  statuses: Map<string, StepStatus> = progress(),
+): NonNullable<ProcessMap['decisions']>[number] | null {
+  const status = statuses.get(stepId)
+  if (status === 'conditional' || status === 'not_applicable') return null
+  return map?.decisions?.filter((d) => d.stepId === stepId && !d.invalidated).slice(-1)[0] ?? null
+}
+
 export function editsSince(cursor = 0): MapEdit[] {
   return edits.filter((e) => e.id > cursor)
 }

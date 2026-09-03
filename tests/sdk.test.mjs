@@ -105,6 +105,32 @@ test('reopened evidence invalidates the previous pass decision',()=>{
  assert.equal(map.pendingDecision().id,'d')
  assert.equal(map.resolveDecision('d','approve','pass',undefined,'agent',{ok:true}).ok,false)
 })
+test('inactive recovery decisions are historical, never the current chosen route',()=>{
+ const {map}=fixture()
+ map.loadSavedMap({title:'recover then pass',fields:[
+  {key:'passed',type:'boolean',required:true},{key:'restored',type:'boolean',required:true},{key:'needsRedesign',type:'boolean',required:true}],steps:[
+  step('s1',{next:[{to:'s2'}]}),step('s2',{next:[{to:'s3'}]}),
+  step('s3',{fields:['passed'],next:[{to:'s4'}]}),
+  step('s4',{type:'decision',next:[{to:'s6',criteria:{passed:{eq:false}}},{to:'s5',criteria:{passed:{eq:true}}}]}),
+  step('s5',{type:'approval'}),
+  step('s6',{fields:['restored'],next:[{to:'s7',criteria:{restored:{eq:true}}}]}),
+  step('s7',{next:[{to:'s8'}]}),
+  step('s8',{type:'decision',next:[{to:'s9',criteria:{needsRedesign:{eq:true}}},{to:'s3',criteria:{needsRedesign:{eq:false}}}]}),
+  step('s9',{type:'approval',approvalPurpose:'plan'})]})
+ map.humanToggleStepDone('s1');map.humanToggleStepDone('s2')
+ map.humanToggleStepDone('s3',{passed:false})
+ assert.equal(map.resolveDecision('s4','s6','failed').ok,true)
+ map.humanToggleStepDone('s6',{restored:true});map.humanToggleStepDone('s7')
+ assert.equal(map.resolveDecision('s8','s3','no redesign',undefined,'agent',{needsRedesign:false}).ok,true)
+ assert.equal(map.progress().get('s3'),'ready')
+ map.humanToggleStepDone('s3',{passed:true})
+ assert.equal(map.resolveDecision('s4','s5','fresh pass').ok,true)
+ const statuses=map.progress()
+ assert.equal(statuses.get('s8'),'not_applicable')
+ assert.equal(map.currentDecision('s8',statuses),null)
+ assert.equal(map.currentDecision('s4',statuses).to,'s5')
+ assert.ok(map.getMap().decisions.some(d=>d.stepId==='s8'&&d.to==='s3'),'superseded route remains in the audit history')
+})
 test('task loop demands fresh work on each of three retries',()=>{
  const {map,sync}=fixture()
  map.loadSavedMap({title:'retry',steps:[step('work'),step('d',{type:'decision',next:[{to:'dry',condition:'failed'},{to:'approve',condition:'pass'}]}),step('dry',{next:[{to:'work'}]}),step('approve',{type:'approval'})]})

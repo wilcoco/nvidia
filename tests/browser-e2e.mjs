@@ -10,8 +10,11 @@ const defaultChrome = process.platform === 'darwin'
     ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
     : '/usr/bin/google-chrome'
 const chrome = process.env.CHROME_PATH || defaultChrome
+const strictBrowserGate = process.env.BROWSER_E2E_REQUIRED === '1' || process.env.CI === 'true'
+const chromeAvailable = existsSync(chrome)
 
-test('rendered desktop authoring and 375px role relay survive approval and reload', {skip: !existsSync(chrome), timeout: 60_000}, async()=>{
+test('natural keyboard editing of a seeded draft and 375px role relay survive approval and reload', {skip: !chromeAvailable && !strictBrowserGate, timeout: 60_000}, async()=>{
+  assert.ok(chromeAvailable, `Chrome is required for the browser E2E gate; set CHROME_PATH (looked for ${chrome})`)
   let base = ''
   let stderr = ''
   const server = spawn(process.execPath, ['server/index.js'], {
@@ -54,36 +57,75 @@ test('rendered desktop authoring and 375px role relay survive approval and reloa
     }, title)
 
     const panel = page.locator('#understudy-panel-host')
-    const label = panel.getByRole('button', {name: 'Rename step: Prepare packages'})
-    await label.focus()
-    await label.press('Enter')
+    const focusedPanelControl = () => panel.evaluate((host) => {
+      const active = host.shadowRoot?.activeElement
+      return active instanceof HTMLElement
+        ? {label: active.getAttribute('aria-label'), focusVisible: active.matches(':focus-visible'), opacity: getComputedStyle(active).opacity}
+        : null
+    })
+    const waitForPanelFocus = (label) => page.waitForFunction((expected) => {
+      const host = document.querySelector('#understudy-panel-host')
+      return host?.shadowRoot?.activeElement?.getAttribute('aria-label') === expected
+    }, label)
+    const waitForPanelOpacity = (label) => page.waitForFunction((expected) => {
+      const host = document.querySelector('#understudy-panel-host')
+      const active = host?.shadowRoot?.activeElement
+      return active?.getAttribute('aria-label') === expected && getComputedStyle(active).opacity === '1'
+    }, label)
+    // Start from the page itself and enter the open Shadow DOM using only the
+    // browser's sequential focus navigation. This catches focusout renders
+    // that direct locator.focus() would bypass.
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : undefined))
+    let reachedLabel = false
+    for (let i = 0; i < 200; i++) {
+      await page.keyboard.press('Tab')
+      if ((await focusedPanelControl())?.label === 'Rename step: Prepare packages') { reachedLabel = true; break }
+    }
+    assert.equal(reachedLabel, true, 'natural Tab traversal must reach the first step label')
+    assert.equal((await focusedPanelControl())?.focusVisible, true)
+    await page.keyboard.press('Enter')
     const labelInput = panel.getByRole('textbox', {name: 'Step name: Prepare packages'})
-    await labelInput.fill('Prepare counted packages')
-    await labelInput.press('Enter')
+    await labelInput.waitFor()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.type('Prepare counted packages')
+    assert.equal(await labelInput.inputValue(), 'Prepare counted packages')
+    await page.keyboard.press('Tab')
 
-    const note = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
-    await note.focus()
-    await note.press('Enter')
+    await waitForPanelFocus('Edit note for Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.label, 'Edit note for Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.focusVisible, true)
+    await page.keyboard.press('Space')
     const noteInput = panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'})
-    await noteInput.fill('Count every package before handoff.')
-    await noteInput.press('Enter')
+    await noteInput.waitFor()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.type('Count every package before handoff.')
+    assert.equal(await noteInput.inputValue(), 'Count every package before handoff.')
+    await page.keyboard.press('Shift+Tab')
     await page.waitForTimeout(100)
 
+    assert.equal((await focusedPanelControl())?.label, 'Rename step: Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.focusVisible, true)
+    await page.keyboard.press('Shift+Tab')
+    assert.equal((await focusedPanelControl())?.label, 'Remove step: Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.focusVisible, true)
+    await waitForPanelOpacity('Remove step: Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.opacity, '1')
+    await page.keyboard.press('Shift+Tab')
+    assert.equal((await focusedPanelControl())?.label, 'Step type for Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.focusVisible, true)
+    await waitForPanelOpacity('Step type for Prepare counted packages')
+    assert.equal((await focusedPanelControl())?.opacity, '1')
+
     const typeSelect = panel.getByRole('combobox', {name: 'Step type for Prepare counted packages'})
-    await typeSelect.focus()
-    await page.waitForTimeout(200)
     assert.equal(await typeSelect.evaluate(el => getComputedStyle(el).opacity), '1')
     const remove = panel.getByRole('button', {name: 'Remove step: Prepare counted packages'})
-    await remove.focus()
-    await page.waitForTimeout(200)
     assert.equal(await remove.evaluate(el => getComputedStyle(el).opacity), '1')
 
     await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
     await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 1)
     await panel.getByRole('button', {name: 'Propose changes (new draft)'}).click()
     const secondNote = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
-    await secondNote.focus()
-    await secondNote.press('Enter')
+    await secondNote.click()
     await panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'}).fill('Count and verify every package before handoff.')
     await panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'}).press('Enter')
     await panel.getByRole('button', {name: 'Save as v2 to library'}).click()

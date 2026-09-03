@@ -162,12 +162,14 @@ HTTP regression tests. Set `TEST_DATABASE_URL` to a separate local test
 PostgreSQL database to run the same storage and HTTP checks against Postgres.
 The tests create records; do not point them at a production database.
 
-Run `npm run test:browser` for the rendered Chrome journey: keyboard-edit a
+Run `npm run test:browser` for the rendered Chrome journey: enter the Shadow
+DOM with natural Tab/Shift+Tab navigation, keyboard-edit a
 draft, save v1 and v2, start a run, complete the Contributor and Operations
 task forms at 375×768, approve as Reviewer, reload, and verify that the exact
 completed run returns. It uses `CHROME_PATH` when set and otherwise looks for
 the standard Chrome installation path; when Chrome is unavailable, the
-browser test reports as skipped.
+browser test reports as skipped locally. Set `BROWSER_E2E_REQUIRED=1` (or run
+under `CI=true`) to make a missing Chrome installation fail this required gate.
 
 ## Deploy (Railway)
 

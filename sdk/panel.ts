@@ -248,7 +248,6 @@ let skipConfirmId: string | null = null
 let activityOpen = false
 let renderQueued = false
 let pointerDown = false
-let pendingClickTarget: EventTarget | null = null
 
 export function mountPanel(initiallyCollapsed?: boolean): void {
   window.addEventListener('understudy:host-state', () => scheduleRender())
@@ -258,12 +257,10 @@ export function mountPanel(initiallyCollapsed?: boolean): void {
   host.id = HOST_ID
   document.body.appendChild(host)
   shadow = host.attachShadow({ mode: 'open' })
-  shadow.addEventListener('focusout', (event) => {
-    const target = (event as FocusEvent).relatedTarget
-    pendingClickTarget = target instanceof HTMLButtonElement ? target : null
-    scheduleRender()
-  })
-  shadow.addEventListener('click', () => { pendingClickTarget = null; scheduleRender() })
+  // Moving focus is not a state change. Re-rendering on every focusout
+  // detached the newly focused control and made natural Tab traversal fall
+  // out of the Shadow DOM. Actual edits already notify through mapstore.
+  shadow.addEventListener('click', () => scheduleRender())
   shadow.addEventListener('pointerdown', () => { pointerDown = true })
   window.addEventListener('pointerup', () => {
     pointerDown = false
@@ -299,11 +296,23 @@ function scheduleRender() {
   // which would freeze the panel while an agent works in the background.
   setTimeout(() => {
     renderQueued = false
-    // A blur can commit an edit between pointerdown and click. Preserve the
-    // clicked button until its handler runs, otherwise the first click is lost.
-    if (pointerDown || pendingClickTarget) return
+    // A blur can commit an edit between pointerdown and click. Wait until the
+    // pointer sequence has finished so the clicked control remains attached.
+    if (pointerDown) return
     render()
   }, 0)
+}
+
+function setFocusKey<T extends HTMLElement>(node: T, key: string): T {
+  node.dataset.focusKey = key
+  return node
+}
+
+function restoreFocus(root: HTMLElement, key?: string): void {
+  if (!key) return
+  const target = [...root.querySelectorAll<HTMLElement>('[data-focus-key]')]
+    .find((node) => node.dataset.focusKey === key)
+  target?.focus({ preventScroll: true })
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -384,19 +393,26 @@ function renderStep(
       row.replaceChild(input, label)
       input.focus()
       input.select()
-      const commit = () => mapstore.humanEditStep(step.id, 'label', input.value.trim() || step.label)
+      const commit = () => {
+        mapstore.humanEditStep(step.id, 'label', input.value.trim() || step.label)
+        // No-op edits do not notify mapstore, but the temporary editor still
+        // has to collapse back to its read view after Tab/blur.
+        scheduleRender()
+      }
       input.onkeydown = (e) => {
         if (e.isComposing) return
         if (e.key === 'Enter') input.blur()
         if (e.key === 'Escape') {
           input.onblur = null
           input.blur()
+          scheduleRender()
         }
       }
       input.onblur = commit
     }
     label.title = 'Click or press Enter to rename'
     label.tabIndex = 0
+    setFocusKey(label, `step:${step.id}:label`)
     label.setAttribute('role', 'button')
     label.setAttribute('aria-label', `Rename step: ${step.label}`)
     label.onclick = editLabel
@@ -416,11 +432,13 @@ function renderStep(
     typeSel.appendChild(opt)
   }
   typeSel.onchange = () => mapstore.humanEditStep(step.id, 'type', typeSel.value)
+  setFocusKey(typeSel, `step:${step.id}:type`)
   typeSel.setAttribute('aria-label', `Step type for ${step.label}`)
   if (!locked) meta.appendChild(typeSel)
 
   const del = el('button', 'del', '✕')
   del.title = 'Remove step'
+  setFocusKey(del, `step:${step.id}:delete`)
   del.setAttribute('aria-label', `Remove step: ${step.label}`)
   del.onclick = () => mapstore.humanRemoveStep(step.id)
   if (!locked) meta.appendChild(del)
@@ -438,19 +456,24 @@ function renderStep(
         input.setAttribute('aria-label', `Step note for ${step.label}`)
         card.replaceChild(input, detail)
         input.focus()
-        const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())
+        const commit = () => {
+          mapstore.humanEditStep(step.id, 'detail', input.value.trim())
+          scheduleRender()
+        }
         input.onkeydown = (e) => {
           if (e.isComposing) return
           if (e.key === 'Enter') input.blur()
           if (e.key === 'Escape') {
             input.onblur = null
             input.blur()
+            scheduleRender()
           }
         }
         input.onblur = commit
       }
       detail.title = 'Click or press Enter to edit this note (judgment rules live here)'
       detail.tabIndex = 0
+      setFocusKey(detail, `step:${step.id}:detail`)
       detail.setAttribute('role', 'button')
       detail.setAttribute('aria-label', `${step.detail ? 'Edit' : 'Add'} note for ${step.label}`)
       detail.onclick = editDetail
@@ -804,6 +827,7 @@ function render() {
       (editing instanceof HTMLInputElement && !['checkbox', 'radio', 'button'].includes(editing.type))) return
   const root = shadow.getElementById('root')
   if (!root) return
+  const focusKey = editing instanceof HTMLElement ? editing.dataset.focusKey : undefined
   root.innerHTML = ''
 
   // Let the host page adapt its layout to the panel (e.g. release the
@@ -822,6 +846,7 @@ function render() {
       render()
     }
     root.appendChild(fab)
+    restoreFocus(root, focusKey)
     return
   }
 
@@ -1127,4 +1152,5 @@ function render() {
   root.appendChild(panel)
   const flowEl = panel.querySelector('.flow') as HTMLElement | null
   if (flowEl) drawEdges(flowEl)
+  restoreFocus(root, focusKey)
 }

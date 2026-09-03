@@ -3,13 +3,13 @@ import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
 const modes=[['memory',''],...(process.env.TEST_DATABASE_URL?[['postgres',process.env.TEST_DATABASE_URL]]:[])]
 for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approval`,async()=>{
- const port=18989
- const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,DATABASE_URL:url,PORT:String(port)},stdio:['ignore','pipe','pipe']})
+ let base=''
+ const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,DATABASE_URL:url,PORT:'0'},stdio:['ignore','pipe','pipe']})
  let errors='';server.stderr.on('data',b=>errors+=b)
  try {
-  await new Promise((resolve,reject)=>{server.stdout.on('data',b=>{if(String(b).includes('listening'))resolve()});server.once('exit',c=>reject(Error(errors||String(c))))})
+  await new Promise((resolve,reject)=>{server.stdout.on('data',b=>{const match=String(b).match(/listening on :(\d+)/);if(match){base=`http://127.0.0.1:${match[1]}`;resolve()}});server.once('exit',c=>reject(Error(errors||String(c))))})
   const call=async(path,token,body)=>{
-   const response=await fetch(`http://127.0.0.1:${port}/api${path}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(4000)})
+   const response=await fetch(`${base}/api${path}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(4000)})
    return {status:response.status,body:await response.json()}
   }
   const owner=(await call('/auth/login',null,{username:'judge',password:'webmcp2026'})).body.token

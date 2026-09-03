@@ -458,7 +458,10 @@ const tools: ToolDef[] = [
           label: s.label,
           type: s.type,
           branches: s.next,
-          chosen: map.decisions?.filter((d) => d.stepId === s.id && !d.invalidated).slice(-1)[0] ?? null,
+          // `decisions_taken` below is the durable audit trail. `chosen` is
+          // deliberately narrower: only the decision on the current active
+          // route, never a superseded choice from an inactive branch.
+          chosen: mapstore.currentDecision(s.id, statuses),
           note: 'Resolve with resolve_decision before moving past this step; loop-back choices re-open the loop body.',
         }))
       return {
