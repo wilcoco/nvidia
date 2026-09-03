@@ -1,6 +1,29 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {reviewFingerprint, matchesReviewFingerprint, guardRunUpdate} from '../server/runstate.js'
+import {reviewFingerprint, matchesReviewFingerprint, guardRunUpdate, approvalGate, reviewEvidence} from '../server/runstate.js'
+
+test('requesting a review exempts only its own administrative step',()=>{
+ const design={steps:[{id:'measure',type:'task'},{id:'request',type:'task',action:'request_review'},{id:'sign',type:'approval'}]}
+ const run={status:'active',steps:design.steps.map((s,i)=>({...s,status:i===0?'done':i===1?'ready':'pending'}))}
+ assert.deepEqual(approvalGate(run,design,undefined,true).open,[])
+ assert.deepEqual(approvalGate(run,design).open,['request'],'sign-off still requires a completed request')
+ assert.deepEqual(approvalGate({...run,steps:run.steps.map(s=>s.id==='measure'?{...s,status:'ready'}:s)},design,undefined,true).open,['measure'])
+ assert.ok(approvalGate(run,design,'other',true).open.length)
+ const inputRequest={fields:[{key:'note',type:'string',required:true}],steps:design.steps.map(s=>s.id==='request'?{...s,fields:['note']}:s)}
+ assert.deepEqual(approvalGate(run,inputRequest,undefined,true).open,['request'])
+ const terminal={steps:design.steps.slice(0,2)}
+ assert.deepEqual(approvalGate({...run,steps:run.steps.slice(0,2)},terminal,undefined,true).open,[])
+})
+
+test('review snapshots remove unmeasured form defaults and exclude later work',()=>{
+ const design={steps:[{id:'measure',type:'task',fields:['count','passed']},{id:'sign',type:'approval'},{id:'later',type:'task',fields:['future']}]}
+ const run={steps:[{id:'measure',status:'done',resultData:{count:12}},{id:'later',status:'done',resultData:{count:0,future:99}}]}
+ const evidence=reviewEvidence(run,design,['measure'],{count:0,passed:true,verification:{passed:true}})
+ assert.equal(evidence.count,12)
+ assert.equal(evidence.passed,undefined)
+ assert.equal(evidence.future,undefined)
+ assert.equal(evidence.verification,null)
+})
 
 test('JSONB key ordering does not change the signed evidence fingerprint', () => {
   const browser={steps:[{id:'work',type:'task',status:'done',resultData:{z:2,a:{y:3,x:4}}}],decisions:[{stepId:'check',to:'approve',reason:'verified',ts:1}]}

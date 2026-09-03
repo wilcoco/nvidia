@@ -114,7 +114,7 @@ through the declarative attribute API.
   auto-capture, shadow-DOM side panel, process-map store with a run-state
   machine (done / next / skipped / blocked / conditional / not-applicable),
   branch resolution against live data, pre-execution process guard,
-  session-history retro-linking, and 20 WebMCP tools.
+  isolated executions with explicit run restoration, and 20 WebMCP tools.
 - **Demo workspace** (React + Vite): a generic work-log workspace with
   reviews and a shared playbook library (incidents are one scenario).
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,

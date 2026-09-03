@@ -590,7 +590,7 @@ const tools: ToolDef[] = [
   {
     name: 'load_process',
     description:
-      'Load a saved process from the shared library into this session (it renders in the panel, already confirmed). Work already done this session is automatically linked: steps whose actions were performed earlier start as done. Then work along it with run_action, asking the human at decision points.',
+      'Start a fresh execution of a saved playbook from the shared library. It renders in the panel, already confirmed, with every task unfinished and no previous result IDs or evidence. Earlier session actions are never imported automatically. To continue existing work, ask the human to select it in Choose an existing run. For a new execution, work along it with run_action, asking the human at decision points.',
     inputSchema: schema({ id: { type: 'string', description: 'Process id from list_saved_processes' } }, ['id']),
     execute: async (args) => {
       const store = host.getProcessStore()

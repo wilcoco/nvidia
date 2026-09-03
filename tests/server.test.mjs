@@ -46,6 +46,11 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal((await call(discoveryPath,owner,{actingAs:'kim',answer:'Changed while under review'})).status,409)
   for(const id of ['bad','999999999999999999999','0'])assert.equal((await call(`/worklogs/${id}/verification`,owner,{measurements:{ok:true}})).status,400)
   assert.equal((await call('/runs?processId=not-an-id',owner)).status,400)
+  for(const query of ['before=bad','before=0','limit=0','limit=51','limit=NaN'])
+    assert.equal((await call(`/runs?${query}`,owner)).status,400)
+  const page=(await call(`/runs?processId=${formProcess.body.id}&limit=1`,owner)).body
+  assert.equal(page.length,1);assert.equal(page[0].id,formRun.id)
+  assert.deepEqual((await call(`/runs?processId=${formProcess.body.id}&before=${formRun.id}&limit=1`,owner)).body,[])
   if(mode==='postgres'){
    const bad=await call('/worklogs',owner,{date:'2026-09-03',line:'A',task:'TEST out of range',actingAs:'kim',progressPct:1e50})
    assert.equal(bad.status,500)
@@ -106,6 +111,53 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal(mid.status,'completed')
   assert.ok(mid.events.some(e=>e.id===event.id && e.note===event.note))
   assert.equal(mid.events.filter(e=>e.kind==='approval').length,2)
+
+  // Requesting a review completes an administrative action; it is not its own
+  // unfinished prerequisite. The review must snapshot the run, not its old log.
+  const explicitMap={title:'TEST explicit request and fresh measurements',fields:[
+    {key:'rowCountDelta',type:'number',required:true},
+    {key:'verificationQueriesPassed',type:'boolean',required:true}],steps:[
+    {id:'log',type:'task',label:'Initial baseline',action:'log_work_item'},
+    {id:'measure',type:'task',label:'Measure actual result',fields:['rowCountDelta','verificationQueriesPassed']},
+    {id:'request',type:'task',label:'Request this review',action:'request_review'},
+    {id:'approve',type:'approval',label:'Human sign-off',action:'approve_review'}]}
+  const explicitProcess=(await call('/processes',owner,{title:explicitMap.title,map:explicitMap,actingAs:'kim'})).body
+  const explicitRun=(await call('/runs',owner,{processId:explicitProcess.id,title:explicitMap.title})).body
+  const baseline=(await call('/worklogs',owner,{date:'2026-09-03',line:'A',task:'TEST original 0/true baseline',actingAs:'kim',
+    data:{runId:explicitRun.id,rowCountDelta:0,verificationQueriesPassed:true}})).body
+  let explicitSteps=explicitMap.steps.map((s,i)=>({...s,status:i===0?'done':i===1?'ready':'pending',
+    ...(i===0?{resultId:baseline.id,completedBy:'kim',completedAt:1}:{})}))
+  await call(`/runs/${explicitRun.id}`,owner,{steps:explicitSteps})
+  const premature=await call(`/worklogs/${baseline.id}/submit`,owner,{actingAs:'kim',approver:'lee'})
+  assert.equal(premature.status,409)
+  assert.match(premature.body.detail,/Measure actual result/)
+  explicitSteps=explicitSteps.map(s=>s.id==='measure'?{...s,status:'done',completedAt:2,resultData:{rowCountDelta:12,verificationQueriesPassed:false}}:
+    s.id==='request'?{...s,status:'ready'}:s)
+  await call(`/runs/${explicitRun.id}`,owner,{steps:explicitSteps})
+  const measuredReview=await call(`/worklogs/${baseline.id}/submit`,owner,{actingAs:'kim',approver:'lee'})
+  assert.equal(measuredReview.status,200,JSON.stringify(measuredReview.body))
+  assert.equal(measuredReview.body.evidence.rowCountDelta,12)
+  assert.equal(measuredReview.body.evidence.verificationQueriesPassed,false)
+  let explicitState=(await call('/state',reviewer)).body
+  assert.equal(explicitState.worklogs.find(w=>w.id===baseline.id).data.rowCountDelta,0,'preserve the original observation')
+  assert.equal(explicitState.approvals.find(a=>a.id===measuredReview.body.id).evidence.rowCountDelta,12)
+  // A later measurement cancels the pending review, but must not rewrite its evidence.
+  explicitSteps=explicitSteps.map(s=>s.id==='measure'?{...s,completedAt:3,resultData:{rowCountDelta:0,verificationQueriesPassed:true}}:s)
+  await call(`/runs/${explicitRun.id}`,owner,{steps:explicitSteps})
+  const correctedReview=await call(`/worklogs/${baseline.id}/submit`,owner,{actingAs:'kim',approver:'lee'})
+  assert.equal(correctedReview.status,200,JSON.stringify(correctedReview.body))
+  explicitState=(await call('/state',reviewer)).body
+  const previous=explicitState.approvals.find(a=>a.id===measuredReview.body.id)
+  assert.equal(previous.status,'CANCELLED')
+  assert.equal(previous.evidence.rowCountDelta,12)
+  assert.equal(previous.evidence.verificationQueriesPassed,false)
+  assert.equal(correctedReview.body.evidence.rowCountDelta,0)
+  assert.equal(correctedReview.body.evidence.verificationQueriesPassed,true)
+  explicitSteps=explicitSteps.map(s=>s.id==='request'?{...s,status:'done',resultId:correctedReview.body.id,completedAt:4}:
+    s.id==='approve'?{...s,status:'ready'}:s)
+  await call(`/runs/${explicitRun.id}`,owner,{steps:explicitSteps})
+  assert.equal((await call(`/approvals/${measuredReview.body.id}/decide`,reviewer,{actingAs:'lee',decision:'APPROVED'})).status,400)
+  assert.equal((await call(`/approvals/${correctedReview.body.id}/decide`,reviewer,{actingAs:'lee',decision:'APPROVED'})).status,200)
 
  } finally {
   server.kill()

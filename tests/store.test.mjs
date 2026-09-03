@@ -17,6 +17,34 @@ function fixture(fetch, extra = {}) {
 }
 const response = (data, status = 200) => ({ok: status < 400, status, json: async () => data})
 
+test('explicit review flushes new measurements and publishes its completed request before refresh',async()=>{
+ const events=[]
+ const worklogs=[{id:'w',task:'baseline',data:{runId:'r'},status:'draft'}]
+ const store=fixture(async(path)=>{
+  if(path.endsWith('/submit')){events.push('request');return response({id:'review',worklogId:'w',evidence:{delta:12,passed:false}})}
+  events.push('refresh');return response({me:{username:'kim'},users:[],worklogs,approvals:[],processes:[]})
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),currentRunId:()=> 'r',
+  flushRun:async()=>events.push('flush'),notifyAction:()=>events.push('complete-request'),log(){}}}})
+ await store.refresh();events.length=0
+ const review=await store.requestApproval('w','lee')
+ assert.deepEqual(events,['flush','request','complete-request','flush','refresh'])
+ assert.equal(review.evidence.delta,12)
+ assert.equal(review.evidence.passed,false)
+})
+
+test('reopened evidence clears a stale waiting-for-review message',async()=>{
+ let done=true
+ const proc={title:'review',steps:[{id:'measure',type:'task'},{id:'approve',type:'approval'}]}
+ const store=fixture(async()=>response({me:{username:'kim'},users:[],
+  worklogs:[{id:'w',data:{runId:'r'},status:'submitted'}],approvals:[],processes:[]}),
+  {window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>proc,currentRunId:()=> 'r',log(){},
+   getProgress:()=>[{id:'measure',type:'task',done,status:done?'done':'skipped'},{id:'approve',type:'approval',status:done?'ready':'blocked'}]}}})
+ await store.refresh();await store.autoSyncApproval()
+ assert.equal(store.getState().reviewSync.status,'ready')
+ done=false;await store.autoSyncApproval()
+ assert.equal(store.getState().reviewSync,null)
+})
+
 test('starting fresh changes only this tab and never deletes shared records',async()=>{
  const actions=[],entries=new Map()
  const store=fixture(async(path)=>{throw Error(`Unexpected network write: ${path}`)}, {
@@ -185,4 +213,66 @@ test('permanent review failure is visible, explicit retry succeeds, and the bann
   fail=false;await store.retryReview()
   assert.equal(submitted,2);assert.equal(store.getState().reviewSync.status,'ready')
   atApproval=false;await store.autoSyncApproval();assert.equal(store.getState().reviewSync,null)
+})
+
+test('selecting a run fetches current evidence rather than restoring the stale picker row',async()=>{
+ let restored
+ const map={title:'procedure',steps:[]}
+ const fresh={id:'r',processId:'p',status:'completed',steps:[{id:'a',status:'done',resultData:{delta:12}}]}
+ const store=fixture(async(path)=>{
+  if(path==='/api/processes/p')return response({id:'p',title:map.title,map})
+  if(path==='/api/runs/r')return response(fresh)
+  throw Error(path)
+ },{window:{dispatchEvent(){},Understudy:{flushRun:async()=>{},loadProcess:(_map,meta)=>restored=meta.resume,log(){}}}})
+ await store.followPlaybook('p',{run:{...fresh,steps:[{id:'a',status:'pending'}]}})
+ assert.equal(restored.steps[0].status,'done')
+ assert.equal(restored.steps[0].resultData.delta,12)
+ fresh.status='abandoned'
+ await assert.rejects(store.followPlaybook('p',{run:fresh}),/no longer available/)
+})
+
+test('review journal identifies another target run and its actual server status',async()=>{
+ const logs=[],completed=[]
+ const review={id:'a',worklogId:'w',stepId:'approve',evidence:{runId:'other'}}
+ const store=fixture(async(path)=>{
+  if(path.endsWith('/decide'))return response(review)
+  if(path==='/api/runs/other')return response({id:'other',status:'completed'})
+  return response({me:{username:'lee'},users:[],worklogs:[],approvals:[],processes:[]})
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),currentRunId:()=> 'current',log:(message,detail)=>logs.push({message,detail}),notifyAction:name=>completed.push(name)}}})
+ await store.decideApproval('a','APPROVED')
+ assert.equal(completed.length,0)
+ assert.match(logs.at(-1).message,/run #other — run is completed/)
+ assert.equal(logs.at(-1).detail.runId,'other')
+})
+
+test('version comparison describes input and branch-rule changes without raw JSON',async()=>{
+ const old={title:'process',map:{version:1,fields:[{key:'weight',label:'Weight',type:'number',unit:'g'},{key:'method',label:'Delivery method',type:'select',options:['Courier']}],steps:[{id:'a',label:'Measure',type:'task',next:[{to:'b',criteria:{weight:{gt:0}}}]},{id:'b',label:'Review',type:'approval'}]}}
+ const store=fixture(async(path)=>response(path==='/api/processes'?[{id:'1',title:'process',version:1}]:old))
+ const revised={...old.map,version:2,fields:[{...old.map.fields[0],unit:'kg',required:true},{...old.map.fields[1],options:['Courier','Pickup'],required:true}],steps:[{...old.map.steps[0],next:[{to:'b',criteria:{weight:{gte:1}}}]},old.map.steps[1]]}
+ const diff=await store.diffWithPrevious({title:'process',map:revised})
+ const text=diff.changed.flatMap(c=>[c.label,...c.changes]).join('\n')
+ assert.match(text,/unit: g · optional → number · unit: kg · required/)
+ assert.match(text,/Courier \/ Pickup/)
+ assert.match(text,/Weight > 0 g → Weight ≥ 1 kg/)
+ assert.ok(!text.includes('{'))
+})
+
+test('reload restores the exact run selected in this tab, even when a newer run exists',async()=>{
+ const entries=new Map(),localStorage={getItem:k=>k==='linepulse-token'?'test-token':k==='understudy.lastPlaybook'?'p':null,setItem(){}}
+ const sessionStorage={getItem:k=>entries.get(k)??null,setItem:(k,v)=>entries.set(k,v)}
+ const old={id:'old',processId:'p',status:'active',steps:[{id:'w',status:'done',resultData:{delta:12}}]}, latest={id:'new',processId:'p',status:'active',steps:[{id:'w',status:'pending'}]}
+ const fetch=async(path)=>{
+  if(path==='/api/state')return response({me:{username:'judge'},users:[],worklogs:[],approvals:[],processes:[]})
+  if(path==='/api/runs')return response([latest,old])
+  if(path==='/api/runs/old')return response(old)
+  if(path==='/api/processes/p')return response({id:'p',title:'shared playbook',map:{sourceProcessId:'p',steps:[{id:'w'}]}})
+  throw Error(path)
+ }
+ const first=fixture(fetch,{localStorage,sessionStorage,window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({sourceProcessId:'p'}),currentRunId:()=> 'old',log(){}}}})
+ await first.refresh();first.rememberActiveRun()
+ let restored
+ const second=fixture(fetch,{localStorage,sessionStorage,window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>null,loadProcess:(_m,meta)=>restored=meta.resume,log(){}}}})
+ await second.refresh();await new Promise(r=>setTimeout(r,10))
+ assert.equal(restored.runId,'old')
+ assert.equal(restored.steps[0].resultData.delta,12)
 })

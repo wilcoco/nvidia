@@ -4,6 +4,7 @@ import { AgentInvite, ErrorNotice, useAction } from './ui'
 import SuggestionCard from './SuggestionCard'
 import DiscoveryStart from './DiscoveryStart'
 import { EXAMPLE_WORK } from '../sdk/discovery'
+import RunPicker from './RunPicker'
 
 export type WorkspaceTab = 'overview' | 'incidents' | 'tasks' | 'approvals' | 'playbooks'
 
@@ -117,11 +118,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         </section>
       )}
 
-      {!proc && state.recentRuns.length > 0 && <details className="recent-runs"><summary>Continue an earlier run</summary>
-        <p className="meta">Choose the work you want to return to.</p>
-        {state.recentRuns.slice(0, 5).map((run) => <button key={run.id} className="secondary" disabled={action.busy}
-          onClick={() => void action.run(() => store.followPlaybook(run.processId, {run}))}>{run.title} · #{run.id} · {run.status}</button>)}
-      </details>}
+      <RunPicker onOpened={() => navigate('tasks')} />
       {(proc || captured) && <section className="overview-bottom">
         <div><b>Discover the work around the work.</b><p>Answer questions about preparation, next steps and who takes over. Correct the process together.</p></div>
         <div><b>Follow it. Find it again.</b><p>Each owner gets their next step. Related playbooks are suggested when similar work comes up — you choose what to use.</p></div>

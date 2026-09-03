@@ -58,9 +58,20 @@ export function evidencePatch(run, scope) {
   return { ...values, verification: null, verifiedRoute: null, verifiedAt: null }
 }
 
+// Freeze the values a reviewer saw. A source log is history, while completed
+// task inputs are the current measurements. Omitted task inputs stay omitted.
+export function reviewEvidence(run, map, scope, data = {}) {
+  const values = structuredClone(data)
+  if (!run) return values
+  for (const step of map?.steps ?? [])
+    if (!scope || scope.includes(step.id))
+      for (const key of step.fields ?? []) delete values[key]
+  return { ...values, ...evidencePatch(run, scope) }
+}
+
 /** The SDK executes the saved step order, excluding inactive branches. A review
  * signs off the work before its own step, never work that follows it. */
-export function approvalGate(run, map, requestedStepId) {
+export function approvalGate(run, map, requestedStepId, requesting = false) {
   if (!run || run.status === 'abandoned') return { open: ['linked run is unavailable or abandoned'] }
   const steps = run.steps ?? []
   const design = map?.steps ?? steps
@@ -68,16 +79,19 @@ export function approvalGate(run, map, requestedStepId) {
     !['done', 'not_applicable', 'conditional'].includes(steps.find((r) => r.id === s.id)?.status))
   if (requestedStepId && target?.id !== requestedStepId)
     return { open: ['this approval is not the next required sign-off'] }
-  if (!target) {
-    const open = steps.filter((s) => !['done', 'not_applicable', 'conditional'].includes(s.status))
-    return { open: steps.length ? open.map((s) => s.label || s.id) : ['run has not synced yet'] }
-  }
-  const before = design.slice(0, design.findIndex((s) => s.id === target.id))
+  const before = target ? design.slice(0, design.findIndex((s) => s.id === target.id)) : design
   const scope = before.flatMap((s) => [s.id, `gate:${s.id}`])
-  const open = steps.filter((s) => scope.includes(s.id) && !['done', 'not_applicable', 'conditional'].includes(s.status))
+  // POST /submit is the operation that performs request_review. Exempt only
+  // that administrative step, never its required inputs or another task.
+  const request = requesting ? before.find(s => s.type === 'task' && s.action === 'request_review' &&
+    steps.some(r => r.id === s.id && !['done', 'not_applicable', 'conditional'].includes(r.status)) &&
+    !(map?.fields ?? []).some(f => s.fields?.includes(f.key) && (f.required || f.confirm)) &&
+    !s.next?.some(edge => Object.keys(edge.criteria ?? {}).length)) : undefined
+  const open = steps.filter((s) => scope.includes(s.id) && s.id !== request?.id &&
+    !['done', 'not_applicable', 'conditional'].includes(s.status))
   // Initial or partial snapshots must not make absent work look completed.
   const missing = before.filter((s) => s.type !== 'decision' && !steps.some((r) => r.id === s.id))
-  return { stepId: target.id, scope, open: [...open, ...missing].map((s) => s.label || s.id) }
+  return { stepId: target?.id, scope, open: steps.length ? [...open, ...missing].map((s) => s.label || s.id) : ['run has not synced yet'] }
 }
 
 export function mergeRunEvents(previous = [], incoming = []) {

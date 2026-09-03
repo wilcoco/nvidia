@@ -330,3 +330,94 @@ test('a middle approval freezes its evidence while allowing downstream work', ()
  assert.equal(map.humanToggleStepDone('handoff',{recipient:'Park'}),true)
  assert.equal(map.getMap().events.filter(e=>e.id==='approval:review-1').length,1)
 })
+
+test('fresh runs never import unmatched or duplicate results from earlier work',()=>{
+ const {map}=fixture()
+ const design={title:'review',steps:[step('w',{action:'log_work_item'}),step('m'),step('r',{action:'request_review'}),step('a',{type:'approval',action:'approve_review'})]}
+ map.loadSavedMap(design)
+ map.recordActionSuccess('log_work_item','old-log')
+ map.humanToggleStepDone('m',{delta:12,ok:false})
+ map.humanToggleStepDone('r')
+ map.recordActionSuccess('request_review','old-review') // request already completed by task UI
+ map.recordActionSuccess('request_review','old-review') // duplicate wrapper notification
+ map.loadSavedMap(design)
+ assert.ok(map.getMap().steps.every(s=>!s.done && !s.resultId && !s.completedBy))
+ assert.equal(map.progress().get('w'),'ready')
+ assert.equal(map.progress().get('m'),'pending')
+ map.clearMap()
+ map.recordActionSuccess('log_work_item','unbound-log')
+ map.loadSavedMap(design)
+ assert.ok(map.getMap().steps.every(s=>!s.done && !s.resultId))
+})
+
+test('removing an intermediate task preserves incoming guards and records rewiring',()=>{
+ const {map}=fixture()
+ const draft=()=>({title:'photo',fields:[{key:'photoCheckPassed',type:'boolean',required:true}],steps:[
+  step('q',{fields:['photoCheckPassed'],next:[{to:'tmp',condition:'Photo accepted',criteria:{photoCheckPassed:{eq:true}}}]}),
+  step('tmp',{next:[{to:'a',condition:'Continue to Lee review'}]}),step('a',{type:'approval'})]})
+ map.proposeMap(draft());map.humanRemoveStep('tmp')
+ assert.equal(map.getMap().steps[0].next[0].to,'a')
+ assert.equal(map.getMap().steps[0].next[0].criteria?.photoCheckPassed.eq,true)
+ assert.ok(map.editsSince().some(e=>e.stepId==='q' && e.field==='next'))
+ map.humanConfirmMap()
+ assert.equal(map.humanToggleStepDone('q',{photoCheckPassed:false}),false)
+ assert.equal(map.progress().get('a'),'pending')
+ assert.equal(map.humanToggleStepDone('q',{photoCheckPassed:true}),true)
+ assert.equal(map.progress().get('a'),'ready')
+})
+
+for(const type of ['task','decision'])test(`${type} retry cannot mutate work across an earlier signature`,()=>{
+ const {map}=fixture()
+ map.loadSavedMap({title:'signed boundary',steps:[step('work'),step('sign',{type:'approval',action:'approve_review'}),step('retry',{type,next:type==='decision'?[{to:'work'},{to:'end'}]:[{to:'work'}]}),step('end')]})
+ map.humanToggleStepDone('work',{value:1});map.markActionDone('approve_review','signature')
+ const before=JSON.stringify(map.getMap())
+ if(type==='task'){
+  assert.equal(map.humanToggleStepDone('retry',{reason:'again'}),false)
+  assert.match(map.getCompletionError(),/signed off/)
+ }else{
+  const result=map.resolveDecision('retry','work','again')
+  assert.equal(result.ok,false);assert.equal(result.error,'signed_work_immutable')
+ }
+ assert.equal(JSON.stringify(map.getMap()),before)
+})
+
+test('step deletion refuses ambiguous branches and incompatible guards without partial rewiring',()=>{
+ const {map}=fixture()
+ for(const successors of [[{to:'a'},{to:'b'}],[{to:'a',criteria:{qty:{gt:10}}}]]){
+  map.proposeMap({title:'ambiguous',steps:[step('q',{fields:['qty'],next:[{to:'tmp',criteria:{qty:{gt:0}}}]}),step('tmp',{next:successors}),step('a'),step('b')]})
+  const before=JSON.stringify(map.getMap().steps)
+  map.humanRemoveStep('tmp')
+  assert.equal(JSON.stringify(map.getMap().steps),before)
+  assert.match(map.getMap().editError,/Cannot remove/)
+ }
+ map.proposeMap({title:'combined',fields:[{key:'qty',type:'number',required:true}],steps:[
+  step('q',{fields:['qty'],next:[{to:'tmp',criteria:{qty:{gt:0}}}]}),step('tmp',{next:[{to:'a',criteria:{qty:{lte:10}}}]}),step('a',{type:'approval'})]})
+ map.humanRemoveStep('tmp');map.humanConfirmMap()
+ assert.equal(map.humanToggleStepDone('q',{qty:0}),false)
+ assert.equal(map.humanToggleStepDone('q',{qty:11}),false)
+ assert.equal(map.humanToggleStepDone('q',{qty:5}),true)
+})
+
+test('late host action success does not complete a different execution',async()=>{
+ const {map,host,runner}=fixture();let finish
+ host.registerAction({name:'late',handler:()=>new Promise(resolve=>finish=resolve)})
+ map.loadSavedMap({title:'A',steps:[step('a',{action:'late'})]})
+ const pending=runner.runAsHuman('late',{})
+ map.loadSavedMap({title:'B',steps:[step('b',{action:'late'})]})
+ finish({id:'old-result'});await pending
+ assert.equal(map.getMap().steps[0].done,false)
+ assert.equal(map.getMap().steps[0].resultId,undefined)
+})
+
+test('a branching task after sign-off can go forward but cannot retry signed work',()=>{
+ const {map}=fixture()
+ map.loadSavedMap({title:'post-review decision',steps:[step('work'),step('sign',{type:'approval',action:'approve_review'}),
+  step('inspect',{next:[{to:'work',condition:'retry'},{to:'finish',condition:'continue'}]}),step('finish')]})
+ map.humanToggleStepDone('work');map.markActionDone('approve_review','signed')
+ assert.equal(map.humanToggleStepDone('inspect',{ok:true}),true)
+ assert.equal(map.getMap().steps[1].done,true)
+ assert.equal(map.pendingDecision().id,'inspect')
+ assert.equal(map.resolveDecision('inspect','work','retry').error,'signed_work_immutable')
+ assert.equal(map.resolveDecision('inspect','finish','continue').ok,true)
+ assert.equal(map.progress().get('finish'),'ready')
+})

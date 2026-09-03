@@ -38,6 +38,8 @@ export interface Worklog {
 }
 
 export interface Approval {
+  /** Immutable values captured by the server when this review was requested. */
+  evidence?: IncidentData
   stepId?: string
   id: string
   worklogId: string
@@ -275,7 +277,7 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
     `logged ${wl.kind} "${wl.task}" (line ${wl.line}${cond ? `, ${cond}` : ''}${wl.urgent ? ', URGENT' : ''})`,
     { worklogId: wl.id },
   )
-  window.Understudy.notifyAction('log_work_item', wl.id)
+  if (runId && window.Understudy.currentRunId?.() === runId) window.Understudy.notifyAction('log_work_item', wl.id)
   if (!runId) commit({ captureContext: { id: wl.id, task: wl.task }, draft: {kind: wl.kind, urgent: wl.urgent, task: wl.task, hasInput: true} })
   await refresh()
   return wl
@@ -287,16 +289,26 @@ export async function requestApproval(
   asPersona?: string,
   stepId?: string,
 ): Promise<Approval> {
+  const wl = state.worklogs.find((w) => w.id === worklogId)
+  const runId = window.Understudy.currentRunId?.()
+  const linked = Boolean(runId && String(wl?.data.runId ?? '') === String(runId))
+  if (linked) {
+    await window.Understudy.flushRun?.()
+    if (window.Understudy.currentRunId?.() !== runId) throw new Error('The active run changed. Request review again from the current task.')
+  }
   const approval = await api<Approval>(`/api/worklogs/${worklogId}/submit`, {
     approver,
     stepId,
     actingAs: asPersona ?? state.actingAs,
   })
-  const wl = state.worklogs.find((w) => w.id === worklogId)
   window.Understudy.log(`requested approval for "${wl?.task ?? worklogId}" from ${approver}`, {
     approvalId: approval.id,
   })
-  window.Understudy.notifyAction('request_review', approval.id)
+  if (linked && window.Understudy.currentRunId?.() === runId) {
+    window.Understudy.notifyAction('request_review', approval.id)
+    // Publish the completed request step before handing the review to another tab.
+    if (linked) await window.Understudy.flushRun?.()
+  }
   await refresh()
   return approval
 }
@@ -319,17 +331,17 @@ export async function decideApproval(
   // An approval advances the loaded run ONLY when it belongs to that run —
   // approving unrelated work must never tick another run's sign-off step.
   const runId = window.Understudy.currentRunId?.()
-  const targetRunId = wl?.data.runId != null ? String(wl.data.runId) : null
+  const targetRunId = decided.evidence?.runId != null ? String(decided.evidence.runId) : wl?.data.runId != null ? String(wl.data.runId) : null
   const liveApproval = window.Understudy.getProgress?.().find((s) => s.type === 'approval' && ['ready', 'blocked'].includes(s.status ?? ''))
   if (runId && targetRunId === String(runId) && (!decided.stepId || liveApproval?.id === decided.stepId)) {
     window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
-  } else if (runId) {
-    window.Understudy.log(
-      `review decision on "${wl?.task ?? decided.worklogId}" recorded — no run of its own to advance`,
-      { approvalId },
-    )
   }
   await refresh()
+  if (targetRunId) {
+    const target = await getRun(targetRunId).catch(() => null)
+    window.Understudy.log(`Review #${approvalId} ${decision.toLowerCase()} for run #${targetRunId}${target ? ` — run is ${target.status}` : ' — decision saved; run status could not be refreshed'}.`,
+      {approvalId, runId: targetRunId, status: target?.status})
+  } else window.Understudy.log(`Review #${approvalId} ${decision.toLowerCase()} for a standalone work log.`, {approvalId})
   return decided
 }
 
@@ -337,12 +349,14 @@ export async function recordCorrectiveAction(
   worklogId: string,
   input: { actionTaken: string; result?: string; viscosity?: number; testPanelResult?: string },
 ): Promise<Worklog> {
+  const runId = window.Understudy.currentRunId?.()
   const wl = await api<Worklog>(`/api/worklogs/${worklogId}/corrective`, { ...input, actingAs: state.actingAs })
   window.Understudy.log(
     `recorded corrective action on incident #${worklogId} — "${input.actionTaken}"`,
     { worklogId },
   )
-  window.Understudy.notifyAction('record_step_result', worklogId)
+  if (runId && String(wl.data.runId ?? '') === runId && window.Understudy.currentRunId?.() === runId)
+    window.Understudy.notifyAction('record_step_result', worklogId)
   await refresh()
   return wl
 }
@@ -500,9 +514,14 @@ export async function followPlaybook(
   processId: string,
   opts?: { silent?: boolean; resume?: boolean; run?: ProcessRun },
 ): Promise<void> {
+  await window.Understudy.flushRun?.()
   const p = await getProcess(processId)
   let resume: { runId: string; steps?: unknown[]; decisions?: unknown[]; events?: ProcessRun['events'] } | undefined
-  if (opts?.run) resume = {runId: opts.run.id, steps: opts.run.steps, decisions: opts.run.decisions, events: opts.run.events}
+  if (opts?.run) {
+    const fresh = await getRun(opts.run.id)
+    if (fresh.processId !== processId || fresh.status === 'abandoned') throw new Error('This execution is no longer available to resume. Refresh the run list.')
+    resume = {runId: fresh.id, steps: fresh.steps, decisions: fresh.decisions, events: fresh.events}
+  }
   if (opts?.resume && !resume) {
     try {
       const runs = await listRuns(processId)
@@ -525,6 +544,7 @@ export async function followPlaybook(
       return
     }
   }
+  if (opts?.silent && window.Understudy.getLoadedProcess?.()) return
   window.Understudy.loadProcess(p.map as never, {
     id: p.id,
     createdBy: p.createdBy,
@@ -578,7 +598,10 @@ export async function autoSyncApproval(): Promise<void> {
     return
   }
   const before = prog.slice(0, prog.findIndex((p) => p.id === ready.id))
-  if (before.some((p) => !p.done && !['not_applicable', 'conditional'].includes(p.status ?? '') && p.type !== 'decision')) return
+  if (before.some((p) => !p.done && !['not_applicable', 'conditional'].includes(p.status ?? '') && p.type !== 'decision')) {
+    if (state.reviewSync?.runId === runId) commit({reviewSync: null})
+    return
+  }
   const key = `${runId}:${ready.id}`
   const isCurrent = () => window.Understudy.currentRunId?.() === runId && window.Understudy.getLoadedProcess?.() === proc
   const canRequest = () => {
@@ -661,6 +684,17 @@ export async function autoSyncApproval(): Promise<void> {
 
 let resumeAttempted = false
 let workspaceRestored = false
+export function rememberActiveRun(): void {
+  if (!state.me) return
+  const runId = window.Understudy.currentRunId?.() ?? null
+  const processId = window.Understudy.getLoadedProcess?.()?.sourceProcessId
+  try {
+    // A null selection records an explicit unload. It must not fall back to
+    // another tab's playbook after reload.
+    sessionStorage.setItem('understudy.selectedRun', JSON.stringify({username: state.me.username, runId, processId}))
+  } catch { /* optional browser persistence */ }
+}
+
 export function resumeLastPlaybook(): void {
   if (resumeAttempted) return
   resumeAttempted = true
@@ -670,8 +704,17 @@ export function resumeLastPlaybook(): void {
       const runs = await listRuns()
       if (gen !== sessionGen) return
       commit({recentRuns: runs.filter((r) => r.status !== 'abandoned')})
-      // Only this browser's explicitly chosen playbook resumes automatically.
-      // Shared demo history remains an optional choice on the start screen.
+      let selected: {username?: string; runId?: string; processId?: string} | null = null
+      try { selected = JSON.parse(sessionStorage.getItem('understudy.selectedRun') ?? 'null') } catch { /* optional */ }
+      if (selected) {
+        if (selected.username === state.me?.username && selected.runId && !window.Understudy.getLoadedProcess?.()) {
+          const run = await getRun(selected.runId)
+          if (gen === sessionGen && run.status !== 'abandoned' && !window.Understudy.getLoadedProcess?.())
+            await followPlaybook(run.processId, {silent: true, run})
+        }
+        return
+      }
+      // Compatibility for browsers that predate the exact, tab-scoped selection.
       let id: string | null = null
       try { id = localStorage.getItem('understudy.lastPlaybook') } catch { /* optional */ }
       if (id && runs.some((r) => r.processId === id && r.status !== 'abandoned') && !window.Understudy.getLoadedProcess?.())
@@ -840,8 +883,9 @@ export async function updateRun(
   await api(`/api/runs/${runId}`, payload)
 }
 
-export async function listRuns(processId?: string): Promise<ProcessRun[]> {
-  return api<ProcessRun[]>(`/api/runs${processId ? `?processId=${processId}` : ''}`)
+export async function listRuns(processId?: string, page?: {before?: string; limit?: number}): Promise<ProcessRun[]> {
+  const params = [processId ? `processId=${encodeURIComponent(processId)}` : '', page?.before ? `before=${encodeURIComponent(page.before)}` : '', page?.limit ? `limit=${page.limit}` : ''].filter(Boolean)
+  return api<ProcessRun[]>(`/api/runs${params.length ? `?${params.join('&')}` : ''}`)
 }
 
 export async function getRun(runId: string): Promise<ProcessRun> {
@@ -867,6 +911,20 @@ export interface VersionDiff {
   added: string[]
   removed: string[]
   changed: Array<{ label: string; changes: string[] }>
+}
+
+function describeCriteria(criteria: Record<string, Record<string, unknown>> = {}, fields: UnderstudyFieldDef[] = []): string {
+  const operators: Record<string, string> = {eq: '=', ne: '≠', gt: '>', gte: '≥', lt: '<', lte: '≤'}
+  return Object.entries(criteria).flatMap(([key, rule]) => {
+    const field = fields.find(f => f.key === key)
+    return Object.entries(rule).map(([op, value]) => `${field?.label ?? key} ${operators[op] ?? op} ${String(value)}${field?.unit ? ` ${field.unit}` : ''}`)
+  }).join(' and ') || 'no recorded condition'
+}
+
+function describeField(field: UnderstudyFieldDef): string {
+  return [field.type === 'select' ? `dropdown: ${(field.options ?? []).join(' / ')}` : field.type,
+    field.unit ? `unit: ${field.unit}` : '', field.required || field.confirm ? 'required' : 'optional',
+    field.confirm ? 'must be confirmed' : ''].filter(Boolean).join(' · ')
 }
 
 /** Human-readable structural diff of a playbook vs its previous version. */
@@ -903,18 +961,38 @@ export async function diffWithPrevious(p: {
       c.push(`next steps: ${(o.next ?? []).map((e) => e.to).join(', ') || 'end'} → ${(s.next ?? []).map((e) => e.to).join(', ') || 'end'}`)
     for (const edge of s.next ?? []) {
       const oldEdge = (o.next ?? []).find((x) => x.to === edge.to)
-      if (!oldEdge) continue
+      const target = cur.get(edge.to)?.label ?? edge.to
+      if (!oldEdge) {
+        c.push(`new route to “${target}”: ${describeCriteria(edge.criteria, p.map.fields)}${edge.condition ? ` (${edge.condition})` : ''}`)
+        continue
+      }
       if ((oldEdge.condition ?? '') !== (edge.condition ?? ''))
         c.push(`condition → ${edge.to}: “${edge.condition ?? '—'}” (was “${oldEdge.condition ?? '—'}”)`)
       const oc = JSON.stringify(oldEdge.criteria ?? {})
       const nc = JSON.stringify(edge.criteria ?? {})
-      if (oc !== nc) c.push(`criteria → ${edge.to}: ${nc} (was ${oc})`)
+      if (oc !== nc) c.push(`condition for “${target}”: ${describeCriteria(oldEdge.criteria, prevMap.fields)} → ${describeCriteria(edge.criteria, p.map.fields)}`)
     }
     if (c.length) changed.push({ label: s.label, changes: c })
   }
-  for (const key of ['fields', 'appliesWhen', 'priorityWhen'] as const) {
+  const oldFields = new Map((prevMap.fields ?? []).map(f => [f.key, f]))
+  const newFields = new Map((p.map.fields ?? []).map(f => [f.key, f]))
+  for (const [key, field] of newFields) {
+    const oldField = oldFields.get(key)
+    if (!oldField) changed.push({label: `Input added: ${field.label ?? key}`, changes: [describeField(field)]})
+    else if (JSON.stringify(field) !== JSON.stringify(oldField)) {
+      const changes = []
+      if (field.label !== oldField.label) changes.push(`renamed from “${oldField.label ?? key}”`)
+      if (describeField(field) !== describeField(oldField)) changes.push(`${describeField(oldField)} → ${describeField(field)}`)
+      if (changes.length) changed.push({label: `Input changed: ${field.label ?? key}`, changes})
+    }
+  }
+  for (const [key, field] of oldFields) if (!newFields.has(key)) changed.push({label: `Input removed: ${field.label ?? key}`, changes: [describeField(field)]})
+  for (const key of ['appliesWhen', 'priorityWhen'] as const) {
     if (JSON.stringify(prevMap[key] ?? null) !== JSON.stringify(p.map[key] ?? null))
-      changed.push({label: key === 'fields' ? 'Required inputs and definitions' : 'When to use this playbook', changes: [`${JSON.stringify(prevMap[key] ?? null)} → ${JSON.stringify(p.map[key] ?? null)}`]})
+      changed.push({label: key === 'appliesWhen' ? 'When to use this playbook' : 'Priority conditions', changes:
+        [...new Set([...Object.keys(prevMap[key] ?? {}), ...Object.keys(p.map[key] ?? {})])]
+          .filter(k => JSON.stringify(prevMap[key]?.[k]) !== JSON.stringify(p.map[key]?.[k]))
+          .map(k => `${k}: ${String(prevMap[key]?.[k] ?? 'not set')} → ${String(p.map[key]?.[k] ?? 'not set')}`)})
   }
   return { prevVersion: prior.version || 1, added, removed, changed }
 }

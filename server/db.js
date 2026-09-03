@@ -1,6 +1,12 @@
 // Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
 import crypto from 'node:crypto'
-import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, mergeRunEvents, guardRunUpdate } from './runstate.js'
+import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, reviewEvidence, approvalGate, mergeRunEvents, guardRunUpdate } from './runstate.js'
+
+function requestScope(run, map, stepId) {
+  const gate = approvalGate(run, map, stepId, true)
+  if (gate.open.length) throw Object.assign(new Error(`process_incomplete: ${gate.open.join(' → ')}`), {status: 409})
+  return {stepId: gate.stepId, scope: gate.scope}
+}
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex')
@@ -89,7 +95,10 @@ function memoryBackend() {
       if (!w || !['draft', 'rejected'].includes(w.status) ||
           approvals.some((x) => x.worklogId === a.worklogId && x.status === 'PENDING')) return null
       const linked = runs.find((r) => r.id === String(w.data?.runId))
-      const row = { id: String(seq++), ...a, status: 'PENDING', ts: Date.now(), reviewFingerprint: reviewFingerprint(linked, a.scope) }
+      const design = processes.find(p => p.id === linked?.processId)?.map
+      const context = w.data?.runId != null ? requestScope(linked, design, a.stepId ?? w.data.approvalStepId) : {}
+      const row = { id: String(seq++), ...a, ...context, status: 'PENDING', ts: Date.now(),
+        reviewFingerprint: reviewFingerprint(linked, context.scope), evidence: reviewEvidence(linked, design, context.scope, w.data) }
       approvals.unshift(row)
       w.status = 'submitted'
       return row
@@ -110,7 +119,8 @@ function memoryBackend() {
       const subject = worklogs.find((x) => x.id === a.worklogId)
       const linked = runs.find((r) => r.id === String(subject?.data?.runId))
       if (status === 'APPROVED' && subject?.data?.runId != null &&
-          !matchesReviewFingerprint(a.reviewFingerprint, linked, a.scope)) return null
+          (!a.evidence || !matchesReviewFingerprint(a.reviewFingerprint, linked, a.scope) ||
+            approvalGate(linked, processes.find(p => p.id === linked?.processId)?.map, a.stepId).open.length)) return null
       a.status = status
       a.comment = comment
       const w = worklogs.find((x) => x.id === a.worklogId)
@@ -192,8 +202,9 @@ function memoryBackend() {
       }
       return run
     },
-    async listRuns(processId) {
-      return runs.filter((r) => !processId || r.processId === processId)
+    async listRuns(processId, {before, limit = 50} = {}) {
+      return runs.filter((r) => (!processId || r.processId === processId) && (!before || Number(r.id) < Number(before)))
+        .sort((a,b) => Number(b.id) - Number(a.id)).slice(0, limit)
     },
     async getRun(id) { return runs.find((r) => r.id === String(id)) ?? null },
     async findRunForWorklog(id) {
@@ -262,6 +273,7 @@ async function pgBackend(databaseUrl) {
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_fingerprint TEXT;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS step_id TEXT;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_scope JSONB;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_evidence JSONB;
     ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '[]';
   `)
 
@@ -290,6 +302,7 @@ async function pgBackend(databaseUrl) {
     id: String(r.id), worklogId: String(r.worklog_id), requestedBy: r.requested_by,
     approver: r.approver, status: r.status, comment: r.comment ?? undefined,
     stepId: r.step_id ?? undefined, scope: r.review_scope ?? undefined,
+    evidence: r.review_evidence ?? undefined,
     ts: new Date(r.ts).getTime(),
   })
 
@@ -363,15 +376,23 @@ async function pgBackend(databaseUrl) {
     },
     async createApproval(a) {
       return transaction(async (client) => {
-        const { rows: work } = await client.query('SELECT status FROM worklogs WHERE id=$1 FOR UPDATE', [a.worklogId])
-        if (!work[0] || !['draft', 'rejected'].includes(work[0].status)) return null
+        // Lock the run first, like updateRun/decideApproval. Evidence and its
+        // fingerprint must come from one snapshot, after pending writes finish.
+        const before = await client.query('SELECT data FROM worklogs WHERE id=$1', [a.worklogId])
+        const runId = before.rows[0]?.data?.runId
+        const linked = runId != null ? await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(runId)]) : {rows: []}
+        const run = linked.rows[0] && runRow(linked.rows[0])
+        const { rows: work } = await client.query('SELECT status,data FROM worklogs WHERE id=$1 FOR UPDATE', [a.worklogId])
+        if (!work[0] || !['draft', 'rejected'].includes(work[0].status) || String(work[0].data?.runId) !== String(runId)) return null
         const pending = await client.query("SELECT 1 FROM approvals WHERE worklog_id=$1 AND status='PENDING'", [a.worklogId])
         if (pending.rows.length) return null
-        const subject = await client.query('SELECT data FROM worklogs WHERE id=$1', [a.worklogId])
-        const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1', [String(subject.rows[0]?.data?.runId ?? '')])
+        const process = run ? await client.query('SELECT map FROM processes WHERE id=$1', [run.processId]) : {rows: []}
+        const design = process.rows[0]?.map
+        const context = runId != null ? requestScope(run, design, a.stepId ?? work[0].data.approvalStepId) : {}
         const { rows } = await client.query(
-          'INSERT INTO approvals (worklog_id, requested_by, approver, review_fingerprint, step_id, review_scope) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
-          [a.worklogId, a.requestedBy, a.approver, reviewFingerprint(linked.rows[0] && runRow(linked.rows[0]), a.scope), a.stepId ?? null, a.scope ? JSON.stringify(a.scope) : null],
+          'INSERT INTO approvals (worklog_id, requested_by, approver, review_fingerprint, step_id, review_scope, review_evidence) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+          [a.worklogId, a.requestedBy, a.approver, reviewFingerprint(run, context.scope), context.stepId ?? null,
+            context.scope ? JSON.stringify(context.scope) : null, JSON.stringify(reviewEvidence(run, design, context.scope, work[0].data))],
         )
         await client.query("UPDATE worklogs SET status='submitted' WHERE id=$1", [a.worklogId])
         return ap(rows[0])
@@ -391,13 +412,16 @@ async function pgBackend(databaseUrl) {
     },
     async decideApproval(id, status, comment) {
       return transaction(async (client) => {
-        const before = await client.query('SELECT a.review_fingerprint,a.review_scope,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
+        const before = await client.query('SELECT a.review_fingerprint,a.review_scope,a.review_evidence,a.step_id,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
         const linkedId = before.rows[0]?.data?.runId
         if (status === 'APPROVED' && linkedId != null) {
           // Legacy pending reviews have no evidence snapshot; require a fresh review.
-          if (!before.rows[0].review_fingerprint) return null
+          if (!before.rows[0].review_fingerprint || !before.rows[0].review_evidence) return null
           const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId ?? '')])
-          if (!matchesReviewFingerprint(before.rows[0].review_fingerprint, linked.rows[0] && runRow(linked.rows[0]), before.rows[0].review_scope)) return null
+          const run = linked.rows[0] && runRow(linked.rows[0])
+          const process = run ? await client.query('SELECT map FROM processes WHERE id=$1', [run.processId]) : {rows: []}
+          if (!matchesReviewFingerprint(before.rows[0].review_fingerprint, run, before.rows[0].review_scope) ||
+              approvalGate(run, process.rows[0]?.map, before.rows[0].step_id).open.length) return null
         }
         const { rows } = await client.query(
           "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
@@ -509,12 +533,10 @@ async function pgBackend(databaseUrl) {
         [JSON.stringify([{ action: 'log_work_item', resultId: id }])])
       return rows[0] ? runRow(rows[0]) : null
     },
-    async listRuns(processId) {
+    async listRuns(processId, {before, limit = 50} = {}) {
       const { rows } = await pool.query(
-        processId
-          ? `SELECT * FROM process_runs WHERE process_id=$1 ORDER BY id DESC LIMIT 50`
-          : `SELECT * FROM process_runs ORDER BY id DESC LIMIT 50`,
-        processId ? [Number(processId)] : [],
+        `SELECT * FROM process_runs WHERE ($1::int IS NULL OR process_id=$1) AND ($2::int IS NULL OR id<$2) ORDER BY id DESC LIMIT $3`,
+        [processId ? Number(processId) : null, before ? Number(before) : null, limit],
       )
       return rows.map(runRow)
     },

@@ -3,6 +3,8 @@ import * as store from './store'
 import Overview, { type WorkspaceTab } from './Overview'
 import SuggestionCard from './SuggestionCard'
 import { AgentInvite, ErrorNotice, useAction, useWorkspaceUpdates } from './ui'
+import RunPicker from './RunPicker'
+import {taskHint, rememberTaskHint} from './taskHints'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -385,9 +387,12 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
       <ErrorNotice message={action.error} />
       {inbox.length === 0 && <p className="empty">No {showHistory ? '' : 'pending '}reviews for this role. New requests appear here when the required work is complete.</p>}
       {inbox.map((a) => {
-        const wl = state.worklogs.find((w) => w.id === a.worklogId)
-        const evidence = wl
-          ? Object.entries(wl.data).filter(
+        const source = state.worklogs.find((w) => w.id === a.worklogId)
+        const missingSnapshot = Boolean(a.stepId || source?.data.runId != null) && !a.evidence
+        const data = a.evidence ?? (missingSnapshot ? {} : source?.data)
+        const wl = source ? {...source, data: data ?? {}} : undefined
+        const evidence = data
+          ? Object.entries(data).filter(
               ([k, v]) =>
                 !['runId', 'systemGenerated', 'approvalStepId', 'verification', 'verifiedAt', 'verifiedRoute'].includes(k) &&
                 (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean'),
@@ -401,6 +406,7 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               </span>
               <span className={`status ${a.status.toLowerCase()}`}>{a.status}</span>
             </div>
+            {missingSnapshot && <p className="note">This older review has no saved evidence snapshot. A new review is required before approval; the original work log remains available in Work log.</p>}
             {evidence.length > 0 && (
               <div className="meta review-evidence">
                 {evidence.map(([k, v]) => (
@@ -429,7 +435,7 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
                 />
                 <button
                   className="primary"
-                  disabled={action.busy}
+                  disabled={action.busy || missingSnapshot}
                   onClick={() =>
                     void action.run(() => store.decideApproval(a.id, 'APPROVED', comments[a.id] || undefined))
                   }
@@ -582,7 +588,8 @@ function PlaybookList({ state }: { state: store.AppState }) {
 
   return (
     <div className="proc-layout">
-      <div className="page-intro"><h1>Choose a playbook. Start a run.</h1><p>Each run collects its own evidence and approval. Earlier revisions stay in the history.</p></div>
+      <div className="page-intro"><h1>Choose a playbook. Start a run.</h1><p>Each run collects its own evidence and approval. Runs waiting only for final approval keep their pending reviews. Starting new work retires an unfinished execution; any review cancellations are shown before you confirm.</p></div>
+      <RunPicker />
       <label className="library-search">Find a playbook<input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name…" /></label>
       <ErrorNotice message={action.error} />
       {visible.length === 0 && <p className="empty">No playbooks match “{query}”. Try another name.</p>}
@@ -747,24 +754,15 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     const before = prog.slice(0, idxOf(id)).filter((p) => p.done)
     return before.length ? before[before.length - 1] : undefined
   }
-  const nextUp = (id: string) => prog.slice(idxOf(id) + 1).find((p) => !p.done && p.status !== 'not_applicable')
-  const rememberValues = (vals: Record<string, unknown>) => {
-    try {
-      const cur = JSON.parse(localStorage.getItem('understudy.recentValues') ?? '{}')
-      for (const [k, v] of Object.entries(vals)) if (typeof v !== 'boolean') cur[k] = String(v)
-      localStorage.setItem('understudy.recentValues', JSON.stringify(cur))
-    } catch {
-      /* per-viewer convenience only */
-    }
+  const pendingDecision = window.Understudy.getPendingDecision?.()
+  const completeRun = window.Understudy.isRunComplete?.() === true
+  const nextUp = (id: string) => {
+    const step = stepOf(id)
+    if (!step || (step.next?.length ?? 0) > 1) return undefined
+    // Follow the actual edge; array order can point into an unchosen branch.
+    return step.next !== undefined ? stepOf(step.next[0]?.to) : proc.steps[idxOf(id) + 1]
   }
-  const recentValue = (key: string): string | undefined => {
-    try {
-      const cur = JSON.parse(localStorage.getItem('understudy.recentValues') ?? '{}')
-      return typeof cur[key] === 'string' ? cur[key] : undefined
-    } catch {
-      return undefined
-    }
-  }
+  const hintScope = (stepId: string, field: UnderstudyFieldDef) => ({user: `${state.me?.username}:${state.actingAs}`, processId: proc.sourceProcessId ?? '', stepId, field})
   const complete = async (p: { id: string; fields?: string[] }) => {
     const defs = (p.fields ?? [])
       .map((k) => fieldDefs.find((f) => f.key === k))
@@ -788,12 +786,17 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     if (!outcome?.ok) { setTaskError(outcome?.error ?? 'Could not complete this task.'); return }
     await window.Understudy.flushRun?.()
     setTaskError('')
-    rememberValues(values)
+    for (const field of defs) rememberTaskHint(hintScope(p.id, field), values[field.key], runId)
     setTaskValues((prev) => ({ ...prev, [p.id]: {} }))
   }
   return (
     <div className="list">
-      <div className="page-intro"><div className="eyebrow">{myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1><p>{done} of {required} required tasks complete · run #{runId}</p><progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" /></div>
+      <div className="page-intro"><div className="eyebrow">{completeRun ? 'RUN COMPLETE' : pendingDecision ? 'DECISION PENDING' : myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1>
+        <p>{pendingDecision ? `${done} task(s) recorded · route not selected yet` : `${done} of ${required} required tasks complete`} · run #{runId}</p>
+        {pendingDecision ? <p role="status">“{pendingDecision.label}” needs an evidence check. This run remains open until the route is decided and its work is complete.</p>
+          : <progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" />}
+      </div>
+      <RunPicker />
       <ErrorNotice message={action.error || window.Understudy.getRunSyncError?.() || ''} />
       {window.Understudy.getRunSyncError?.() && <button disabled={action.busy} onClick={() => void action.run(() => window.Understudy.flushRun?.())}>Retry saving progress</button>}
       {state.reviewSync && state.reviewSync.runId === runId && <div className="card review-sync" role="status">
@@ -934,14 +937,16 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                       {f.required ? '*' : ''}
                       <input
                         type={f.type === 'number' ? 'number' : 'text'}
+                        aria-label={`${f.label ?? f.key}${f.unit ? ` (${f.unit})` : ''}${f.required ? '*' : ''}`}
+                        aria-describedby={taskHint(hintScope(p.id, f)) ? `task-hint-${p.id}-${f.key}` : undefined}
                         step={f.type === 'number' ? 'any' : undefined}
                         required={f.required}
                         value={String(raw[f.key] ?? '')}
-                        placeholder={recentValue(f.key) ? `last: ${recentValue(f.key)}` : undefined}
                         onChange={(e) =>
                           setTaskValues({ ...taskValues, [p.id]: { ...raw, [f.key]: e.target.value } })
                         }
                       />
+                      {(() => { const hint = taskHint(hintScope(p.id, f)); return hint && <span id={`task-hint-${p.id}-${f.key}`} className="meta">Previously in this task · run #{hint.runId}: {hint.value}. Enter this run’s value.</span> })()}
                     </label>
                   ),
                 )}
@@ -986,10 +991,11 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             )}
             {next && (
               <div className="meta">
-                Next: {next.label}
+                Next: {next.type === 'decision' ? `Check the evidence — ${next.label}` : next.label}
                 {next.role ? ` → ${next.role}` : ''}
               </div>
             )}
+            {st?.type === 'task' && (st.next?.length ?? 0) > 1 && <div className="meta">After submission: the agent checks your evidence before selecting the next route.</div>}
           </div>
         )
       })}

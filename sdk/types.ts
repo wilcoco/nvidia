@@ -77,6 +77,7 @@ export interface ProcessMap {
   confirmed?: boolean
   saving?: boolean
   saveError?: string
+  editError?: string
   /** Conditions under which this playbook applies (used for auto-suggestion). */
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>

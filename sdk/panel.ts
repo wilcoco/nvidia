@@ -404,6 +404,7 @@ function renderStep(
 
   const del = el('button', 'del', '✕')
   del.title = 'Remove step'
+  del.setAttribute('aria-label', `Remove step: ${step.label}`)
   del.onclick = () => mapstore.humanRemoveStep(step.id)
   if (!locked) meta.appendChild(del)
 
@@ -931,6 +932,11 @@ function render() {
     mapSection.appendChild(discoveryPreview(state?.playbookRequest ?? null, render))
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
+    if (map.editError) {
+      const error = el('div', 'blocked-reason', map.editError)
+      error.setAttribute('role', 'alert')
+      mapSection.appendChild(error)
+    }
     mapSection.appendChild(
       el(
         'div',

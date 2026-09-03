@@ -121,7 +121,7 @@ process. Browser viewport tests are separate from physical-device testing.
 | `resolve_decision` | Record which branch a branching step took, with reason and evidence; a loop-back choice re-opens the loop body. |
 | `find_relevant_processes` | Playbooks matching what the human is entering right now, with confidence and reasons. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |
-| `load_process` | Load a saved process for a new run; work already done this session is auto-linked as done. |
+| `load_process` | Start a saved playbook as a fresh run with no imported results. Resume specific earlier work with the on-page run picker. |
 | `run_action` | Execute a host action behind an in-page approval card. Refuses to jump past required undone steps ("Process violation prevented") unless the human explicitly overrides. |
 
 ## Attach Understudy to your own app

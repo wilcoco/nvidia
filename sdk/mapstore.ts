@@ -1,4 +1,4 @@
-import type { FieldDef, MapEdit, ProcessMap, Step, StepType, RunEvent } from './types'
+import type { BranchTarget, FieldDef, MapEdit, ProcessMap, Step, StepType, RunEvent } from './types'
 import { record } from './journal'
 import * as host from './host'
 import { onGapResolved } from './asks'
@@ -51,6 +51,7 @@ export function proposeMap(next: ProcessMap): void {
   map = {
     ...next,
     confirmed: false,
+    editError: undefined,
     resolvedGaps: [...new Set([...(next.resolvedGaps ?? []), ...prevResolved])],
   }
   record('agent', 'map', `proposed process map "${next.title}" (${next.steps.length} steps)`)
@@ -145,21 +146,73 @@ export function humanEditCondition(stepId: string, targetId: string, to: string)
 }
 
 export function humanRemoveStep(stepId: string): void {
-  if (structureLocked()) return
-  if (!map) return
+  if (structureLocked() || !map) return
+  map.editError = undefined
   const idx = map.steps.findIndex((s) => s.id === stepId)
   if (idx < 0) return
-  const [removed] = map.steps.splice(idx, 1)
-  // Rewire: anything pointing at the removed step now points at its successors.
-  const successors = removed.next ?? []
-  for (const s of map.steps) {
-    if (!s.next) continue
-    if (s.next.some((b) => b.to === stepId)) {
-      s.next = s.next.filter((b) => b.to !== stepId).concat(successors)
-    }
+  const removed = map.steps[idx]
+  const refuse = (reason: string) => {
+    map!.editError = `Cannot remove “${removed.label}”: ${reason} Ask your agent to revise the connections and required inputs, then review the draft.`
+    record('user', 'map', map!.editError)
+    notify()
   }
+  // Omitted next means the following task, while [] explicitly means end.
+  const edgesOf = (s: Step, i: number): BranchTarget[] => s.next ?? (map!.steps[i + 1] ? [{to: map!.steps[i + 1].id}] : [])
+  const successors = edgesOf(removed, idx)
+  if (successors.length > 1 || successors.some(e => e.to === stepId)) {
+    refuse('this would remove a branch decision or retry boundary. Choose the remaining routes explicitly first.'); return
+  }
+  const unassigned = (map.fields ?? []).filter(f => removed.fields?.includes(f.key) &&
+    !map!.steps.some(s => s.id !== stepId && s.fields?.includes(f.key)))
+  if (unassigned.length) { refuse(`reassign its required inputs first: ${unassigned.map(f => f.label ?? f.key).join(', ')}.`); return }
+  const rewired = new Map<Step, BranchTarget[]>()
+  for (let i = 0; i < map.steps.length; i++) {
+    const s = map.steps[i]
+    if (s === removed) continue
+    const original = edgesOf(s, i)
+    const incoming = original.filter(e => e.to === stepId)
+    if (!incoming.length) continue
+    const successor = successors[0]
+    if (!successor) {
+      if (original.length > 1 || incoming.some(e => e.condition || Object.keys(e.criteria ?? {}).length)) {
+        refuse('ending this path would discard an incoming condition. Keep a terminal task or move the condition first.'); return
+      }
+      rewired.set(s, [])
+      continue
+    }
+    if (successor.to === s.id || original.some(e => e.to === successor.to)) {
+      refuse('the replacement would create a self-loop or duplicate route.'); return
+    }
+    const replacements: BranchTarget[] = []
+    for (const edge of incoming) {
+      // Both guards must hold (AND). Never overwrite a rule with the same key.
+      const criteria = structuredClone(edge.criteria ?? {})
+      for (const [key, rules] of Object.entries(successor.criteria ?? {})) {
+        if (!s.fields?.includes(key) && !(key in criteria)) {
+          refuse(`the remaining task must collect “${key}” before it can enforce the outgoing condition.`); return
+        }
+        for (const [op, value] of Object.entries(rules)) {
+          if (criteria[key]?.[op] !== undefined && criteria[key][op] !== value) {
+            refuse(`the two “${key} ${op}” rules need an explicit combined condition.`); return
+          }
+          ;(criteria[key] ??= {})[op] = value
+        }
+      }
+      replacements.push({to: successor.to,
+        condition: [...new Set([edge.condition, successor.condition].filter(Boolean))].join(' AND ') || undefined,
+        ...(Object.keys(criteria).length ? {criteria} : {})})
+    }
+    rewired.set(s, original.flatMap(e => e.to === stepId ? replacements.splice(0, 1) : [e]))
+  }
+  // Apply only after every incoming path has been checked; refusal is atomic.
+  for (const [s, next] of rewired) {
+    pushEdit({stepId: s.id, field: 'next', from: JSON.stringify(s.next), to: JSON.stringify(next)})
+    s.next = next
+  }
+  if (map.entry === stepId) map.entry = successors[0]?.to ?? map.steps.find(s => s !== removed)?.id
+  map.steps.splice(idx, 1)
   pushEdit({ stepId, field: 'removed', from: removed.label })
-  record('user', 'map', `removed step "${removed.label}"`)
+  record('user', 'map', `removed step "${removed.label}"; preserved conditions on ${rewired.size} incoming connection(s)`)
   notify()
 }
 
@@ -168,6 +221,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
   const invalid = validateFieldBindings(map)
   if (invalid) { map.saveError = invalid; notify(); return }
   const confirm = (current: ProcessMap) => {
+    current.editError = undefined
     // A revised design is ready for a NEW execution. Do not present the
     // previous run's completed tasks or decisions as this version's work.
     current.decisions = []
@@ -190,6 +244,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
       ...current,
       saving: undefined,
       saveError: undefined,
+      editError: undefined,
       confirmed: true,
       decisions: [],
       events: [],
@@ -245,6 +300,7 @@ export function loadSavedMap(
     ...loaded,
     sourceProcessId: meta?.id ?? loaded.sourceProcessId,
     confirmed: true,
+    editError: undefined,
     decisions: [],
     events: [],
     steps: loaded.steps.map((s) => ({
@@ -257,44 +313,17 @@ export function loadSavedMap(
       resultData: undefined,
     })),
   }
-  // Retroactively link work done just before this playbook was opened —
-  // but ONLY events no other run has consumed, and only recent ones.
-  // Without both guards, finishing one playbook and loading another would
-  // wrongly re-attach the previous run's records to the new process.
-  const RETRO_WINDOW_MS = 30 * 60_000
-  const cutoff = Date.now() - RETRO_WINDOW_MS
-  let linked = 0
-  for (const ev of actionHistory) {
-    if (ev.consumed || ev.ts < cutoff) continue
-    // Reuse the same path and evidence checks as live completion.
-    const step = markActionDone(ev.action, ev.resultId, 'user')
-    if (step) {
-      ev.consumed = true
-      linked++
-    }
-  }
+  // A new execution never imports session actions. Only restoreRunState may
+  // bring back work, using a specifically selected persisted run.
   if (!meta?.quiet) {
     record(
       'agent',
       'map',
-      `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}` +
-        (linked ? ` — linked ${linked} already-completed step(s)` : ''),
+      `loaded saved process "${loaded.title}"${meta?.createdBy ? ` (created by ${meta.createdBy})` : ''}`,
     )
   }
   notify()
 }
-
-/** Session history of successful semantic actions — replayed onto maps loaded later,
- *  so work done BEFORE a playbook was opened still counts. */
-interface ActionEvent {
-  action: string
-  resultId?: string
-  ts: number
-  /** Set once this event completed a step of some run — it must never be
-   *  linked again, or one run's work would bleed into the next playbook. */
-  consumed?: boolean
-}
-const actionHistory: ActionEvent[] = []
 
 /** Single completion path for human UI work and agent run_action alike. */
 export function recordActionSuccess(
@@ -302,21 +331,8 @@ export function recordActionSuccess(
   resultId?: string,
   by: 'user' | 'agent' = 'user',
 ): void {
-  // The same success can be reported twice (the app's notifyAction inside the
-  // handler AND the runner around it). A duplicate would sit unconsumed and
-  // later bleed into the next loaded playbook — record each result only once.
-  const boundOpen = map?.confirmed && map.steps.some((s) => s.action === actionName && !s.done)
-  if (
-    resultId &&
-    !boundOpen &&
-    actionHistory.some((e) => e.action === actionName && e.resultId === resultId)
-  ) {
-    return
-  }
-  const ev: ActionEvent = { action: actionName, resultId, ts: Date.now() }
-  actionHistory.push(ev)
-  if (actionHistory.length > 100) actionHistory.shift()
-  if (markActionDone(actionName, resultId, by)) ev.consumed = true
+  if (resultId && map?.steps.some(s => s.done && s.action === actionName && s.resultId === resultId)) return
+  markActionDone(actionName, resultId, by)
 }
 
 /** Auto-mark the first not-done step bound to this host action (agent replay path). */
@@ -331,12 +347,7 @@ export function markActionDone(
   // never one sitting on a branch that was not taken.
   const statuses = progress()
   const candidates = map.steps.filter((s) => s.action === actionName && !s.done)
-  const step =
-    candidates.find((s) => statuses.get(s.id) === 'ready') ??
-    candidates.find((s) => {
-      const st = statuses.get(s.id)
-      return st !== 'not_applicable' && st !== 'conditional'
-    })
+  const step = candidates.find((s) => statuses.get(s.id) === 'ready')
   if (!step) return null
   // A step that demands evidence completes only through its task card —
   // an action success carries no measured values.
@@ -445,6 +456,7 @@ export function agentUpdateStep(
   }
   if (changed.length === 0) return { ok: true, step }
   record('agent', 'map', `updated step "${step.label}" (${changed.join(', ')})`)
+  map.editError = undefined
   notify()
   return { ok: true, step }
 }
@@ -456,6 +468,15 @@ const OPS: Record<string, (m: number, v: number) => boolean> = {
   lte: (m, v) => m <= v,
   gt: (m, v) => m > v,
   gte: (m, v) => m >= v,
+}
+
+function retrySignatureError(stepId: string, branchTo: string): string | null {
+  if (!map) return null
+  const from = map.steps.findIndex(s => s.id === stepId)
+  const to = map.steps.findIndex(s => s.id === branchTo)
+  if (to < 0 || to > from) return null
+  const signature = map.steps.slice(to).find(s => s.type === 'approval' && s.done)
+  return signature ? `This retry crosses work already signed off at “${signature.label}”. Start a new execution to record a correction.` : null
 }
 
 export function resolveDecision(
@@ -563,6 +584,8 @@ export function resolveDecision(
       }
     }
   }
+  const signatureError = retrySignatureError(stepId, branchTo)
+  if (signatureError) return {ok: false, error: 'signed_work_immutable', detail: signatureError}
   if (!map.decisions) map.decisions = []
   map.decisions.push({ stepId, to: branchTo, reason, evidence: evidence ?? (measurements ? JSON.stringify(measurements) : undefined), ts: Date.now() })
   // Measured resolutions are worth keeping on the business record itself,
@@ -643,6 +666,7 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
   const referenced = map.steps.flatMap(s => s.fields ?? []).filter(k => !keys.has(k))
   if (referenced.length) return {ok: false, error: `Unassign fields from their steps before removing them: ${referenced.join(', ')}`}
   map.fields = fields
+  map.editError = undefined
   record('agent', 'map', `defined the playbook's data contract (${fields.map((f) => f.key).join(', ')})`)
   notify()
   return { ok: true, fields }
@@ -678,6 +702,12 @@ export function humanToggleStepDone(
   {
     const step = map?.steps.find((s) => s.id === stepId)
     const role = host.actorRole()
+    if (step && !step.done && map?.confirmed && step.next?.length === 1) {
+      for (const edge of step.next ?? []) {
+        const reason = retrySignatureError(stepId, edge.to)
+        if (reason) return refuseCompletion(reason)
+      }
+    }
     if (step?.type === 'approval') {
       return refuseCompletion(`blocked: "${step.label}" completes only via a successful review action`)
     }
@@ -783,7 +813,7 @@ export function humanToggleStepDone(
   // A task whose outgoing edge points BACKWARD is a retry instruction: its
   // completion reopens the loop body exactly like a decision loop-back —
   // otherwise the run would silently read as finished with stale failures.
-  if (step.done && map) {
+  if (step.done && map && step.next?.length === 1) {
     const idx = new Map(map.steps.map((s, i) => [s.id, i]))
     const from = idx.get(step.id) ?? 0
     for (const e of step.next ?? []) {

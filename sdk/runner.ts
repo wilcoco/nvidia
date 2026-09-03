@@ -127,6 +127,7 @@ async function executeCore(
   params: Record<string, unknown>,
   actor: 'user' | 'agent',
 ): Promise<RunOutcome> {
+  const executingMap = mapstore.getMap()
   try {
     const result = await action.handler(params)
     const errorMsg =
@@ -142,7 +143,7 @@ async function executeCore(
       result && typeof result === 'object' && 'id' in (result as Record<string, unknown>)
         ? String((result as Record<string, unknown>).id)
         : undefined
-    if (!(action.name in BUILTIN_ACTIONS) && !action.selfReporting) {
+    if (!(action.name in BUILTIN_ACTIONS) && !action.selfReporting && mapstore.getMap() === executingMap) {
       mapstore.recordActionSuccess(action.name, resultId, actor)
     }
     return { ok: true, result }

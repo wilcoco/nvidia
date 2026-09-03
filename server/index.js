@@ -162,11 +162,11 @@ async function cancelPendingApprovalsForRun(runId) {
   }
 }
 
-async function openRunStepsFor(worklogId, stampedRunId, stepId) {
+async function openRunStepsFor(worklogId, stampedRunId, stepId, requesting = false) {
   const r = stampedRunId != null ? await db.getRun(stampedRunId) : await db.findRunForWorklog(worklogId)
   if (!r) return stampedRunId != null ? { runId: stampedRunId, open: ['linked run is unavailable'] } : null
   const process = await db.getProcess(r.processId)
-  return { runId: r.id, ...approvalGate(r, process?.map, stepId) }
+  return { runId: r.id, ...approvalGate(r, process?.map, stepId, requesting) }
 }
 
 app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
@@ -175,7 +175,7 @@ app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   if (wl.status !== 'draft' && wl.status !== 'rejected')
     return res.status(400).json({ error: `worklog is already ${wl.status}` })
-  const linked = await openRunStepsFor(wl.id, wl.data?.runId, req.body?.stepId ?? wl.data?.approvalStepId)
+  const linked = await openRunStepsFor(wl.id, wl.data?.runId, req.body?.stepId ?? wl.data?.approvalStepId, true)
   if (linked && linked.open.length > 0) {
     return res.status(409).json({
       error: 'process_incomplete',
@@ -442,7 +442,10 @@ app.get('/api/runs/:id', auth, asyncHandler(async (req, res) => {
 
 app.get('/api/runs', auth, asyncHandler(async (req, res) => {
   if (req.query.processId && !/^[1-9]\d{0,8}$/.test(String(req.query.processId))) return res.status(400).json({ error: 'invalid_id' })
-  res.json(await db.listRuns(req.query.processId ? String(req.query.processId) : undefined))
+  if (req.query.before && !/^[1-9]\d{0,8}$/.test(String(req.query.before))) return res.status(400).json({ error: 'invalid_id' })
+  const limit = req.query.limit === undefined ? 50 : Number(req.query.limit)
+  if (!Number.isInteger(limit) || limit < 1 || limit > 50) return res.status(400).json({error: 'invalid_limit'})
+  res.json(await db.listRuns(req.query.processId ? String(req.query.processId) : undefined, {before: req.query.before ? String(req.query.before) : undefined, limit}))
 }))
 
 // Visitors share the demo library; no visitor may erase another reviewer's work.
