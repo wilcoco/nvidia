@@ -615,6 +615,39 @@ export function humanToggleStepDone(
         return
       }
     }
+    // Exit criteria on a NON-branching step gate its completion: "restore
+    // succeeded" encoded on the only outgoing edge must hold to complete.
+    // (Branching steps route via resolve_decision — not enforced here.)
+    if (step && !step.done && map?.confirmed && (step.next?.length ?? 0) === 1) {
+      const edge = step.next![0]
+      if (edge.criteria && Object.keys(edge.criteria).length > 0) {
+        const violated: string[] = []
+        for (const [key, rule] of Object.entries(edge.criteria)) {
+          const v = values?.[key] ?? step.resultData?.[key]
+          for (const [op, target] of Object.entries(rule)) {
+            if (op === 'eq' && v !== target) violated.push(`${key} must equal ${target} (got ${v ?? 'nothing'})`)
+            else if (op === 'ne' && v === target) violated.push(`${key} must not equal ${target}`)
+            else if (['lt', 'lte', 'gt', 'gte'].includes(op)) {
+              const n = Number(v)
+              const t = Number(target)
+              const okNum =
+                !Number.isNaN(n) &&
+                ((op === 'lt' && n < t) || (op === 'lte' && n <= t) || (op === 'gt' && n > t) || (op === 'gte' && n >= t))
+              if (!okNum) violated.push(`${key} must be ${op} ${target} (got ${v ?? 'nothing'})`)
+            }
+          }
+        }
+        if (violated.length) {
+          record(
+            'user',
+            'map',
+            `blocked: "${step.label}" cannot complete — its exit criteria failed: ${violated.join('; ')}`,
+          )
+          notify()
+          return
+        }
+      }
+    }
     if (step && !step.done && !opts?.allowSkip && map?.confirmed) {
       const st = progress().get(stepId)
       if (st === 'pending') {

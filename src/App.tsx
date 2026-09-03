@@ -126,8 +126,11 @@ function IncidentForm() {
   useEffect(() => {
     const read = () => {
       const m = window.Understudy.getLoadedProcess?.()
-      setPlaybookFields(m?.fields?.length ? m.fields : [])
-      setPlaybookTitle(m?.fields?.length ? m.title : '')
+      // A finished run's contract is its own paperwork — new entries are new
+      // work and must not inherit its fields (or its runId).
+      const active = m?.fields?.length && window.Understudy.isRunComplete?.() !== true
+      setPlaybookFields(active ? m!.fields! : [])
+      setPlaybookTitle(active ? m!.title : '')
     }
     read()
     window.addEventListener('understudy:mapchange', read)
@@ -161,9 +164,9 @@ function IncidentForm() {
           playbookFields
             .map((f) => {
               const v = fieldValues[f.key]
-              if (f.type === 'boolean') return [f.key, Boolean(v)]
-              if (v === undefined || v === '') return [f.key, undefined]
-              return [f.key, f.type === 'number' ? Number(v) : String(v)]
+              if (f.type === 'boolean') return [f.key, v === undefined ? undefined : Boolean(v)]
+              if (v === undefined || String(v).trim() === '') return [f.key, undefined]
+              return [f.key, f.type === 'number' ? Number(v) : String(v).trim()]
             })
             .filter(([, v]) => v !== undefined),
         ),
