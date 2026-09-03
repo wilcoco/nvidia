@@ -161,6 +161,10 @@ Run `npm run check` for TypeScript and `npm test` for SDK, memory-store and
 HTTP regression tests. Set `TEST_DATABASE_URL` to a separate local test
 PostgreSQL database to run the same storage and HTTP checks against Postgres.
 The tests create records; do not point them at a production database.
+Use `npm run test:postgres` for the required PostgreSQL lane: it fails before
+testing when `TEST_DATABASE_URL` is absent or equals `DATABASE_URL`. GitHub
+Actions runs this lane against an isolated PostgreSQL service; configure its
+status as a required branch check if merges must be blocked on it.
 
 Run `npm run test:browser` for the rendered Chrome journey: enter the Shadow
 DOM with natural Tab/Shift+Tab navigation, keyboard-edit a
@@ -201,6 +205,10 @@ nothing else is required to try it.
 The automated memory/Chrome gates do not claim coverage of the conditional
 PostgreSQL suite, a physical phone, or an external WebMCP client. Report those
 only when they have been run separately.
+
+Evidence procedures: [external WebMCP client](docs/EXTERNAL_WEBMCP_QA.md),
+[physical mobile](docs/PHYSICAL_MOBILE_QA.md), and
+[release manifest / Devpost checklist](docs/RELEASE_EVIDENCE.md).
 
 To exercise the tools without an agent, open the console:
 `__understudy.call('describe_workspace')`,

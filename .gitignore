@@ -5,3 +5,5 @@ public/understudy.js
 .env.*
 !.env.example
 .DS_Store
+qa-evidence/*
+!qa-evidence/README.md
