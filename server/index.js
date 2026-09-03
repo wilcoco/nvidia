@@ -4,6 +4,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createDb, verifyPassword } from './db.js'
 import { approvalGate, reviewFingerprint } from './runstate.js'
+import { validateFieldBindings, validateFieldValues } from '../shared/fields.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 8787)
@@ -107,6 +108,14 @@ app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
       error: 'role_mismatch',
       detail: `Work logs are written by a known Contributor persona; got ${b.actingAs ?? 'none'} (${role ?? 'unknown role'}).`,
     })
+  if (b.data?.systemGenerated === true) {
+    const run = await db.getRun(String(b.data.runId ?? ''))
+    if (!run) return res.status(400).json({error: 'invalid_review_run'})
+    if (run.startedBy !== req.user.username) return res.status(403).json({error: 'not_run_owner'})
+    const process = await db.getProcess(run.processId)
+    if (b.data.approvalStepId && !process?.map?.steps?.some(s => s.id === b.data.approvalStepId && s.type === 'approval'))
+      return res.status(400).json({error: 'invalid_review_step'})
+  }
   const row = await db.createWorklog({
     date: String(b.date),
     line: String(b.line),
@@ -119,6 +128,21 @@ app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
     data: b.data && typeof b.data === 'object' ? b.data : {},
     createdBy: actor(req),
   })
+  res.json(row)
+}))
+
+app.post('/api/worklogs/:id/discovery', auth, asyncHandler(async (req, res) => {
+  if (intParam(req, res) === null) return
+  const answer = req.body?.answer
+  if (typeof answer !== 'string' || !answer.trim() || answer.length > 4000)
+    return res.status(400).json({ error: 'Write an answer of 1–4,000 characters.' })
+  const wl = await db.getWorklog(req.params.id)
+  if (!wl) return res.status(404).json({ error: 'worklog not found' })
+  const who = actor(req)
+  if (who !== wl.createdBy || await roleOfUser(who) !== 'Contributor')
+    return res.status(403).json({ error: 'Answer as the contributor who recorded this work.' })
+  const row = await db.saveDiscoveryAnswer(wl.id, {answer: answer.trim(), answeredBy: who, answeredAt: Date.now()}, who)
+  if (!row) return res.status(409).json({ error: 'Discovery answers belong to draft work, before execution or review.' })
   res.json(row)
 }))
 
@@ -277,6 +301,8 @@ app.post('/api/processes', auth, asyncHandler(async (req, res) => {
   if (!title || !Array.isArray(map?.steps) || !map.steps.length ||
       map.steps.some((s) => !s || typeof s.id !== 'string' || !['task', 'decision', 'approval'].includes(s.type)) ||
       new Set(map.steps.map((s) => s.id)).size !== map.steps.length) return res.status(400).json({ error: 'title and map.steps are required' })
+  const invalid = validateFieldBindings(map)
+  if (invalid) return res.status(400).json({error: 'invalid_fields', detail: invalid})
   res.json(await db.saveProcess({ title: String(title), map, createdBy: actor(req) }))
 }))
 
@@ -371,6 +397,13 @@ app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
       const incoming = b.steps ?? row.steps
       const process = await db.getProcess(row.processId)
       const design = process?.map?.steps ?? row.steps
+      for (const step of incoming.filter(s => s.type === 'task' && s.status === 'done')) {
+        const keys = design.find(s => s.id === step.id)?.fields ?? []
+        const fields = (process?.map?.fields ?? []).filter(f => keys.includes(f.key))
+        const errors = validateFieldValues(fields, step.resultData)
+        if (fields.length !== keys.length) errors.push('Undefined task inputs')
+        if (errors.length) return res.status(400).json({error: 'invalid_field_values', detail: `${step.label || step.id}: ${errors.join('; ')}`})
+      }
       const lastSigned = design.reduce((last, s, i) =>
         s.type === 'approval' && row.steps.some((r) => r.id === s.id && r.status === 'done' && r.resultId) ? i : last, -1)
       if (lastSigned >= 0) {
@@ -400,16 +433,21 @@ app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
   res.json(run)
 }))
 
+app.get('/api/runs/:id', auth, asyncHandler(async (req, res) => {
+  if (intParam(req, res) === null) return
+  const run = await db.getRun(req.params.id)
+  if (!run) return res.status(404).json({error: 'run not found'})
+  res.json(run)
+}))
+
 app.get('/api/runs', auth, asyncHandler(async (req, res) => {
   if (req.query.processId && !/^[1-9]\d{0,8}$/.test(String(req.query.processId))) return res.status(400).json({ error: 'invalid_id' })
   res.json(await db.listRuns(req.query.processId ? String(req.query.processId) : undefined))
 }))
 
-// Demo housekeeping: clear worklogs+approvals ('worklogs') or everything ('all').
+// Visitors share the demo library; no visitor may erase another reviewer's work.
 app.post('/api/admin/reset', auth, asyncHandler(async (req, res) => {
-  const scope = req.body?.scope === 'all' ? 'all' : 'worklogs'
-  await db.resetData(scope)
-  res.json({ ok: true, scope })
+  res.status(403).json({error: 'shared_reset_disabled', detail: 'Shared demo records cannot be reset from a visitor session. Start a new work item in your own tab.'})
 }))
 
 /* ---------------- static ---------------- */

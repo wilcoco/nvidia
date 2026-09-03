@@ -6,10 +6,36 @@ import { runAsHuman, preconditionFor } from './runner'
 import { isRunComplete } from './runsync'
 import { isAutoApprove, setAutoApprove } from './settings'
 import type { Step } from './types'
+import { discoveryPreview } from './discovery-preview'
+import type { PlaybookRequest } from './discovery'
+import { buildUsageGuide, type GuideLanguage, type GuideTopic } from './usage-guide'
 
 const HOST_ID = 'understudy-panel-host'
 
 let webmcpStatus = 'not detected'
+let guideLanguage: GuideLanguage | null = null
+let guideTopic: GuideTopic = 'usage'
+function usageGuide(): HTMLElement {
+  return buildUsageGuide(guideLanguage ?? 'en', guideTopic, () => {
+    guideLanguage = null
+    shadow?.querySelector('.usage-guide')?.remove()
+  }, topic => openUsageGuide(guideLanguage ?? 'en', topic))
+}
+export function openUsageGuide(language: GuideLanguage = 'en', topic: GuideTopic = 'usage'): boolean {
+  guideLanguage = language
+  guideTopic = topic
+  collapsed = false
+  render()
+  // Help can open even while a draft editor is focused. Insert it without
+  // detaching that editor or committing the person's unfinished correction.
+  const body = shadow?.querySelector('.body')
+  if (body) {
+    body.querySelector('.usage-guide')?.remove()
+    body.prepend(usageGuide())
+    body.scrollTop = 0
+  }
+  return !!body
+}
 export function setWebmcpStatus(status: string): void {
   webmcpStatus = status
   scheduleRender()
@@ -17,7 +43,8 @@ export function setWebmcpStatus(status: string): void {
 }
 
 export function getInteractionState() {
-  return { connected: webmcpStatus === 'connected', questions: asksStore.asks.length, approvals: asksStore.approvals.length }
+  return { connected: webmcpStatus === 'connected', questions: asksStore.asks.length, approvals: asksStore.approvals.length,
+    interview: asksStore.getInterviewProgress() }
 }
 
 function announceInteraction() {
@@ -66,6 +93,28 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .invite-hint { color: #94a3b8; font-size: 11px; margin-bottom: 6px; }
 .invite-text { color: #cbd5e1; font-size: 11px; font-style: italic; margin-bottom: 8px; user-select: text; }
 .invite-copy { background: #3b82f6; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
+.discovery-preview h3 { color: #f1f5f9; font-size: 20px; line-height: 1.3; margin: 6px 0 10px; }
+.preview-note { color: #a2b0c2; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+.preview-stages { display: flex; gap: 6px; margin: 18px 0; }
+.preview-stages button { flex: 1; padding: 8px 2px; border: 1px solid #475569; border-radius: 6px; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 11px; }
+.preview-stages button[aria-pressed="true"] { background: #1e4c40; color: #a7f3d0; border-color: #4c9e82; }
+.preview-work { color: #f1f5f9; background: #1e293b; border-left: 3px solid #6ee7b7; padding: 12px; margin: 0; line-height: 1.6; }
+.preview-story { color: #d5dfeb; font-size: 13px; line-height: 1.7; white-space: pre-line; min-height: 65px; }
+.preview-flow { list-style: none; margin: 20px 0; padding: 0 0 0 16px; border-left: 2px solid #476b64; }
+.preview-node { position: relative; background: #182636; padding: 11px 13px; border: 1px solid #456157; border-radius: 8px; margin: 0 0 14px; overflow-wrap: anywhere; }
+.preview-node::before { content: ''; position: absolute; left: -22px; top: 23px; width: 8px; height: 8px; border-radius: 50%; background: #80bda6; }
+.preview-node p { margin: 5px 0 0; color: #ecf4f1; line-height: 1.5; }
+.preview-role { color: #b0c7bf; font-size: 10px; letter-spacing: .05em; }
+.preview-node.unknown { border-style: dashed; background: transparent; }
+.preview-node.current { border-color: #fbbf24; background: #302c22; }
+.preview-node.complete { border-color: #34d399; }
+.preview-next { border: 1px solid #7bb49f; background: #214b40; color: #dcfce7; border-radius: 7px; padding: 9px 12px; cursor: pointer; width: 100%; }
+.usage-guide { padding: 16px; background: #18392f; border: 1px solid #4c8b73; border-radius: 10px; color: #e5f4ec; }
+.usage-guide h2 { color: #e5f4ec; font-size: 18px; text-transform: none; letter-spacing: 0; margin-bottom: 12px; }
+.usage-guide p, .usage-guide li { font-size: 13px; line-height: 1.7; }
+.usage-guide ol { padding-left: 20px; }
+.usage-guide li { margin-bottom: 8px; }
+.usage-guide button { border: 1px solid #86bba6; border-radius: 6px; padding: 8px 12px; background: #edf7f1; color: #16432f; cursor: pointer; margin: 4px 8px 0 0; }
 .step { background: #161e2c; border: 1px solid rgba(148,163,184,.1); border-radius: 10px; padding: 9px 11px; margin-bottom: 4px; position: relative; transition: border-color .15s, box-shadow .15s; }
 .step:hover { border-color: rgba(148,163,184,.25); }
 .step .metarow { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
@@ -193,6 +242,8 @@ let skipConfirmId: string | null = null
 // The activity journal exists for the agent; humans see a collapsed summary.
 let activityOpen = false
 let renderQueued = false
+let pointerDown = false
+let pendingClickTarget: EventTarget | null = null
 
 export function mountPanel(initiallyCollapsed?: boolean): void {
   window.addEventListener('understudy:host-state', () => scheduleRender())
@@ -202,8 +253,19 @@ export function mountPanel(initiallyCollapsed?: boolean): void {
   host.id = HOST_ID
   document.body.appendChild(host)
   shadow = host.attachShadow({ mode: 'open' })
+  shadow.addEventListener('focusout', (event) => {
+    const target = (event as FocusEvent).relatedTarget
+    pendingClickTarget = target instanceof HTMLButtonElement ? target : null
+    scheduleRender()
+  })
+  shadow.addEventListener('click', () => { pendingClickTarget = null; scheduleRender() })
+  shadow.addEventListener('pointerdown', () => { pointerDown = true })
+  window.addEventListener('pointerup', () => {
+    pointerDown = false
+    scheduleRender()
+  })
+  window.addEventListener('pointercancel', () => { pointerDown = false; scheduleRender() })
   // Host polling must not detach the editor, steal focus or interrupt IME input.
-  shadow.addEventListener('focusout', () => scheduleRender())
   const style = document.createElement('style')
   style.textContent = CSS
   shadow.appendChild(style)
@@ -232,6 +294,9 @@ function scheduleRender() {
   // which would freeze the panel while an agent works in the background.
   setTimeout(() => {
     renderQueued = false
+    // A blur can commit an edit between pointerdown and click. Preserve the
+    // clicked button until its handler runs, otherwise the first click is lost.
+    if (pointerDown || pendingClickTarget) return
     render()
   }, 0)
 }
@@ -367,6 +432,17 @@ function renderStep(
     }
     }
     card.appendChild(detail)
+  }
+  if (step.fields?.length) {
+    const inputs = el('div', 'detail task-input-preview')
+    inputs.appendChild(el('strong', undefined, `Inputs for ${step.role || 'this task’s owner'}`))
+    for (const key of step.fields) {
+      const field = mapstore.getMap()?.fields?.find(f => f.key === key)
+      inputs.appendChild(el('div', undefined, field
+        ? `${field.label || key}${field.unit ? ` (${field.unit})` : ''} · ${field.type === 'select' ? `choose: ${field.options?.join(' / ')}` : field.type}${field.required || field.confirm ? ' · required' : ' · optional'}`
+        : `${key} · input definition missing`))
+    }
+    card.appendChild(inputs)
   }
   if (step.naReason) card.appendChild(el('div', 'detail', `N/A: ${step.naReason}`))
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
@@ -727,8 +803,13 @@ function render() {
   const status = el('span', 'status')
   const dot = el('span', `dot${webmcpStatus === 'connected' ? ' on' : ''}`)
   status.appendChild(dot)
-  status.appendChild(el('span', undefined, webmcpStatus === 'connected' ? 'WebMCP ready' : 'WebMCP unavailable'))
+  status.appendChild(el('span', undefined, webmcpStatus === 'connected' ? 'Tools ready' : 'Tools unavailable'))
+  status.title = 'WebMCP tools are available to a compatible agent. Send a message in your agent’s chat to start the conversation.'
   header.appendChild(status)
+  const help = el('button', 'close', '?')
+  help.setAttribute('aria-label', 'How to use Understudy')
+  help.onclick = () => openUsageGuide()
+  header.appendChild(help)
   if (window.innerWidth >= 1000) {
     const widen = el('button', 'close', expanded ? '⇥' : '⇤')
     widen.setAttribute('aria-label', expanded ? 'Use standard process width' : 'Expand process view')
@@ -749,6 +830,8 @@ function render() {
   panel.appendChild(header)
 
   const body = el('div', 'body')
+
+  if (guideLanguage) body.appendChild(usageGuide())
 
   // Agent questions
   if (asksStore.asks.length > 0) {
@@ -844,26 +927,8 @@ function render() {
   mapSection.appendChild(el('h2', undefined, 'Process map'))
   const map = mapstore.getMap()
   if (!map) {
-    mapSection.appendChild(
-      el('div', 'empty', 'Your agent’s questions and draft playbook appear here. You can start by asking what this page does.'),
-    )
-    const invite =
-      'What is this page, and how can you help me use it?'
-    const tip = el('div', 'invite-box')
-    tip.appendChild(el('div', 'invite-hint', 'Start naturally in your agent’s chat:'))
-    tip.appendChild(el('div', 'invite-text', `“${invite}”`))
-    const copy = el('button', 'invite-copy', '🤖 Copy agent invite')
-    copy.onclick = async () => {
-      try {
-        await navigator.clipboard.writeText(invite)
-        copy.textContent = '✓ Copied — paste it to your agent'
-        setTimeout(() => (copy.textContent = '🤖 Copy agent invite'), 2500)
-      } catch {
-        copy.textContent = 'Select and copy the text above'
-      }
-    }
-    tip.appendChild(copy)
-    mapSection.appendChild(tip)
+    const state = host.getState() as {playbookRequest?: PlaybookRequest | null} | null
+    mapSection.appendChild(discoveryPreview(state?.playbookRequest ?? null, render))
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
     mapSection.appendChild(

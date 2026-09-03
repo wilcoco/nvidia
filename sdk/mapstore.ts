@@ -2,6 +2,7 @@ import type { FieldDef, MapEdit, ProcessMap, Step, StepType, RunEvent } from './
 import { record } from './journal'
 import * as host from './host'
 import { onGapResolved } from './asks'
+import { validateFields, validateFieldValues, validateFieldBindings } from '../shared/fields'
 
 onGapResolved((gapKey) => markGapResolved(gapKey))
 
@@ -164,6 +165,8 @@ export function humanRemoveStep(stepId: string): void {
 
 export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string; version?: number }>): void {
   if (!map || map.confirmed || map.saving) return
+  const invalid = validateFieldBindings(map)
+  if (invalid) { map.saveError = invalid; notify(); return }
   const confirm = (current: ProcessMap) => {
     // A revised design is ready for a NEW execution. Do not present the
     // previous run's completed tasks or decisions as this version's work.
@@ -634,9 +637,12 @@ export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string;
       detail: 'The playbook is confirmed and running — its data contract is read-only. Revise via a new draft (propose_process_map or the Propose changes button).',
     }
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
-  if (!Array.isArray(fields)) return { ok: false, error: 'fields must be an array' }
+  const invalid = validateFields(fields)
+  if (invalid) return { ok: false, error: invalid }
+  const keys = new Set(fields.map(f => f.key))
+  const referenced = map.steps.flatMap(s => s.fields ?? []).filter(k => !keys.has(k))
+  if (referenced.length) return {ok: false, error: `Unassign fields from their steps before removing them: ${referenced.join(', ')}`}
   map.fields = fields
-  markGapResolved('required_context')
   record('agent', 'map', `defined the playbook's data contract (${fields.map((f) => f.key).join(', ')})`)
   notify()
   return { ok: true, fields }
@@ -654,43 +660,43 @@ function mapLooksComplete(): boolean {
   return open.length === 0 && !lastPendingDecision
 }
 
+let lastCompletionError: string | null = null
+export function getCompletionError(): string | null { return lastCompletionError }
+function refuseCompletion(reason: string): false {
+  lastCompletionError = reason
+  record('user', 'map', reason)
+  notify()
+  return false
+}
+
 export function humanToggleStepDone(
   stepId: string,
   values?: Record<string, unknown>,
   opts?: { allowSkip?: boolean },
 ): boolean {
+  lastCompletionError = null
   {
     const step = map?.steps.find((s) => s.id === stepId)
     const role = host.actorRole()
     if (step?.type === 'approval') {
-      record('user', 'map', `blocked: "${step.label}" completes only via a successful review action`)
-      notify()
-      return false
+      return refuseCompletion(`blocked: "${step.label}" completes only via a successful review action`)
     }
     if (step?.role && role && step.role !== role && !step.done) {
-      record('user', 'map', `blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
-      notify()
-      return false
+      return refuseCompletion(`blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
     }
     if (step && step.done && mapLooksComplete()) {
-      record('user', 'map', `blocked: the run is complete — its record is frozen; start a new run to redo work`)
-      notify()
-      return false
+      return refuseCompletion(`blocked: the run is complete — its record is frozen; start a new run to redo work`)
     }
     if (step && step.done) {
       const index = map!.steps.indexOf(step)
       if (map!.steps.slice(index + 1).some((s) => s.type === 'approval' && s.done)) {
-        record('user', 'map', 'This work has already been signed off. Start a new execution to record a correction.')
-        notify()
-        return false
+        return refuseCompletion('This work has already been signed off. Start a new execution to record a correction.')
       }
       // Un-completing is reserved for the persona who did it (or its owning role).
       const persona = actingPersona()
       const allowed = !step.completedBy || step.completedBy === persona || (step.role && role && step.role === role)
       if (!allowed) {
-        record('user', 'map', `blocked: "${step.label}" was completed by ${step.completedBy}; only they (or the ${step.role ?? 'owning'} role) may reopen it`)
-        notify()
-        return false
+        return refuseCompletion(`blocked: "${step.label}" was completed by ${step.completedBy}; only they (or the ${step.role ?? 'owning'} role) may reopen it`)
       }
     }
     // Exit criteria on a NON-branching step gate its completion: "restore
@@ -716,53 +722,29 @@ export function humanToggleStepDone(
           }
         }
         if (violated.length) {
-          record(
-            'user',
-            'map',
-            `blocked: "${step.label}" cannot complete — its exit criteria failed: ${violated.join('; ')}`,
-          )
-          notify()
-          return false
+          return refuseCompletion(`blocked: "${step.label}" cannot complete — its exit criteria failed: ${violated.join('; ')}`)
         }
       }
     }
     if (step && !step.done && map?.confirmed) {
       const st0 = progress().get(stepId)
       if (st0 === 'not_applicable' || st0 === 'conditional') {
-        record('user', 'map', `blocked: "${step.label}" is not on the active path — its branch was not taken`)
-        notify()
-        return false
+        return refuseCompletion(`blocked: "${step.label}" is not on the active path — its branch was not taken`)
       }
     }
     if (step && !step.done && !opts?.allowSkip && map?.confirmed) {
       const st = progress().get(stepId)
       if (st === 'pending') {
-        record('user', 'map', `blocked: "${step.label}" is not the next step — finish earlier steps first (or skip explicitly from the panel)`)
-        notify()
-        return false
+        return refuseCompletion(`blocked: "${step.label}" is not the next step — finish earlier steps first (or skip explicitly from the panel)`)
       }
     }
     if (step && !step.done) {
       if (step.fields?.length) {
         const relevant = (map?.fields ?? []).filter((f) => step.fields!.includes(f.key))
-        const missing = relevant.filter((f) => {
-          const v = values?.[f.key]
-          // Confirmation checkboxes must be affirmed; measurement booleans may
-          // legitimately be false (that IS the reading).
-          if (f.type === 'boolean') {
-            if (f.confirm === true) return v !== true
-            return f.required ? v === undefined : false
-          }
-          return f.required ? v === undefined || String(v).trim() === '' : false
-        })
+        const missing = validateFieldValues(relevant, values)
+        if (relevant.length !== step.fields.length) missing.push('The task references an undefined field; revise its playbook.')
         if (missing.length) {
-          record(
-            'user',
-            'map',
-            `blocked: "${step.label}" requires ${missing.map((f) => f.label ?? f.key).join(', ')} before it can be completed`,
-          )
-          notify()
-          return false
+          return refuseCompletion(`blocked: "${step.label}" — ${missing.join('; ')}`)
         }
       }
       const persona = actingPersona()
@@ -851,6 +833,7 @@ export interface MapGap {
     | 'judgment'
     | 'replay_binding'
     | 'required_context'
+    | 'field_assignment'
     | 'precursors'
     | 'pass_criteria'
   stepId?: string
@@ -887,14 +870,6 @@ export function mapGaps(): MapGap[] {
       fallback_question: `Before "${first.label}" — is there anything that must happen first?`,
     })
     gaps.push({
-      kind: 'required_context',
-      stepId: first.id,
-      step: first.label,
-      question_goal: `Identify the variables or values that must always be captured when doing "${first.label}"`,
-      missing_information: ['required fields', 'measurements or values', 'their types and units'],
-      fallback_question: `Which values must always be recorded for "${first.label}"?`,
-    })
-    gaps.push({
       kind: 'precursors',
       stepId: first.id,
       step: first.label,
@@ -903,6 +878,15 @@ export function mapGaps(): MapGap[] {
       fallback_question: 'Are there early signs that usually precede this situation?',
     })
   }
+  for (const step of actionable.filter(s => s.type === 'task' && !s.fields?.length)) gaps.push({
+    kind: 'required_context', stepId: step.id, step: step.label,
+    question_goal: `Find which measurements, maintained values or choices the owner must record for "${step.label}"; ask explicitly whether any are needed.`,
+    missing_information: ['numeric values and units', 'dropdown choices and their allowed options', 'required vs optional inputs', 'who records each value and in which task', 'pass/fail thresholds', 'which next task each routing choice leads to'],
+    fallback_question: `Which numbers or choices should the next owner record for "${step.label}"?`,
+    note: 'Define fields with update_map_fields, then bind their keys to this task with update_step.fields. Use type select with options for a dropdown. If no inputs are needed, record that answer for required_context:stepId.',
+  })
+  const bindingError = validateFieldBindings(map)
+  if (bindingError) gaps.push({kind: 'field_assignment', note: bindingError, question_goal: 'Ensure every input will appear on the responsible task card.'})
   const last = map.steps.find((s) => !s.next || s.next.length === 0)
   if (last) {
     gaps.push({
@@ -974,7 +958,7 @@ export function mapGaps(): MapGap[] {
   }
   const resolved = new Set(map.resolvedGaps ?? [])
   lastFallbacks = gaps.map((g) => g.fallback_question).filter((q): q is string => !!q)
-  return gaps.filter((g) => !resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind))
+  return gaps.filter((g) => g.kind === 'field_assignment' || (!resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind)))
 }
 
 /** Reapply a persisted run's progress onto the freshly loaded map (page reload). */
@@ -990,8 +974,20 @@ export function restoreRunState(
   }>,
   decisions?: unknown[],
   events?: RunEvent[],
+  replace = false,
 ): number {
   if (!map) return 0
+  if (replace) {
+    for (const step of map.steps) {
+      step.done = false
+      step.resultId = undefined
+      step.naReason = undefined
+      step.completedBy = undefined
+      step.completedAt = undefined
+      step.resultData = undefined
+    }
+    map.decisions = []
+  }
   let applied = 0
   for (const ps of steps) {
     if (typeof ps?.id !== 'string') continue

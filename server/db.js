@@ -1,6 +1,6 @@
 // Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
 import crypto from 'node:crypto'
-import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, mergeRunEvents } from './runstate.js'
+import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, mergeRunEvents, guardRunUpdate } from './runstate.js'
 
 function hashPassword(password, salt) {
   return crypto.scryptSync(password, salt, 32).toString('hex')
@@ -54,6 +54,11 @@ function memoryBackend() {
       return users.map(({ username, name, role }) => ({ username, name, role }))
     },
     async createWorklog(w) {
+      if (w.data?.systemGenerated && w.data?.runId != null) {
+        const existing = worklogs.find(row => row.data?.systemGenerated &&
+          String(row.data.runId) === String(w.data.runId) && (row.data.approvalStepId ?? '') === (w.data.approvalStepId ?? ''))
+        if (existing) return existing
+      }
       const row = { id: String(seq++), ...w, status: 'draft' }
       worklogs.unshift(row)
       return row
@@ -65,6 +70,12 @@ function memoryBackend() {
       const w = worklogs.find((x) => x.id === id)
       if (w) w.status = status
       return w ?? null
+    },
+    async saveDiscoveryAnswer(id, answer, createdBy) {
+      const w = worklogs.find(x => x.id === id)
+      if (!w || w.createdBy !== createdBy || w.status !== 'draft' || w.data?.runId != null || w.data?.systemGenerated) return null
+      w.data = {...w.data, discovery: {before: answer}}
+      return w
     },
     async mergeWorklogData(id, patch) {
       const w = worklogs.find((x) => x.id === id)
@@ -156,6 +167,7 @@ function memoryBackend() {
       const run = runs.find((x) => x.id === id)
       if (!run) return null
       patch = preserveSignoffs(run, patch)
+      if (!guardRunUpdate(run, patch, processes.find(p => p.id === run.processId)?.map)) return run
       if (patch.steps) run.steps = patch.steps
       if (patch.decisions) run.decisions = patch.decisions
       if (patch.events) run.events = mergeRunEvents(run.events, patch.events)
@@ -303,13 +315,24 @@ async function pgBackend(databaseUrl) {
       return rows
     },
     async createWorklog(w) {
-      const { rows } = await pool.query(
+      return transaction(async (client) => {
+      if (w.data?.systemGenerated && w.data?.runId != null) {
+        // Serialize retrying creators by the immutable run. This also covers a
+        // response lost after commit, without requiring a schema migration.
+        await client.query('SELECT id FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(w.data.runId)])
+        const existing = await client.query(`SELECT * FROM worklogs WHERE data->>'systemGenerated'='true'
+          AND data->>'runId'=$1 AND COALESCE(data->>'approvalStepId','')=$2 ORDER BY id LIMIT 1`,
+          [String(w.data.runId), String(w.data.approvalStepId ?? '')])
+        if (existing.rows[0]) return wl(existing.rows[0])
+      }
+      const { rows } = await client.query(
         `INSERT INTO worklogs (date, line, task, progress_pct, hours, note, urgent, created_by, kind, data)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
         [w.date, w.line, w.task, w.progressPct, w.hours, w.note, w.urgent, w.createdBy,
          w.kind ?? 'routine', JSON.stringify(w.data ?? {})],
       )
       return wl(rows[0])
+      })
     },
     async listWorklogs() {
       const { rows } = await pool.query('SELECT * FROM worklogs ORDER BY id DESC LIMIT 200')
@@ -317,6 +340,15 @@ async function pgBackend(databaseUrl) {
     },
     async setWorklogStatus(id, status) {
       const { rows } = await pool.query('UPDATE worklogs SET status=$2 WHERE id=$1 RETURNING *', [id, status])
+      return rows[0] ? wl(rows[0]) : null
+    },
+    async saveDiscoveryAnswer(id, answer, createdBy) {
+      const {rows} = await pool.query(
+        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object('discovery', $2::jsonb)
+         WHERE id=$1 AND created_by=$3 AND status='draft' AND data->>'runId' IS NULL
+         AND COALESCE(data->>'systemGenerated', 'false')='false' RETURNING *`,
+        [id, JSON.stringify({before: answer}), createdBy],
+      )
       return rows[0] ? wl(rows[0]) : null
     },
     async mergeWorklogData(id, patch) {
@@ -437,7 +469,10 @@ async function pgBackend(databaseUrl) {
       return transaction(async (client) => {
         const current = await client.query('SELECT * FROM process_runs WHERE id=$1 FOR UPDATE', [id])
         if (!current.rows[0]) return null
-        patch = preserveSignoffs(runRow(current.rows[0]), patch)
+        const run = runRow(current.rows[0])
+        patch = preserveSignoffs(run, patch)
+        const process = await client.query('SELECT map FROM processes WHERE id=$1', [run.processId])
+        if (!guardRunUpdate(run, patch, process.rows[0]?.map)) return run
         const { rows } = await client.query(
           `UPDATE process_runs SET
              steps = COALESCE($2, steps),

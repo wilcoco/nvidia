@@ -1,4 +1,5 @@
 import { api, ApiError, setToken, getToken } from './api'
+import { STARTER_QUESTION, type DiscoveryAnswer } from '../sdk/discovery'
 
 export interface UserInfo {
   username: string
@@ -7,6 +8,7 @@ export interface UserInfo {
 }
 
 export interface IncidentData {
+  discovery?: { before?: DiscoveryAnswer }
   viscosity?: number
   boothTemp?: number
   sprayPressure?: number
@@ -93,7 +95,7 @@ export interface AppState {
   draft: DraftContext
   dismissedSuggestions: string[]
   runStarted: { title: string; version?: number; next?: string; resumed?: boolean } | null
-  captureContext: { id: string; task: string; creationRequested?: boolean } | null
+  captureContext: { id: string; task: string; creationRequested?: boolean; answerDraft?: string; starterSkipped?: boolean } | null
 }
 
 let state: AppState = {
@@ -157,6 +159,11 @@ export async function refresh(): Promise<void> {
   try {
     const s = await api<ServerState>('/api/state')
     if (gen !== sessionGen) return // logged out while in flight — drop the stale state
+    // Reconcile execution before publishing cancelled reviews/draft records.
+    // Otherwise another tab can see a new draft with an old approval-ready map
+    // and immediately try to resubmit evidence that the assignee just reopened.
+    await window.Understudy.refreshRunState?.()
+    if (gen !== sessionGen) return
     commit({
       authChecked: true,
       me: s.me,
@@ -189,7 +196,13 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 export function startPolling(): void {
   void refresh()
-  if (!pollTimer) pollTimer = setInterval(() => void refresh(), 5000)
+  if (!pollTimer) {
+    pollTimer = setInterval(() => void refresh(), 5000)
+    window.addEventListener('focus', () => void refresh())
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void refresh()
+    })
+  }
 }
 
 export async function login(username: string, password: string): Promise<void> {
@@ -568,13 +581,22 @@ export async function autoSyncApproval(): Promise<void> {
   if (before.some((p) => !p.done && !['not_applicable', 'conditional'].includes(p.status ?? '') && p.type !== 'decision')) return
   const key = `${runId}:${ready.id}`
   const isCurrent = () => window.Understudy.currentRunId?.() === runId && window.Understudy.getLoadedProcess?.() === proc
+  const canRequest = () => {
+    if (!isCurrent()) return false
+    const latest = window.Understudy.getProgress?.() ?? []
+    const index = latest.findIndex(p => p.id === ready.id && ['ready', 'blocked'].includes(p.status ?? ''))
+    return index >= 0 && !latest.slice(0, index).some(p => !p.done &&
+      !['not_applicable', 'conditional'].includes(p.status ?? '') && p.type !== 'decision')
+  }
   if (state.reviewSync?.runId === runId && state.reviewSync.stepId === ready.id && state.reviewSync.status === 'error') return
   const firstApproval = !before.some((p) => p.type === 'approval' && p.done)
   let wl = state.worklogs.find((w) => String(w.data.runId ?? '') === String(runId) &&
     (w.data.approvalStepId === ready.id || (firstApproval && !w.data.approvalStepId)))
   if (wl && wl.status !== 'draft') {
-    if (wl.status === 'submitted' && state.reviewSync?.status !== 'ready')
+    if (wl.status === 'submitted' && state.reviewSync?.status !== 'ready') {
       commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
+      window.Understudy.log(`Review request for "${ready.label}" confirmed from the server.`, {runId, stepId: ready.id})
+    }
     return
   }
   const contributor = contributorPersonaFor()
@@ -584,7 +606,7 @@ export async function autoSyncApproval(): Promise<void> {
   try {
     // Flush before submitting, so the server checks the same completed work.
     await window.Understudy.flushRun?.()
-    if (!isCurrent()) return
+    if (!canRequest()) return
     if (!wl) {
       const evidence: Record<string, unknown> = {}
       for (const s of proc.steps.slice(0, proc.steps.findIndex((s) => s.id === ready.id)))
@@ -599,14 +621,26 @@ export async function autoSyncApproval(): Promise<void> {
       })
       await refresh()
     }
-    if (!isCurrent()) return
+    if (!canRequest()) return
     const role = proc.steps.find((s) => s.id === ready.id)?.role ?? 'Reviewer'
     const approver = state.users.find((u) => u.role === role && u.username !== wl!.createdBy)?.username ?? 'lee'
     await requestApproval(wl.id, approver, contributor, ready.id)
-    if (isCurrent()) commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
+    if (canRequest()) commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
     reviewAttempts.delete(key)
   } catch (err) {
-    if (!isCurrent()) return
+    if (!canRequest()) return
+    // A request can commit even when the response is lost. Reconcile before
+    // retrying; record creation is also idempotent for this run/approval step.
+    await refresh()
+    if (!canRequest()) return
+    const saved = state.worklogs.find(w => String(w.data.runId ?? '') === String(runId) &&
+      (w.data.approvalStepId === ready.id || (firstApproval && !w.data.approvalStepId)))
+    if (saved?.status === 'submitted' && state.approvals.some(a => a.worklogId === saved.id && a.status === 'PENDING')) {
+      commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
+      reviewAttempts.delete(key)
+      window.Understudy.log(`Review request for "${ready.label}" confirmed from the server after reconnecting.`, {runId, stepId: ready.id})
+      return
+    }
     const message = err instanceof Error ? err.message : String(err)
     const attempts = (reviewAttempts.get(key) ?? 0) + 1
     reviewAttempts.set(key, attempts)
@@ -615,11 +649,14 @@ export async function autoSyncApproval(): Promise<void> {
     // Permanent validation failures need a correction, not an endless retry.
     if ((!(err instanceof ApiError) || err.status >= 500) && attempts < 3)
       setTimeout(() => {
-        if (isCurrent() && state.reviewSync?.status === 'error') {
+        if (canRequest() && state.reviewSync?.status === 'error') {
           commit({reviewSync: null}); void autoSyncApproval()
         }
       }, 1500 * attempts)
-  } finally { approvalSyncInFlight = false }
+  } finally {
+    approvalSyncInFlight = false
+    if (isCurrent() && !canRequest()) commit({reviewSync: null})
+  }
 }
 
 let resumeAttempted = false
@@ -644,7 +681,7 @@ export function resumeLastPlaybook(): void {
 }
 
 export function setCaptureDraft(task: string, sample = false): void {
-  commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'development' : undefined}})
+  commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'operations' : undefined}})
 }
 
 export function dismissRunStarted(): void {
@@ -660,6 +697,25 @@ export function clearCaptureContext(): void {
 export function requestPlaybookCreation(work: Pick<Worklog, 'id' | 'task'>): void {
   commit({captureContext: {id: work.id, task: work.task, creationRequested: true}})
   window.Understudy.log(`requested a NEW playbook from work log #${work.id}: “${work.task}”. Ask about the work before and after it, owners and rules, then draft from the answers for human review.`, {worklogId: work.id, intent: 'create_playbook'})
+}
+
+export function setStarterDraft(answerDraft: string): void {
+  if (state.captureContext) commit({captureContext: {...state.captureContext, answerDraft}})
+}
+
+export function skipStarterQuestion(): void {
+  if (state.captureContext) commit({captureContext: {...state.captureContext, starterSkipped: true}})
+}
+
+export async function saveStarterAnswer(worklogId: string, answer: string): Promise<void> {
+  if (!answer.trim()) throw new Error('Write an answer, or choose to discuss it with your agent.')
+  const gen = sessionGen
+  const wl = await api<Worklog>(`/api/worklogs/${worklogId}/discovery`, {answer: answer.trim(), actingAs: state.actingAs})
+  if (gen !== sessionGen) return
+  commit({worklogs: state.worklogs.map(w => w.id === wl.id ? wl : w),
+    ...(state.captureContext?.id === worklogId ? {captureContext: {...state.captureContext, answerDraft: ''}} : {})})
+  window.Understudy.log(`answered the starter question for work log #${worklogId}: “${answer.trim()}”`,
+    {worklogId, question: STARTER_QUESTION, discovery: wl.data.discovery})
 }
 
 /* Process library (shared across users via the server) */
@@ -788,6 +844,10 @@ export async function listRuns(processId?: string): Promise<ProcessRun[]> {
   return api<ProcessRun[]>(`/api/runs${processId ? `?processId=${processId}` : ''}`)
 }
 
+export async function getRun(runId: string): Promise<ProcessRun> {
+  return api<ProcessRun>(`/api/runs/${runId}`)
+}
+
 export async function reviseFromProblem(run: ProcessRun, event: NonNullable<ProcessRun['events']>[number]): Promise<void> {
   await window.Understudy.flushRun?.()
   const latest = latestPerTitle(state.processes).find((p) => p.title === run.title)
@@ -873,15 +933,14 @@ export async function deleteProcess(id: string): Promise<void> {
   await refresh()
 }
 
-export async function resetDemoData(scope: 'worklogs' | 'all'): Promise<void> {
-  await api('/api/admin/reset', { scope })
-  commit({ captureContext: null })
+export async function startFreshWorkspace(): Promise<void> {
+  await window.Understudy.flushRun?.()
+  commit({captureContext: null, captureDraft: {task: '', sample: false}, draft: {}, reviewSync: null, runStarted: null, dismissedSuggestions: []})
   try {
     localStorage.removeItem('understudy.lastPlaybook')
   } catch {
     /* ignore */
   }
   window.Understudy.unloadProcess?.()
-  window.Understudy.log(`reset demo data (${scope})`)
-  await refresh()
+  window.Understudy.log('Started a new work item in this tab. Saved playbooks, runs and review records are preserved.')
 }

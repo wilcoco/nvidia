@@ -14,13 +14,54 @@ let trackedMap: ProcessMap | null = null
 let writes: Promise<unknown> = Promise.resolve()
 let startError: string | null = null
 let syncError: string | null = null
+let applyingRemote = false
+let localVersion = 0
+let pendingWrites = 0
+let pulling = false
+let lastRemote = ''
+
+/** Refresh the open run without replacing its design or the host's form drafts.
+ * A response fetched before a local edit/write is discarded, never merged over it. */
+export async function refreshRunState(): Promise<boolean> {
+  const id = currentRunId(), store = host.getProcessStore()
+  if (!id || !store?.readRun || pulling || syncTimer || pendingWrites || syncError) return false
+  const seq = startSeq, version = localVersion, current = trackedMap
+  pulling = true
+  try {
+    const remote = await store.readRun(id)
+    if (seq !== startSeq || version !== localVersion || trackedMap !== current ||
+      currentRunId() !== id || remote.id !== id || syncTimer || pendingWrites || syncError) return false
+    if (remote.status === 'abandoned') {
+      stopRunTracking()
+      startError = 'This run was retired by a newer execution. Open an active run from Start here.'
+      announceRunState()
+      return false
+    }
+    const signature = JSON.stringify(remote)
+    if (signature === lastRemote) return false
+    applyingRemote = true
+    try {
+      mapstore.restoreRunState(remote.steps, remote.decisions, remote.events, true)
+      completed = isRunComplete()
+      lastRemote = signature
+    } finally { applyingRemote = false }
+    announceRunState()
+    return true
+  } finally { pulling = false }
+}
 
 export function getRunStartError(): string | null { return startError }
+export function isRunStarting(): boolean {
+  return Boolean(trackedMap && trackedMap === mapstore.getMap() && trackedMap.confirmed && !runId && !startError)
+}
 export function getRunSyncError(): string | null { return syncError }
 export async function flushRun(): Promise<void> {
+  // A reviewing tab may have an older snapshot. Flushing only means sending
+  // local changes; an unchanged tab must never re-publish its cached evidence.
+  const needsWrite = Boolean(syncTimer || syncError)
   if (syncTimer) clearTimeout(syncTimer)
   syncTimer = null
-  sync()
+  if (needsWrite) sync()
   await writes
   if (syncError) throw new Error(syncError)
 }
@@ -79,6 +120,7 @@ export function isRunComplete(): boolean {
 }
 
 function sync() {
+  syncTimer = null
   const store = host.getProcessStore()
   if (!currentRunId() || !store?.updateRun) return
   const snap = snapshot()
@@ -97,15 +139,19 @@ function sync() {
       deviations: snap.deviations,
       status: snap.isComplete ? 'completed' as const : 'active' as const,
     })
+  pendingWrites++
   writes = writes.catch(() => {}).then(() => {
     if (seq !== startSeq || mapstore.getMap() !== trackedMap) return
     return store.updateRun!(id, payload).then(() => {
+      if (seq !== startSeq) return
       syncError = null
+      lastRemote = ''
       syncFailureLogged = false
       announceRunState()
     })
   })
     .catch((err) => {
+      if (seq !== startSeq) return
       syncError = `Progress could not be saved: ${err instanceof Error ? err.message : err}`
       announceRunState()
       if (!syncFailureLogged) {
@@ -116,10 +162,12 @@ function sync() {
           `⚠ run sync failing (${err instanceof Error ? err.message : err}) — progress is NOT persisting to the server`,
         )
       }
-    })
+    }).finally(() => { pendingWrites-- })
 }
 
 function scheduleSync() {
+  if (applyingRemote) return
+  localVersion++
   if (trackedMap && (mapstore.getMap() !== trackedMap || !trackedMap.confirmed)) {
     stopRunTracking()
     return
@@ -151,6 +199,7 @@ export function stopRunTracking(): void {
   syncFailureLogged = false
   startError = null
   syncError = null
+  lastRemote = ''
   announceRunState()
 }
 
@@ -179,6 +228,7 @@ export function startRunTracking(processId: string): void {
   const map = mapstore.getMap()
   if (!map) return
   trackedMap = map
+  announceRunState()
   if (!subscribed) {
     subscribed = true
     mapstore.subscribe(scheduleSync)

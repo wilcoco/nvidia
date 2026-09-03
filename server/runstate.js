@@ -32,7 +32,7 @@ export function reviewFingerprint(run, scope) {
   if (!run) return null
   return JSON.stringify(canonical({
     steps: (run.steps ?? []).filter((s) => (!scope || scope.includes(s.id)) && s.type !== 'approval' && s.action !== 'request_review')
-      .map((s) => ({ id: s.id, status: s.status, completedAt: s.completedAt, resultData: s.resultData })),
+      .map((s) => ({ id: s.id, status: s.status, completedBy: s.completedBy, completedAt: s.completedAt, resultId: s.resultId, resultData: s.resultData })),
     decisions: (run.decisions ?? []).filter((d) => !d.invalidated && (!scope || scope.includes(d.stepId))),
   }))
 }
@@ -84,4 +84,33 @@ export function mergeRunEvents(previous = [], incoming = []) {
   const all = new Map(previous.map((e) => [e.id, e]))
   for (const event of incoming) if (!all.has(event.id)) all.set(event.id, event)
   return [...all.values()].sort((a, b) => a.ts - b.ts)
+}
+
+/** Run writes and approvals hold the same DB lock. Checks at the HTTP handler
+ * alone are insufficient: a review can be accepted while a write is waiting. */
+export function guardRunUpdate(run, patch, design) {
+  const fail = (message) => { throw Object.assign(new Error(message), {status: 409}) }
+  if (patch.steps) {
+    const fixed = (run.steps ?? []).filter(s => s.type !== 'gate')
+    if (fixed.some(s => !patch.steps.some(n => n.id === s.id && n.type === s.type)) ||
+      patch.steps.some(n => !fixed.some(s => s.id === n.id && s.type === n.type) &&
+        !(n.type === 'gate' && (design?.steps ?? []).some(s => s.type === 'decision' && `gate:${s.id}` === n.id))))
+      fail('run_design_mismatch')
+  }
+  const next = {...run, ...patch, events: mergeRunEvents(run.events, patch.events ?? [])}
+  // Omitted patch properties do not clear recorded state.
+  for (const key of Object.keys(patch)) if (patch[key] === undefined) next[key] = run[key]
+  if (run.status === 'completed' || run.status === 'abandoned') {
+    const content = r => canonical({steps: r.steps, decisions: r.decisions, events: r.events, status: r.status, deviations: r.deviations})
+    if (JSON.stringify(content(next)) !== JSON.stringify(content(run))) fail('finished_run_immutable')
+    return false // exact retry: return the existing row without changing its timestamp
+  }
+  const steps = design?.steps ?? run.steps
+  const lastSigned = steps.reduce((last, s, i) => s.type === 'approval' &&
+    run.steps.some(r => r.id === s.id && r.status === 'done' && r.resultId) ? i : last, -1)
+  if (lastSigned >= 0) {
+    const scope = steps.slice(0, lastSigned).flatMap(s => [s.id, `gate:${s.id}`])
+    if (reviewFingerprint(run, scope) !== reviewFingerprint(next, scope)) fail('signed_work_immutable')
+  }
+  return true
 }

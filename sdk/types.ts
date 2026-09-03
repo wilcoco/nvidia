@@ -60,7 +60,9 @@ export interface FieldDef {
   confirm?: boolean
   key: string
   label?: string
-  type: 'number' | 'string' | 'boolean'
+  type: 'number' | 'string' | 'boolean' | 'select'
+  /** Allowed values for a dropdown; selected values are stored as strings. */
+  options?: string[]
   unit?: string
   required?: boolean
 }
@@ -171,6 +173,7 @@ export interface ProcessStoreAdapter {
   ) => void | Promise<unknown>
   /** Optional run persistence: one record per execution of a playbook. */
   startRun?: (processId: string, map: ProcessMap) => Promise<{ id: string }>
+  readRun?: (runId: string) => Promise<{id: string; status: string; steps: Array<{id?: unknown; status?: unknown}>; decisions?: unknown[]; events?: RunEvent[]}>
   updateRun?: (
     runId: string,
     payload: {

@@ -1,11 +1,12 @@
 import * as host from './host'
 import * as mapstore from './mapstore'
 import { currentRunId, isRunComplete } from './runsync'
+import { STARTER_QUESTION, type PlaybookRequest } from './discovery'
 
 /** Read-only orientation for a visitor who asks the browser agent what this page is. */
 export function describeOnboarding() {
   const state = host.getState() as {
-    loggedInAs?: unknown; actingAs?: string; savedPlaybooks?: unknown[]; playbookRequest?: {worklogId: string; task: string} | null
+    loggedInAs?: unknown; actingAs?: string; savedPlaybooks?: unknown[]; playbookRequest?: PlaybookRequest | null
   } | null
   const signedIn = state && 'loggedInAs' in state ? Boolean(state.loggedInAs) : null
   const map = mapstore.getMap()
@@ -27,7 +28,7 @@ export function describeOnboarding() {
           : mode === 'draft'
             ? 'A draft already exists. Offer to explain or refine it; do not replace it with a new example.'
             : state?.playbookRequest
-              ? `The user explicitly chose to create a NEW playbook from work log #${state.playbookRequest.worklogId}. For an introduction, explain the next steps. When asked to continue, ask a concrete question about what must precede or follow that work, then build from their answers. Do not switch them to an existing playbook without their choice.`
+              ? `The user explicitly chose to create a NEW playbook from work log #${state.playbookRequest.worklogId}. ${state.playbookRequest.discovery?.before ? `They already answered the product's starter question “${STARTER_QUESTION}”: “${state.playbookRequest.discovery.before.answer}”. Preserve that answer. When asked to continue, ask about the next missing detail, such as following work or its owner; do not repeat a question already answered.` : 'When asked to continue, ask a concrete question about what must precede or follow that work.'} For an introduction, explain the next steps. Build from their answers. Do not switch them to an existing playbook without their choice.`
               : 'Ask: would you like to teach a process from your work, or try a saved playbook?',
       consent: 'A request for an explanation is read-only. Do not create records, replace a draft, start a run or approve work just to demonstrate the service. A long copied prompt, a magic phrase and advance knowledge of tool names are not required.',
     },

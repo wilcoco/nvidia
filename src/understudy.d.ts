@@ -14,7 +14,8 @@ interface UnderstudyFieldDef {
   confirm?: boolean
   key: string
   label?: string
-  type: 'number' | 'string' | 'boolean'
+  type: 'number' | 'string' | 'boolean' | 'select'
+  options?: string[]
   unit?: string
   required?: boolean
 }
@@ -80,6 +81,7 @@ interface UnderstudyApi {
         },
       ) => void | Promise<unknown>
       startRun?: (processId: string, map: UnderstudyProcessMap) => Promise<{ id: string }>
+      readRun?: (runId: string) => Promise<{id: string; status: string; steps: Array<{id?: unknown; status?: unknown}>; decisions?: unknown[]; events?: import('../sdk/types').RunEvent[]}>
       updateRun?: (
         runId: string,
         payload: {
@@ -105,12 +107,15 @@ interface UnderstudyApi {
   getRunStartError?(): string | null
   getRunSyncError?(): string | null
   flushRun?(): Promise<void>
+  refreshRunState?(): Promise<boolean>
   isRunComplete?(): boolean
+  isRunStarting?(): boolean
   getProgress?(): Array<{ id: string; label: string; type: string; role?: string; fields?: string[]; status?: string; done?: boolean }>
   completeStep?(stepId: string, values?: Record<string, unknown>): { ok: boolean; error?: string }
   openPanel?(): void
   closePanel?(): void
-  getInteractionState?(): { connected: boolean; questions: number; approvals: number }
+  openUsageGuide?(language?: 'en' | 'ko', topic?: 'overview' | 'usage'): boolean
+  getInteractionState?(): { connected: boolean; questions: number; approvals: number; interview?: {asked: number; answered: number} }
   getPendingDecision?(): { id: string; label: string } | null
   reportProblem?(stepId: string, note: string): void
   getLoadedProcess(): UnderstudyProcessMap | null

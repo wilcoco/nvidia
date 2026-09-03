@@ -45,6 +45,7 @@ let seq = 1
 export const asks: PendingAsk[] = []
 export const approvals: PendingApproval[] = []
 const questionResults = new Map<string, QuestionResult>()
+const questionWorklogs = new Map<string, string>()
 const actionResults = new Map<string, ActionResult>()
 const listeners = new Set<Listener>()
 const gapResolvers = new Set<(gapKey: string) => void>()
@@ -73,6 +74,8 @@ export function askUser(
   const id = `q${seq++}`
   asks.push({ id, question, options, allowText, resolvesGap })
   questionResults.set(id, { status: 'pending', question })
+  const state = host.getState() as {playbookRequest?: {worklogId?: string}} | null
+  if (state?.playbookRequest?.worklogId) questionWorklogs.set(id, state.playbookRequest.worklogId)
   record('agent', 'app', `asked: ${question}`, { questionId: id })
   notify()
   return id
@@ -92,6 +95,14 @@ export function answerAsk(id: string, answer: string): void {
 
 export function getQuestionResult(id: string): QuestionResult | { status: 'unknown' } {
   return questionResults.get(id) ?? { status: 'unknown' }
+}
+
+/** Only activity for the current capture counts as an interview in progress. */
+export function getInterviewProgress(): {asked: number; answered: number} {
+  const state = host.getState() as {playbookRequest?: {worklogId?: string}} | null
+  const worklogId = state?.playbookRequest?.worklogId
+  const results = worklogId ? [...questionWorklogs].filter(([, id]) => id === worklogId).map(([id]) => questionResults.get(id)) : []
+  return {asked: results.length, answered: results.filter(r => r?.status === 'answered').length}
 }
 
 /** Show an approval card for an agent-initiated action; returns the approval id. */

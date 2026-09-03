@@ -29,7 +29,7 @@ skipping ahead in the UI demands an explicit, recorded confirmation — and
 the server independently refuses reviews/approvals of unfinished runs,
 non-approver decisions, and edits to approved records.
 > *A diagram can't refuse a bad pass decision. This playbook does.*
-Proof: demo Scene 4; agent E2E audits reproduce every refusal.
+Evidence: automated regression tests and the documented browser E2E scenarios exercise these refusals.
 
 ## 4. Zero-API-key architecture
 The page ships tools without requiring a site-owned LLM API key or LLM
@@ -37,7 +37,7 @@ backend. The visitor uses their own agent (ChatGPT, Gemini), whose usage
 limits and costs still apply.
 > *We built the stage and the hands. WebMCP lets every visitor bring their
 > own brain.*
-Proof: the site works identically from ChatGPT's browser and Chrome+Gemini.
+Evidence: registered tools were discovered and invoked in the Codex desktop app’s browser. Other clients need separate verification.
 
 ## 5. Self-onboarding agents
 Tool descriptions are the manual: agents compose correct workflows from
@@ -57,18 +57,16 @@ suggestion (confidence + reasons).
 Suggestions, NEXT/SKIPPED guidance, task cards, approvals and every server
 gate run page/server-side — in any plain browser. The one thing that
 requires an agent is resolving a DECISION branch: that goes through
-`resolve_decision` on purpose, because that call is the evidence-checking
-gate itself (a page button would be a back door around it).
+`resolve_decision` on purpose, through the implementation’s evidence-checking interface.
 > *The agent is the door; the page is the house — and the branch points are
 > the doors.*
 
-This is also the mobile story. Mobile browsers do not support WebMCP today
-(no origin trial, no agent surface), so the safe claim is exactly this:
+The supported mobile workflow is:
 **processes are created and judged with the agent on desktop; assignees'
 input, handoffs and reviews also work on a phone's plain browser.** Decision
 branches stay agent-lane even on mobile — by design, not omission.
 
-## 8. The human always decides
+## 8. Explicit review and consent controls
 The WebMCP toolset exposes proposals and pending approval cards; confirming
 a map or approving an action happens in the page UI. Auto-approve is an
 explicit UI option. These are interaction boundaries, not proof of human

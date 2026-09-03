@@ -53,11 +53,13 @@ export function AgentInvite({ prompt, label = 'Copy message for your agent', hin
       <button className="primary" onClick={() => {
         void navigator.clipboard?.writeText(prompt).then(() => setCopied(true)).catch(() => setFallback(true))
         if (!navigator.clipboard) setFallback(true)
-      }}>{copied ? 'Copied — paste into your chat' : label}</button>
+      }}>{copied ? 'Copied — paste and send in your AI chat' : label}</button>
+      <p className="chat-location">Use the AI conversation that opened this browser tab. In a standalone browser, use the chat of your connected WebMCP agent. Its questions will appear in the panel on the right.</p>
+      {copied && <p className="copy-next" role="status">Next: paste and send the request in that chat. Copying alone does not start the agent.</p>}
       <details open={fallback || undefined}>
-        <summary>{fallback ? 'Select and copy this message' : 'View message & connection help'}</summary>
+        <summary>{fallback ? 'Select and copy this message' : 'View request & browser setup'}</summary>
         <p className="copy-text">{prompt}</p>
-        <p className="meta">Use ChatGPT’s in-app browser, or a browser with WebMCP enabled and an agent attached. “WebMCP ready” means the page exposes tools; your agent still needs your message.</p>
+        <p className="meta">Open this page in your agent’s browser, or attach a WebMCP agent to your browser. If you only have a regular browser, you can explore the example and saved playbooks, and save your first answer here. Continuing the interview requires a WebMCP-capable agent.</p>
       </details>
     </div>
   )

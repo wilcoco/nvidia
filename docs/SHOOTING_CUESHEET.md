@@ -22,8 +22,8 @@ Three proofs:
 | 0:00–0:12 | Problem | App + work-log screen, no clicks | **Every team runs on processes that exist only in experts' heads.** → *All that's ever written down is a work log.* |
 | 0:12–0:25 | Product | Send opening chat; agent intro + panel | **Understudy turns expert know-how into living playbooks.** |
 | 0:25–0:44 | Interview | Agent reads log, question cards answered | **The agent reads the work — and asks what's missing.** |
-| 0:44–1:04 | Teach | Rename a step; **click "Propose changes" first**; agent adds dry-run task; Save as vN | **Teach it once. Change the actual process.** |
-| 1:04–1:20 | Assign | ▶ Run new version; Kim prep → Park snapshot; My tasks fields | **The playbook becomes assigned work.** |
+| 0:44–1:04 | Teach | Load the playbook → **Propose changes** → rename a step → agent adds dry-run task → Save as vN | **Teach it once. Change the actual process.** |
+| 1:04–1:20 | Assign | Playbooks tab opens → ▶ Run new version; Kim prep → Park snapshot; My tasks fields | **Playbooks — the team's saved, versioned processes.** → **The playbook becomes assigned work.** |
 | 1:20–1:40 | Fail | Kim submits 12/false; failure branch; Park's recovery task appears | **Failed checks route the work to recovery.** |
 | 1:40–2:06 | Taught step governs | Park restore → Kim root cause → **new dry-run task** → Lee decision → retry | **The newly taught step now governs the retry.** |
 | 2:06–2:23 | Pass & review | Kim 0/true; pass branch; auto review with evidence | **Passing checks lead to evidence-based review.** |
@@ -37,13 +37,13 @@ Opening (0:00–0:25):
 > stop, how to recover, who must approve. All that ever gets written down is
 > a one-line work log. Understudy starts from that line: through WebMCP, an
 > agent learns from people, updates a shared playbook, and helps the team
-> carry it through to completion — no API keys: the page ships the tools,
+> carry it through to completion — no site-owned LLM key: the page ships the tools,
 > and every visitor brings their own agent.
 
 Closing (2:40–2:55):
-> Even the agent can't declare success — order, evidence and human approval
-> gate every run. Judgment lives at the desk with your agent; the work
-> travels to any browser, phones included. From an ordinary work log — to
+> This run checks task order and submitted evidence before requesting review.
+> The desktop agent handles decisions; assigned task entry and review can
+> continue in a mobile browser. From an ordinary work log — to
 > the team's operating process.
 
 ## Chat prompts (English, verbatim)
@@ -92,7 +92,7 @@ Then, with failing values submitted:
 > criteria.
 
 ## Takes
-- **T1** intro → interview → manual edit → Propose changes → agent adds
+- **T1** intro → load playbook → Propose changes → interview → manual edit → agent adds
   dry-run step → Save as vN
 - **T2** the full relay (fail → recover → dry run → Lee → retry → review →
   approve → reload) — one take, Demo mode ON
@@ -104,7 +104,7 @@ Then, with failing values submitted:
   existing knowledge and governing the next run.
 - The run must use the version saved on camera, not a fixed v6.
 - Demo data only — never claim a real database changed.
-- Don't start another run while a review is pending (a confirm dialog will
-  warn; during filming, avoid it entirely).
+- Don't start another run while a review is pending (an on-page warning may
+  appear; during filming, avoid it entirely).
 - Captions claiming success/restore only over frames that show it.
 - Sidebar, account info, notifications out of frame.

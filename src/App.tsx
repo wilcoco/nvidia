@@ -43,15 +43,15 @@ function Login() {
       <section className="login-intro">
         <div className="brand"><span className="brand-mark">u</span>Understudy</div>
         <div className="eyebrow">A SHARED WORKSPACE FOR YOU AND YOUR AGENT</div>
-        <h1>Your know-how.<br /><span>Your team’s next playbook.</span></h1>
-        <p>Describe your work. Your agent uses WebMCP to ask what belongs before and after it, then builds a process from your answers. The team follows it in order and reuses it when similar work comes up.</p>
-        <ol><li>Start with the work you’re doing.</li><li>Discover the surrounding steps and owners.</li><li>Run the process together. Reuse it next time.</li></ol>
+        <h1>Describe your work.<br /><span>Build a process your team can follow.</span></h1>
+        <p>Your AI agent asks what happens before and after your task, and who does each part. Your answers become a playbook: a process the team can follow and reuse.</p>
+        <ol><li>Describe one task. Answer the first question.</li><li>Build and correct the process with your agent.</li><li>Hand work to the next owner. Reuse the process next time.</li></ol>
         <span className="tech-tag">Powered by WebMCP</span>
       </section>
       <form className="card login" onSubmit={submit}>
         <div className="eyebrow">EXPLORE THE WORKSPACE</div>
-        <h2>Try it together.</h2>
-        <p className="hint">The demo account is ready. Bring your WebMCP-capable agent, or explore the saved playbooks first.</p>
+        <h2>Start with one task.</h2>
+        <p className="hint">The demo account is filled in. Try a delivery example or describe your own work. Start here, then continue the interview in your WebMCP agent’s chat.</p>
         <label>
           Username
           <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
@@ -189,6 +189,15 @@ function IncidentForm() {
                       onChange={(e) => setFieldValues({ ...fieldValues, [f.key]: e.target.checked })}
                     />
                     {f.label ?? f.key}
+                  </label>
+                ) : f.type === 'select' ? (
+                  <label key={f.key}>
+                    {f.label ?? f.key}{f.required ? ' *' : ''}
+                    <select value={String(fieldValues[f.key] ?? '')}
+                      onChange={(e) => setFieldValues({...fieldValues, [f.key]: e.target.value})}>
+                      <option value="">— choose an option —</option>
+                      {(f.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
+                    </select>
                   </label>
                 ) : (
                   <label key={f.key}>
@@ -674,6 +683,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const [problemFor, setProblemFor] = useState<string | null>(null)
   const [problemText, setProblemText] = useState('')
   const [taskError, setTaskError] = useState('')
+  const [cancelReviews, setCancelReviews] = useState(0)
   const action = useAction()
   const inputScope = useRef<{ map: UnderstudyProcessMap | null; runId?: string | null }>({ map: null })
   useEffect(() => {
@@ -703,6 +713,25 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
     return (
       <div className="empty-card"><h1>Your next step lives here.</h1><p>Teach a process from Start here, or run a saved playbook. Tasks will appear with their required evidence and owner.</p><button onClick={() => window.Understudy.openPanel?.()}>Open playbook</button></div>
     )
+  if (!runId) {
+    const starting = window.Understudy.isRunStarting?.()
+    const start = () => action.run(async () => {
+      if (!proc.sourceProcessId) return
+      if (!cancelReviews) {
+        const count = await store.cancellableReviewCount()
+        if (count) { setCancelReviews(count); return }
+      }
+      setCancelReviews(0)
+      await store.followPlaybook(proc.sourceProcessId)
+    })
+    return <div className="empty-card"><div className="eyebrow">SAVED PLAYBOOK</div><h1>{proc.title}</h1>
+      <p>{starting ? 'Starting your run…' : 'Start a run to give each owner their task form. This execution will have its own results and review.'}</p>
+      <ErrorNotice message={runError || action.error} />
+      {proc.sourceProcessId && <button className="primary" disabled={action.busy || starting} onClick={() => void start()}>
+        {starting ? 'Starting…' : cancelReviews ? `Confirm — start a new run and cancel ${cancelReviews} pending review(s)` : runError ? 'Retry starting this run' : 'Run this playbook →'}
+      </button>}
+    </div>
+  }
   const stepOf = (id: string) => proc.steps.find((s) => s.id === id)
   const fieldDefs = proc.fields ?? []
   const attention = prog.filter((p) => p.status === 'ready' || p.status === 'blocked' || p.status === 'skipped')
@@ -764,10 +793,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   }
   return (
     <div className="list">
-      <div className="page-intro"><div className="eyebrow">{myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1><p>{done} of {required} required tasks complete{runId ? ` · run #${runId}` : runError ? ' · execution not started' : ' · starting execution…'}</p><progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" /></div>
-      <ErrorNotice message={runError ?? undefined} />
-      {runError && proc.sourceProcessId && <button disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(proc.sourceProcessId!))}>Retry starting this run</button>}
-      <ErrorNotice message={taskError || action.error || window.Understudy.getRunSyncError?.() || ''} />
+      <div className="page-intro"><div className="eyebrow">{myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1><p>{done} of {required} required tasks complete · run #{runId}</p><progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" /></div>
+      <ErrorNotice message={action.error || window.Understudy.getRunSyncError?.() || ''} />
       {window.Understudy.getRunSyncError?.() && <button disabled={action.busy} onClick={() => void action.run(() => window.Understudy.flushRun?.())}>Retry saving progress</button>}
       {state.reviewSync && state.reviewSync.runId === runId && <div className="card review-sync" role="status">
         {state.reviewSync.status === 'requesting' ? 'Preparing the review request…' : state.reviewSync.status === 'ready' ? 'Review requested — waiting for the assigned reviewer.' : <>
@@ -810,7 +837,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         <div className="empty-card"><p>
           {window.Understudy.isRunComplete?.()
             ? '✅ Run complete — every required step is handled and signed off.'
-            : 'The next route needs your agent’s judgment. Your submitted evidence is ready to check.'}
+            : 'The next route needs the desktop WebMCP agent. Your submitted evidence is ready to check.'}
         </p>{!window.Understudy.isRunComplete?.() && <AgentInvite hint="Ask your agent: “Do these results meet the rules? What should we do next?” It can check the evidence and explain the next step." label="Copy request to check the evidence" prompt="Read get_process_progress in Understudy. Use the submitted measurements and resolve_decision to choose the valid route. Explain any failed check and guide the assigned person through rework before requesting approval." />}</div>
       )}
       {mine.map((p) => {
@@ -824,8 +851,10 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             if (d.confirm === true) return raw[d.key] !== true
             return d.required ? raw[d.key] === undefined || raw[d.key] === '' : false
           }
-          if (!d.required) return false
-          return raw[d.key] === undefined || String(raw[d.key]).trim() === '' || (d.type === 'number' && !Number.isFinite(Number(raw[d.key])))
+          const value = raw[d.key]
+          if (value === undefined || String(value).trim() === '') return Boolean(d.required)
+          return (d.type === 'number' && !Number.isFinite(Number(value))) ||
+            (d.type === 'select' && !d.options?.includes(String(value)))
         })
         const prev = prevDone(p.id)
         const next = nextUp(p.id)
@@ -889,6 +918,15 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                         <option value="false">fail / false</option>
                       </select>
                     </label>
+                  ) : f.type === 'select' ? (
+                    <label key={f.key}>
+                      {f.label ?? f.key}{f.required ? '*' : ''}
+                      <select required={f.required} value={String(raw[f.key] ?? '')}
+                        onChange={(e) => setTaskValues({...taskValues, [p.id]: {...raw, [f.key]: e.target.value}})}>
+                        <option value="">— choose an option —</option>
+                        {(f.options ?? []).map(option => <option key={option} value={option}>{option}</option>)}
+                      </select>
+                    </label>
                   ) : (
                     <label key={f.key}>
                       {f.label ?? f.key}
@@ -896,6 +934,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                       {f.required ? '*' : ''}
                       <input
                         type={f.type === 'number' ? 'number' : 'text'}
+                        step={f.type === 'number' ? 'any' : undefined}
+                        required={f.required}
                         value={String(raw[f.key] ?? '')}
                         placeholder={recentValue(f.key) ? `last: ${recentValue(f.key)}` : undefined}
                         onChange={(e) =>
@@ -907,12 +947,13 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
                 )}
               </div>
             )}
+            <ErrorNotice message={taskError} />
             {p.type === 'approval' ? (
               <button className="primary" onClick={goReviews} disabled={!state.approvals.some((a) => a.status === 'PENDING' && state.worklogs.some((w) => w.id === a.worklogId && String(w.data.runId) === String(runId)))}>
                 Open Reviews to decide
               </button>
             ) : p.type === 'decision' ? (
-              <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
+              <div className="meta">Decision point — ask the desktop WebMCP agent to check the submitted evidence and choose the route.</div>
             ) : (
               <div className="decide">
                 <button className="primary" disabled={action.busy || missingRequired || p.status !== 'ready' || !runId} onClick={() => void action.run(() => complete(p))}>
@@ -1083,12 +1124,12 @@ export default function App() {
               <p className="meta">Signed in as {state.me.name} · build {__BUILD__}</p>
               <label className="check"><input type="checkbox" checked={demoMode} onChange={(e) => setDemoMode(e.target.checked)} />Show role relay</label>
               <button className="secondary" onClick={() => store.logout()}>Sign out</button>
-              <details className="reset-settings"><summary>Reset demo records</summary>
-                <p className="meta">Deletes shared work logs, reviews and runs for every demo user. Saved playbooks stay.</p>
+              <details className="reset-settings"><summary>Start a new work item</summary>
+                <p className="meta">Clears the unsaved work and process draft in this tab. Saved records and other reviewers’ work stay available.</p>
                 <button className="danger" disabled={reset.busy} onClick={() => {
                   if (!resetArmed) { setResetArmed(true); return }
-                  void reset.run(async () => { await store.resetDemoData('worklogs'); setResetArmed(false); setTab('overview') })
-                }}>{reset.busy ? 'Resetting…' : resetArmed ? 'Confirm — clear shared demo records' : 'Clear demo records…'}</button>
+                  void reset.run(async () => { await store.startFreshWorkspace(); setResetArmed(false); setTab('overview') })
+                }}>{reset.busy ? 'Saving progress…' : resetArmed ? 'Confirm — start fresh in this tab' : 'Start fresh in this tab…'}</button>
                 {resetArmed && <button className="ghost" onClick={() => setResetArmed(false)}>Cancel</button>}
                 <ErrorNotice message={reset.error} />
               </details>
@@ -1099,6 +1140,7 @@ export default function App() {
       <nav className="tabs" aria-label="Workspace">
         {tabs.map(([id, label]) => <button key={id} aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}{id === 'approvals' && pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}</button>)}
       </nav>
+      <p className="mobile-scope">On mobile: enter your assigned task results and review requests. Use your desktop WebMCP agent to build processes and resolve decision branches.</p>
       {state.runStarted && <RunStartedNotice info={state.runStarted} />}
       {demoMode && <DemoStrip state={state} />}
       {tab !== 'overview' && interaction && (interaction.questions > 0 || interaction.approvals > 0) && <button className="attention-banner" onClick={() => window.Understudy.openPanel?.()}>Your agent needs your input <span>Open conversation →</span></button>}

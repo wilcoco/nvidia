@@ -2,10 +2,10 @@ import { useEffect, useState } from 'react'
 import * as store from './store'
 import { AgentInvite, ErrorNotice, useAction } from './ui'
 import SuggestionCard from './SuggestionCard'
+import DiscoveryStart from './DiscoveryStart'
+import { EXAMPLE_WORK } from '../sdk/discovery'
 
 export type WorkspaceTab = 'overview' | 'incidents' | 'tasks' | 'approvals' | 'playbooks'
-const EXAMPLE = 'I ran a customer-table migration on staging. Before release, we need to compare row counts, fix any differences, and get a reviewer’s sign-off.'
-const JOURNEY = ['Describe your work', 'Ask what comes before & after', 'Agree on the process', 'Follow it by role', 'Reuse it next time']
 
 export default function Overview({ state, navigate }: { state: store.AppState; navigate: (tab: WorkspaceTab) => void }) {
   const [editing, setEditing] = useState(true)
@@ -24,7 +24,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const contributor = state.users.find((u) => u.role === 'Contributor')
   const acting = state.users.find((u) => u.username === state.actingAs)
   useEffect(() => {
-    if (editing && !proc) store.setDraftContext({kind: sample ? 'development' : undefined, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
+    if (editing && !proc) store.setDraftContext({kind: sample ? 'operations' : undefined, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
   }, [editing, sample, note, proc, captured])
 
   const capture = () => action.run(async () => {
@@ -33,7 +33,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
       throw new Error('An execution is in progress. Finish it before starting a new teaching session.')
     }
     const work = await store.createWorklog({
-      date: new Date().toISOString().slice(0, 10), line: 'A', kind: sample ? 'development' : 'routine work',
+      date: new Date().toISOString().slice(0, 10), line: 'A', kind: sample ? 'operations' : 'routine work',
       task: note.trim(), hours: 0, note: '', urgent: false, data: sample ? { example: true } : {},
     })
     store.requestPlaybookCreation(work)
@@ -44,13 +44,14 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   return (
     <div className="overview">
       <section className={`hero${proc || captured ? ' compact' : ''}`}>
-        <div className="eyebrow">HUMAN + AGENT · POWERED BY WEBMCP</div>
-        <h1>{proc ? done ? 'Good work. Ready to reuse.' : 'One step at a time.' : captured ? 'Your work, made repeatable.' : <>One task. <span>The whole workflow.</span></>}</h1>
-        <p className="hero-description">Describe one task. Discover what comes before and after, agree on the process, and let each person follow their steps.</p>
-        <details className="intro-help"><summary>New here? How does this work?</summary>
-          <p>Ask “What is this, and how do I use it?” in your agent’s chat. Its questions appear beside your work.</p>
-          <ol className="journey" aria-label="How Understudy works">{JOURNEY.map((label, i) => <li key={label}><span>{i + 1}</span>{label}</li>)}</ol>
-        </details>
+        <div className="eyebrow">FROM YOUR WORK TO A TEAM PROCESS · WEBMCP</div>
+        <h1>{proc ? done ? 'Good work. Ready to reuse.' : 'One step at a time.' : captured ? 'Build the process around your work.' : <>Your work, <span>turned into a team process.</span></>}</h1>
+        <p className="hero-description">Your AI agent asks what comes before and after, and who does each part. You correct the process, your team follows it, and the next person can reuse it.</p>
+        {!proc && !captured ? <div className="chat-entry">
+          <div><span>NEW HERE? ASK IN THE AI CHAT THAT OPENED THIS TAB</span>
+            <b>“What is this, and how do I use it?”</b><p>Your agent explains and opens the guide on this page.</p></div>
+          <button className="secondary" onClick={() => window.Understudy.openUsageGuide?.()}>Open usage guide</button>
+        </div> : <button className="ghost" onClick={() => window.Understudy.openUsageGuide?.()}>How to use Understudy</button>}
       </section>
 
       {interaction && (interaction.questions > 0 || interaction.approvals > 0) && (
@@ -82,42 +83,35 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           <ErrorNotice message={action.error || window.Understudy.getRunStartError?.() || ''} />
           {done && <p className="hint">Found a missing step or exception? Open the playbook and choose “Propose changes”. Tell your agent what you learned, review the changes, and save a new version for the next person.</p>}
         </section>
-      ) : captured ? (
+      ) : captured?.creationRequested ? <DiscoveryStart state={state} /> : captured ? (
         <section className="card current-work">
-          <div className="eyebrow">{captured.creationRequested ? 'NEW PLAYBOOK · WORK CAPTURED' : 'YOUR STARTING POINT IS SAVED'}</div>
+          <div className="eyebrow">YOUR STARTING POINT IS SAVED</div>
           <h2>What belongs before and after this work?</h2>
           <blockquote>{captured.task}</blockquote>
-          {captured.creationRequested ? <p>Your work is saved and your request is available to your agent. Next: answer its questions, review the draft, and save your new playbook.</p> : <><SuggestionCard includeCandidates /><button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Create a new playbook from this work →</button></>}
-          <AgentInvite hint="In your agent’s chat, ask “Help me build the process around this work.” It can read your starting point and ask about the missing steps here." prompt={`Work with me in Understudy. Read work log #${captured.id}: “${captured.task}”. ${captured.creationRequested ? 'I chose to create a NEW playbook from this work.' : 'Check for relevant existing playbooks and let me choose between reuse and a new one.'} Ask me one question at a time with ask_user: what must happen before this work, what must follow, who owns each step, and what rules, exceptions and sign-off apply? Draft a process from my answers, encode stated thresholds as criteria, and let me correct and confirm it. Then guide the assigned people through execution. Do not invent answers or mark steps complete for me.`} />
-          <button className="ghost" onClick={() => window.Understudy.openPanel?.()}>Open the conversation panel</button>
+          <p>Choose a related playbook to run, or build a new one from this work.</p>
+          <SuggestionCard includeCandidates />
+          <button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Make a new playbook · start with a question →</button>
         </section>
       ) : (
         <section className="start-grid">
           <div className="card capture-card">
-            <div className="eyebrow">START WITH ONE PIECE OF WORK</div>
+            <div className="eyebrow">MAKE A NEW PLAYBOOK</div>
             <h2>What are you working on?</h2>
-            <p>A sentence is enough. Discover the preparation, next steps and owners around your work, or choose a related playbook to follow.</p>
+            <p>One sentence is enough. We’ll start with what needs to happen before it.</p>
             {editing ? <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
-              <label htmlFor="capture-note">{sample ? 'Release example · fictional sample' : 'Describe your work'}</label>
-              <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="We finished… Before someone signs off, we need to…" required />
+              <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
+                <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
+              <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: I am preparing a customer order for delivery." required />
               {acting?.role !== 'Contributor' ? <button type="button" className="primary" disabled={!contributor} onClick={() => contributor && store.switchActingAs(contributor.username)}>Continue as {contributor?.name ?? 'Contributor'}</button>
-                : <button className="primary" disabled={action.busy || !note.trim()}>{action.busy ? 'Saving your starting point…' : 'Create a new playbook →'}</button>}
-              <p className="meta">Work → questions & answers → draft → your confirmation.</p>
+                : <button className="primary" disabled={action.busy || !note.trim()}>{action.busy ? 'Saving your starting point…' : 'Start with the first question →'}</button>}
+              <p className="meta">Answer a starter question here, then continue with your browser’s AI agent.</p>
               <ErrorNotice message={action.error} />
             </form> : <div className="button-row"><button className="primary" onClick={() => { setEditing(true); store.setCaptureDraft(note, false) }}>Teach from my work →</button></div>}
             {editing && note.trim() && <SuggestionCard includeCandidates />}
           </div>
-          <div className="example-card">
-            <div className="eyebrow">TRY ONE CONCRETE EXAMPLE</div>
-            <h2>Ready for release?</h2>
-            <p>A staging migration looks finished. A row-count mismatch says otherwise.</p>
-            <div className="example-proof" aria-label="Illustrative release check">
-              <div><span>Release rule</span><b>0 mismatched rows</b></div>
-              <div className="example-failure"><span>Example measurement</span><b>12 mismatches</b></div>
-              <div><span>Next step</span><b>Fix → recheck → review</b></div>
-            </div>
-            <p className="example-caption">Illustrative scenario. You and your agent define and run the actual playbook.</p>
-            <button className="secondary" onClick={() => { store.setCaptureDraft(EXAMPLE, true); setEditing(true) }}>Use this example →</button>
+          <div className="reuse-entry">
+            <div><b>Doing work your team has done before?</b><p>Describe it above to find related playbooks, or choose one from the library.</p></div>
+            <button className="secondary" onClick={() => navigate('playbooks')}>Use an existing playbook →</button>
           </div>
         </section>
       )}
@@ -127,12 +121,12 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         {state.recentRuns.slice(0, 5).map((run) => <button key={run.id} className="secondary" disabled={action.busy}
           onClick={() => void action.run(() => store.followPlaybook(run.processId, {run}))}>{run.title} · #{run.id} · {run.status}</button>)}
       </details>}
-      <section className="overview-bottom">
+      {(proc || captured) && <section className="overview-bottom">
         <div><b>Discover the work around the work.</b><p>Answer questions about preparation, next steps and who takes over. Correct the process together.</p></div>
         <div><b>Follow it. Find it again.</b><p>Each owner gets their next step. Related playbooks are suggested when similar work comes up — you choose what to use.</p></div>
         <button className="library-link" onClick={() => navigate('playbooks')}>Browse {store.latestPerTitle(state.processes).length || ''} saved playbooks <span>→</span></button>
-      </section>
-      <p className="workspace-footnote">Demo workspace · sample accounts and data · {interaction?.connected ? 'WebMCP ready for your agent' : 'Connect a WebMCP-capable agent to teach and resolve decisions'}</p>
+      </section>}
+      <p className="workspace-footnote">Demo workspace · sample accounts and data · {interaction?.connected ? 'WebMCP tools available' : 'Use a browser with WebMCP and an AI agent to continue the interview'}</p>
     </div>
   )
 }

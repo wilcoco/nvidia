@@ -25,7 +25,7 @@ process enforceable.
   and the server independently refuses reviews/approvals of unfinished runs
   and edits to approved records (`process_incomplete` /
   `approved_immutable`).
-- Zero API keys: the page ships tools; visitors bring their own agent brain.
+- No site-owned LLM API key: the page ships tools; visitors use their own agent, with its own limits and costs.
 - Agents self-onboard from tool descriptions alone; the interview is
   anti-parrot by design.
 - Playbooks are versioned assets with lineage, a data contract that becomes
@@ -34,8 +34,8 @@ process enforceable.
   task cards, approvals, server gates — also works with **no agent at all**;
   only resolving a decision branch goes through the agent, deliberately,
   because that call is the evidence-checking gate itself. This is also the
-  mobile answer: mobile browsers do not support WebMCP today, so processes
-  are created and judged with the agent on desktop — while assignees' input,
+  mobile scope: processes are created and decisions handled with the agent
+  on desktop — while assignees' input,
   handoffs and reviews still work on a phone's plain browser.
 - Explicit review controls: persona-scoped approval UI, role-gated actions,
   UI-confirmed saves, and an auto-approve option. See the demo trust model below.
@@ -46,9 +46,9 @@ process enforceable.
 ## What it does
 
 Understudy works with an active WebMCP agent session — you invite the agent
-once ("work along this with me"), and from then on it reads, asks and acts on
+("work along this with me"); during that conversation it reads, asks and acts on
 the same page; the playbook-suggestion cards and the live NEXT/SKIPPED map
-colors are page-side and always on, agent or not. Ask ChatGPT, on any
+colors are computed by the page. Ask a compatible WebMCP agent on an
 Understudy-enabled page: *"Work along this incident with me, following our
 process."* The agent reads the page's structured state,
 finds the matching playbook (with confidence and reasons), and joins the run:
@@ -101,7 +101,8 @@ WebMCP supports this product's shared-page interaction directly:
 
 Human and agent share one surface and one login. Understudy computes the
 process state (steps, branches, deviations); WebMCP is the channel through
-which the agent understands it and acts — with the human deciding.
+which the agent understands it and acts. The page provides explicit review
+controls; these controls do not authenticate human presence.
 
 We register 20 tools imperatively via `modelContext.registerTool()` (with
 `provideContext` fallback), and the second demo page also exposes its form
@@ -123,15 +124,13 @@ through the declarative attribute API.
 
 - Live: https://nvidia-production-f205.up.railway.app
 - Sign in: **judge / webmcp2026** (pre-filled; kim & lee / linepulse also work)
-- Press **Start fresh demo** for a clean slate (playbooks are kept).
-- Open the live URL using ChatGPT's in-app browser (desktop app agent), then
-  say: *"Work along with me on this page — watch what I do, guide me with the
-  saved playbooks, and ask questions when a process is missing knowledge."*
-- Alternatively, use Chrome 149+ — the site carries a **WebMCP origin-trial
-  token**, so no flags are needed for the API. Inspect and execute the
-  registered tools under **DevTools → Application → WebMCP** (enable
-  `chrome://flags/#devtools-webmcp-support` for that DevTools panel), or chat
-  with the tools via Google's official Model Context Tool Inspector extension.
+- Use **Workspace settings → Start a new work item** to clear the current tab’s
+  unsaved workspace while preserving saved records and other reviewers’ work.
+- Tested client: the **Codex desktop app’s built-in browser** with an agent
+  discovering and invoking the registered WebMCP tools. Other clients need
+  separate compatibility verification.
+- Ask: *“What is this, and how do I use it?”* Then describe one work activity,
+  answer the on-page questions and review the process map before saving it.
 - Full walkthrough: `docs/DEMO_SCRIPT.md`. No payment or personal data; all
   scenario data is fictional.
 

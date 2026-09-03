@@ -11,11 +11,11 @@
  */
 import { record } from './journal'
 import { startCapture } from './capture'
-import { mountPanel, openPanel, closePanel, getInteractionState } from './panel'
+import { mountPanel, openPanel, closePanel, openUsageGuide, getInteractionState } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, reopenAsDraft, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, getRunStartError, getRunSyncError, flushRun } from './runsync'
+import { loadSavedMap, reopenAsDraft, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, getCompletionError, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
+import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, isRunStarting, getRunStartError, getRunSyncError, flushRun, refreshRunState } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -104,9 +104,11 @@ function getLoadedProcess(): ProcessMap | null {
 function completeStep(stepId: string, values?: Record<string, unknown>): { ok: boolean; error?: string } {
   const map = getMap()
   if (!map?.confirmed) return { ok: false, error: 'Confirm and run a playbook before completing its tasks.' }
+  if (host.getProcessStore()?.startRun && !currentRunId())
+    return { ok: false, error: 'Start a run before entering task results.' }
   if (map.steps.find((s) => s.id === stepId)?.done) return { ok: false, error: 'This task is already complete.' }
   const ok = humanToggleStepDone(stepId, values)
-  return { ok, ...(ok ? {} : { error: 'This task could not complete. Check its required inputs, role and pass criteria in the playbook.' }) }
+  return { ok, ...(ok ? {} : { error: getCompletionError() ?? 'This task could not complete. Check its required inputs, role and pass criteria in the playbook.' }) }
 }
 
 /** Host worklists flag a blocked step; journaled for the agent and the team. */
@@ -163,9 +165,12 @@ window.addEventListener('beforeunload', (e) => {
   getRunStartError,
   getRunSyncError,
   flushRun,
+  refreshRunState,
   isRunComplete,
+  isRunStarting,
   openPanel,
   closePanel,
+  openUsageGuide,
   getInteractionState,
   getPendingDecision: () => pendingDecision(),
 }

@@ -18,6 +18,8 @@ for(const [name,url] of configs) test(`${name}: atomic reviews, fresh evidence, 
   const steps=[{id:'measure',type:'task',status:'done',completedAt:1,resultData:{ok:true}},{id:'approve',type:'approval',status:'ready'}]
   const run=await db.startRun({processId:p.id,title:'review',startedBy:'kim',steps})
   const subject=await db.createWorklog({date:'2026-09-03',line:'A',task:'run evidence',progressPct:100,hours:0,createdBy:'kim',data:{runId:run.id,systemGenerated:true}})
+  const duplicates=await Promise.all(Array.from({length:8},()=>db.createWorklog({date:'2026-09-03',line:'A',task:'retry',progressPct:100,hours:0,createdBy:'kim',data:{runId:run.id,systemGenerated:true}})))
+  assert.ok(duplicates.every(w=>w.id===subject.id))
   const old=await db.createApproval({worklogId:subject.id,requestedBy:'kim',approver:'lee'})
   await db.updateRun(run.id,{steps:[{...steps[0],status:'ready',resultData:{}},steps[1]]})
   assert.equal((await db.getApproval(old.id)).status,'CANCELLED')
@@ -37,6 +39,10 @@ for(const [name,url] of configs) test(`${name}: atomic reviews, fresh evidence, 
   const preserved=await db.getRun(run.id)
   assert.equal(preserved.status,'completed')
   assert.equal(preserved.steps[1].completedBy,'lee')
+  const finalSnapshot=structuredClone(preserved)
+  await assert.rejects(()=>db.updateRun(run.id,{steps:[{id:'different-design',type:'task',status:'done'}]}),/run_design_mismatch/)
+  await assert.rejects(()=>db.updateRun(run.id,{steps:preserved.steps.map(s=>s.id==='measure'?{...s,resultData:{ok:false}}:s)}),/finished_run_immutable/)
+  assert.deepEqual(await db.getRun(run.id),finalSnapshot)
   await assert.rejects(()=>db.mergeWorklogData(subject.id,{ok:false}),/approved_immutable/)
  } finally {await db.close()}
 })

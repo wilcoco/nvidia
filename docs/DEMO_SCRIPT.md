@@ -1,9 +1,9 @@
 # Understudy — 3-minute demo script (v2, operations cut)
 
-**Environment**: ChatGPT's in-app browser (desktop app, ⌘⇧B), signed in as `judge`.
-Before recording: **Start fresh demo** (playbooks kept), fresh ChatGPT conversation,
+**Environment**: Codex desktop app’s built-in browser, signed in as `judge`.
+Before recording: **Start a new work item** (current tab only), fresh agent conversation,
 English prompts only, **Demo mode ON** for Scene 3.
-Screen layout: demo app left, Understudy panel right, ChatGPT chat visible.
+Screen layout: demo app left, Understudy panel right, agent chat visible.
 
 **The two things this video must prove**
 1. *The human corrects the agent's understanding, and the agent's behavior
@@ -37,7 +37,7 @@ appears → Captures line (data contract).*
 
 ## 0:50–1:20 — Scene 2 ★ Teach (the human corrects the agent)
 
-*Click-rename a step on the panel. Then in chat: restructure the failure
+*Load the playbook → click **Propose changes (new draft)** → rename a step on the panel. Then in chat: restructure the failure
 path (remediation branch). Show the amber "unsaved draft" pill → Save as vN.*
 
 > "The map is mine to correct — by click, or by telling the agent. It reads
@@ -95,7 +95,7 @@ mini flowchart close-up.*
 > script tag — twenty WebMCP tools, an action journal, a live process panel.
 > No API keys: the page ships the stage and the hands, and every visitor
 > brings their own brain. Capture the knowledge once — then it assigns,
-> gates, and signs off the real work, forever."
+> checks the next execution and carries the evidence into review."
 
 ---
 

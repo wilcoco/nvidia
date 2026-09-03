@@ -19,10 +19,12 @@ window.Understudy.init({
       incidents: s.worklogs,
       reviews: s.approvals,
       savedPlaybooks: s.processes,
-      playbookRequest: s.captureContext?.creationRequested ? {worklogId: s.captureContext.id, task: s.captureContext.task, intent: 'create_playbook'} : null,
+      playbookRequest: s.captureContext?.creationRequested ? {worklogId: s.captureContext.id, task: s.captureContext.task, intent: 'create_playbook',
+        discovery: s.worklogs.find(w => w.id === s.captureContext?.id)?.data.discovery} : null,
     }
   },
   processStore: {
+    readRun: (runId) => store.getRun(runId),
     save: async (map) => store.saveProcess(map as { title: string; steps: unknown[] }),
     list: () => store.listProcesses(),
     load: async (id) => {

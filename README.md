@@ -1,6 +1,6 @@
 # 🎭 Understudy
 
-> **You did it once. The agent can do it forever.**
+> **Turn everyday work into a process your team can reuse.**
 
 Understudy is a **drop-in WebMCP layer** that turns any web work-app into an
 agent-readable, agent-operable workspace. Add one script tag, and:
@@ -14,8 +14,8 @@ agent-readable, agent-operable workspace. Add one script tag, and:
    branch conditions, delete noise — the agent reads those edits back and asks
    follow-up questions ("You skipped approval this time — is it optional?").
 4. **The agent runs the process.** Once confirmed, the agent replays the
-   process using the same page's actions, with a human approval gate on every
-   step (or auto-approve, if the human enables it).
+   process using the same page's actions, through assigned task forms, evidence checks, and review steps defined in
+   the playbook. Agent actions request UI approval unless auto-approve is enabled.
 
 5. **Processes become shared assets.** A confirmed process is saved to a
    team-wide library — anyone (or their agent) can pull up a process a
@@ -44,13 +44,12 @@ WebMCP supports this product's shared-page interaction directly:
 - Replay means the agent **operates the same page the human sees**, with the
   human approving each step on screen.
 
-Human and agent share one surface. That is exactly the collaboration WebMCP
-enables: the page registers tools via `modelContext.registerTool()` /
-`provideContext()`, and the agent in the browser (ChatGPT's in-app browser)
-calls them directly. In Chrome 149+ you can also inspect and execute the
-registered tools yourself: enable `chrome://flags/#enable-webmcp-testing` and
-`chrome://flags/#devtools-webmcp-support`, then open
-**DevTools → Application → WebMCP**.
+Human and agent share one surface. The page registers tools via
+`modelContext.registerTool()` / `provideContext()`, and a compatible browser
+agent discovers and invokes them. The current E2E evidence covers the Codex
+desktop app’s built-in browser; other clients require their own compatibility
+checks. No site-owned LLM key is needed; the visitor’s agent may have its own
+subscription, usage limits and costs.
 
 ## Live demo
 
@@ -72,31 +71,33 @@ so worklogs, approvals, and the process library are shared across users.
 | Username | Password | Role |
 | --- | --- | --- |
 | `judge` | `webmcp2026` | Reviewer (acts through the personas below) |
-| `kim` | `linepulse` | Line worker |
-| `lee` | `linepulse` | Team lead |
+| `kim` | `linepulse` | Contributor |
+| `park` | `linepulse` | Operations |
+| `lee` | `linepulse` | Reviewer |
 
-One login is enough: the persona switcher in the top bar lets a single
-reviewer play both sides of the flow (worker files, lead approves).
+One login is enough: the **Working as** selector lets a judge act as Kim,
+Park and Lee. These are demo personas, not separate authenticated identities.
+Saved records are shared. **Workspace settings → Start a new work item**
+clears only the current tab’s unsaved workspace and keeps shared records.
 
 ### Try the collaboration loop
 
-1. Open the app in ChatGPT's browser (or Chrome with the WebMCP flag) and ask
-   the agent: *"Watch how I handle this incident and turn it into a playbook."*
-2. As Kim (line worker): log an **orange peel** defect right after a color
-   change — enter viscosity, booth temp, spray pressure — mark it urgent, and
-   send it to the lead. Switch to Lee (team lead) and approve the corrective
-   action.
-3. Ask the agent to draft the response process. Edit its map in the Understudy
-   panel — rename a step, fix the branch condition (e.g. *urgent entries
-   only*) — and watch its follow-up questions change.
-4. Press **Confirm & save to library**, then open **Playbooks → Follow this
-   playbook** as a "new worker". The map now guides the run in real time:
-   the next required step glows yellow, and a step you jumped past turns
-   red — page-side, instantly, no agent call needed. Ask the agent and it
-   reads the same state via `get_process_progress`, then *coaches* rather
-   than polices: "This urgent entry moved forward without supervisor
-   approval — want me to request it from Lee now?" One click on its
-   approval card, and the step goes green.
+1. Open the app with a desktop WebMCP-capable agent. Ask “What is this, and
+   how do I use it?” to see the introduction on the page.
+2. As Kim, describe a task such as “I’m preparing a customer order for delivery.”
+   Choose to create a playbook and answer what must happen before and after it.
+3. Answer questions about owners, required numbers, dropdown choices and routing
+   rules. Review the map beside your work. For an existing confirmed playbook,
+   use **Propose changes (new draft)** before editing. Ask the agent to read your
+   corrections, then save the reviewed version.
+4. Run that saved version. Kim’s preparation leads to Park’s task form. Enter
+   the required values; ask the agent to check decision branches against those
+   submissions. Lee reviews the evidence when the approval step is reached.
+5. For similar new work, find the related playbook and choose whether to reuse it.
+
+Desktop WebMCP handles creation, revision and decisions. Mobile is for assigned
+input and review/approval; it is not a claim of agent-free completion for every
+process. Browser viewport tests are separate from physical-device testing.
 
 ## WebMCP tools registered
 

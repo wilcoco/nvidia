@@ -2,11 +2,12 @@ import * as journal from './journal'
 import * as mapstore from './mapstore'
 import * as host from './host'
 import { askUser, getQuestionResult, getActionResult, type AskOption } from './asks'
-import { setWebmcpStatus } from './panel'
+import { setWebmcpStatus, openUsageGuide } from './panel'
 import { startHostAction, preconditionFor } from './runner'
 import { startRunTracking } from './runsync'
 import type { ProcessMap } from './types'
 import { describeOnboarding } from './onboarding'
+import { validateFields } from '../shared/fields'
 
 interface ToolDef {
   name: string
@@ -22,6 +23,20 @@ function schema(
   return { type: 'object', properties, required }
 }
 
+const FIELD_SCHEMA = {
+  type: 'object',
+  properties: {
+    key: {type: 'string', description: 'Unique camelCase input key'},
+    label: {type: 'string', description: 'Label shown to the worker'},
+    type: {type: 'string', enum: ['number', 'string', 'boolean', 'select']},
+    options: {type: 'array', items: {type: 'string'}, description: 'Required for select: the human-approved dropdown choices. No default is selected.'},
+    unit: {type: 'string'},
+    required: {type: 'boolean'},
+    confirm: {type: 'boolean', description: 'Boolean acknowledgment that must be checked true, not a pass/fail measurement.'},
+  },
+  required: ['key', 'type'],
+}
+
 const STEP_SCHEMA = {
   type: 'object',
   properties: {
@@ -29,6 +44,9 @@ const STEP_SCHEMA = {
     label: { type: 'string', description: 'Human-readable step name' },
     type: { type: 'string', enum: ['task', 'decision', 'approval'] },
     detail: { type: 'string', description: 'Optional one-line explanation' },
+    role: {type: 'string', description: 'Owner role from describe_workspace'},
+    humanOnly: {type: 'boolean'},
+    fields: {type: 'array', items: {type: 'string'}, description: 'Input keys this task collects. Every declared input must be assigned to a task; ask the human who records it and when.'},
     action: {
       type: 'string',
       description:
@@ -45,7 +63,7 @@ const STEP_SCHEMA = {
           criteria: {
             type: 'object',
             description:
-              'Machine-checkable pass criteria from the sign-off interview, e.g. {"testPassRate": {"gte": 100}, "openCriticalIssues": {"eq": 0}} or {"contrastRatio": {"gte": 4.5}, "rollbackReady": {"eq": true}}. resolve_decision verifies measurements against these in the process engine before any branch is taken — ALWAYS set criteria on pass/approve edges when the human states thresholds.',
+              'Machine-checkable routing rules from the human: numbers use e.g. {"testPassRate":{"gte":100}}; dropdowns use exact choices e.g. {"shippingMethod":{"eq":"Courier"}} and {"shippingMethod":{"eq":"Pickup"}} on the respective edges. Always set criteria when the human states thresholds or choice-based routes. resolve_decision checks submitted task values and refuses a contradictory route. A prose condition alone does not enforce the dropdown choice.',
           },
         },
         required: ['to'],
@@ -59,20 +77,26 @@ const tools: ToolDef[] = [
   {
     name: 'describe_workspace',
     description:
-      'Start here, especially when a first-time visitor asks "What is this?", "How do I use it?", or "이게 뭐야? 어떻게 써?". Read-only: returns a plain-language introduction, guidance for explaining creating vs running a playbook, and the current session context. Answer in the visitor’s language, then offer one relevant next step. No tool names or long invitation phrase are required from the visitor. Do not start work merely to answer an introductory question. Also lists the available actions and process status for continuing with WebMCP.',
-    inputSchema: schema(),
-    execute: async () => ({
-      app: host.getAppName(),
-      url: location.href,
-      onboarding: describeOnboarding(),
-      how_this_works:
-        'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it. When the human starts an entry that matches NO saved playbook (find_relevant_processes), that is the capture moment: draft a map immediately and interview them with get_map_gaps while they work — the process takes shape on their screen as they answer.',
-      available_actions: host.listActions(),
-      process_map_exists: mapstore.getMap() !== null,
-      process_map_confirmed: mapstore.getMap()?.confirmed ?? false,
-      process_library_available: host.getProcessStore() !== null,
-      journal_entries: journal.all().length,
-    }),
+      'Start here for introductory or help questions. Interpret intent, not exact wording: "What is this?", "What does this service do?", "Who is it for?", "What can I do here?", "이게 뭐야?", "뭐 하는 서비스야?", "어떤 도움이 돼?" request guide_topic:"overview". "How do I use it?", "Where do I start?", "어떻게 써?", "사용법 알려줘" request guide_topic:"usage". Set show_guide:true for these requests so the web page responds with the relevant guide; use guide_language:"ko" for Korean, otherwise "en". For routine context reads, omit show_guide so the page is not interrupted. Returns a plain-language introduction, creating vs running guidance and current context. Answer the actual question in the visitor’s language, then offer one relevant next step. No records, drafts or runs are changed; opening help preserves their work. Visitors do not need tool names or a magic phrase. Also lists available actions and process status for continuing with WebMCP.',
+    inputSchema: schema({show_guide: {type: 'boolean', description: 'Open on-page usage instructions when the visitor asks for help. Default false.'},
+      guide_language: {type: 'string', enum: ['en', 'ko'], description: 'Language of the on-page guide. Match the visitor; default en.'},
+      guide_topic: {type: 'string', enum: ['overview', 'usage'], description: 'overview for purpose, benefits and audience; usage for how to start and operate. Default usage.'}}),
+    execute: async (args) => {
+      const guideOpened = args.show_guide === true && openUsageGuide(args.guide_language === 'ko' ? 'ko' : 'en', args.guide_topic === 'overview' ? 'overview' : 'usage')
+      return {
+        guide_opened: guideOpened,
+        app: host.getAppName(),
+        url: location.href,
+        onboarding: describeOnboarding(),
+        how_this_works:
+          'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it. When the human starts an entry that matches NO saved playbook (find_relevant_processes), that is the capture moment: draft a map immediately and interview them with get_map_gaps while they work — the process takes shape on their screen as they answer.',
+        available_actions: host.listActions(),
+        process_map_exists: mapstore.getMap() !== null,
+        process_map_confirmed: mapstore.getMap()?.confirmed ?? false,
+        process_library_available: host.getProcessStore() !== null,
+        journal_entries: journal.all().length,
+      }
+    },
   },
   {
     name: 'get_recent_actions',
@@ -123,17 +147,7 @@ const tools: ToolDef[] = [
           type: 'array',
           description:
             "The playbook's data contract: variables that must be captured when following it (from the required_context interview answer). Rendered as a form for the next worker.",
-          items: {
-            type: 'object',
-            properties: {
-              key: { type: 'string', description: 'camelCase key, e.g. contrastRatio, testPassRate' },
-              label: { type: 'string' },
-              type: { type: 'string', enum: ['number', 'string', 'boolean'] },
-              unit: { type: 'string' },
-              required: { type: 'boolean' },
-            },
-            required: ['key', 'type'],
-          },
+          items: FIELD_SCHEMA,
         },
       },
       ['title', 'steps'],
@@ -150,13 +164,14 @@ const tools: ToolDef[] = [
       if (!Array.isArray(map.steps) || map.steps.length === 0) {
         return { ok: false, error: 'steps must be a non-empty array' }
       }
+      const invalid = validateFields(map.fields ?? [])
+      if (invalid) return {ok: false, error: invalid}
       mapstore.proposeMap(map)
-      if (map.fields?.length) mapstore.markGapResolved('required_context')
       return {
         ok: true,
         rendered: true,
         note:
-          'Map is now visible to the human, who may edit it.' +
+          'Map is now visible to the human, who may edit it. Ask which numbers and dropdown choices each task must record, their units/options, required status and owner. Bind every input to a task. When a choice controls routing, ask what each choice leads to and encode exact equality criteria on the branches.' +
           (map.appliesWhen ? '' : ' WARNING: no applies_when set — this playbook will not be auto-suggested later. Set it if the process is tied to entry conditions.'),
       }
     },
@@ -164,22 +179,12 @@ const tools: ToolDef[] = [
   {
     name: 'update_map_fields',
     description:
-      "Set or replace the playbook's data contract — the variables that must be captured when following it. Call this after the human answers the required_context question ('which variables must always be recorded?'), translating their answer into typed fields. The next worker gets these as a ready-made form.",
+      'After asking what each task must record, define its numbers (including units), text, booleans or dropdowns (type select with options). Ask which are required, who records them and any pass thresholds; never invent measurements or choices. Then bind every key to its collecting task using update_step.fields and set the owner role. Inputs appear on that owner’s My tasks form and must pass validation before completion. Collect evidence in a task before a decision or approval. Set branch criteria separately for thresholds; an input being filled does not mean it passed.',
     inputSchema: schema(
       {
         fields: {
           type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              key: { type: 'string' },
-              label: { type: 'string' },
-              type: { type: 'string', enum: ['number', 'string', 'boolean'] },
-              unit: { type: 'string' },
-              required: { type: 'boolean' },
-            },
-            required: ['key', 'type'],
-          },
+          items: FIELD_SCHEMA,
         },
       },
       ['fields'],
@@ -234,7 +239,7 @@ const tools: ToolDef[] = [
         role: {
           type: 'string',
           description:
-            "Role responsible for this step (this app's roles are in describe_workspace's state, e.g. Contributor, Reviewer). Only that role's persona can complete it or resolve its decision. ALWAYS set it when the human names who does a step.",
+            "Role responsible for this step. Read get_page_state.users for this workspace’s actual roles. Only that role's persona can complete it or resolve its decision. Set it when the human names who does a step.",
         },
         fields: {
           type: 'array',
@@ -380,7 +385,8 @@ const tools: ToolDef[] = [
       if (!map?.confirmed) return { active: false, note: 'No confirmed process is running.' }
       const statuses = mapstore.progress(preconditionFor)
       const role = host.actorRole()
-      const ready = map.steps.filter((s) => statuses.get(s.id) === 'ready')
+      const gate = mapstore.pendingDecision()
+      const ready = map.steps.filter((s) => statuses.get(s.id) === 'ready' || s.id === gate?.id)
       const mine = ready.filter((s) => !s.role || !role || s.role === role)
       const waiting = ready.filter((s) => s.role && role && s.role !== role)
       return {
@@ -393,7 +399,9 @@ const tools: ToolDef[] = [
           detail: s.detail,
           required_fields: s.fields,
           how_to_complete:
-            s.type === 'approval'
+            s.type === 'decision'
+              ? 'Use the desktop WebMCP agent and resolve_decision with the submitted evidence. This is not a task-card completion.'
+              : s.type === 'approval'
               ? 'Decide it in the Reviews screen (or approve/reject_review action).'
               : s.action
                 ? `Run or perform the bound action \"${s.action}\".`
@@ -495,7 +503,7 @@ const tools: ToolDef[] = [
   {
     name: 'resolve_decision',
     description:
-      'Record the outcome of a branching step: which edge was taken and why. REQUIRED before moving past a step with branches — get_process_progress will not offer anything beyond an unresolved decision. If the chosen edge carries criteria, you MUST pass structured measurements (e.g. {"testPassRate": 100, "openCriticalIssues": 0} or {"contrastRatio": 4.7, "approvalsReceived": 4}); the engine verifies them and REFUSES the branch on any violation (evidence_conflict) — then ask the human whether the measurements are wrong or whether to take the failure branch, never how to override. Choosing a loop-back branch re-opens those steps.',
+      'Record the outcome of a branching step: which edge was taken and why. REQUIRED before moving past a step with branches — get_process_progress will not offer anything beyond an unresolved decision. The engine uses the assignee’s submitted task values for branch criteria, including dropdown choices (e.g. shippingMethod equals Courier). Read get_process_map first. Only pass measurements when you have additional real evidence; never replace submitted values. For example, numeric measurements may be {"testPassRate": 100, "openCriticalIssues": 0}; the engine verifies them and REFUSES the branch on any violation (evidence_conflict) — then ask the human whether the measurements are wrong or whether to take the failure branch, never how to override. Choosing a loop-back branch re-opens those steps.',
     inputSchema: schema(
       {
         stepId: { type: 'string' },

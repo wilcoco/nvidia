@@ -17,6 +17,48 @@ function fixture(fetch, extra = {}) {
 }
 const response = (data, status = 200) => ({ok: status < 400, status, json: async () => data})
 
+test('starting fresh changes only this tab and never deletes shared records',async()=>{
+ const actions=[],entries=new Map()
+ const store=fixture(async(path)=>{throw Error(`Unexpected network write: ${path}`)}, {
+  localStorage:{getItem:()=>null,removeItem:k=>entries.delete(k)},
+  sessionStorage:{setItem:(k,v)=>entries.set(k,v)},
+  window:{dispatchEvent(){},Understudy:{flushRun:async()=>actions.push('flush'),unloadProcess:()=>actions.push('unload'),log(){}}}})
+ store.setCaptureDraft('Unfinished work')
+ await store.startFreshWorkspace()
+ assert.deepEqual(actions,['flush','unload'])
+ assert.equal(store.getState().captureDraft.task,'')
+ assert.equal(store.getState().captureContext,null)
+})
+
+test('refresh reconciles the run before exposing a cancelled review to automation',async()=>{
+ let releaseRead, reconciled=false
+ const seen=[]
+ const store=fixture(async(path)=>response(path==='/api/state'?{me:{username:'judge'},users:[],worklogs:[{id:'w',status:'draft',data:{}}],approvals:[],processes:[]}:[]),{
+  window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),refreshRunState:()=>new Promise(resolve=>{releaseRead=()=>{reconciled=true;resolve()}})}}})
+ store.subscribe(()=>seen.push(reconciled))
+ const refreshing=store.refresh()
+ await new Promise(resolve=>setTimeout(resolve,0))
+ assert.equal(seen.length,0)
+ releaseRead();await refreshing
+ assert.ok(seen.length>0 && seen.every(Boolean))
+})
+
+test('a review request stops when work is reopened during its pending flush',async()=>{
+ let atApproval=true, releaseFlush, writes=0
+ const proc={title:'shared',steps:[{id:'work',type:'task'},{id:'approve',type:'approval'}]}
+ const store=fixture(async(path,opts)=>{
+  if(opts?.method==='POST')writes++
+  return response(path==='/api/state'?{me:{username:'judge'},users:[{username:'kim',role:'Contributor'}],worklogs:[],approvals:[],processes:[]}:[])
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>proc,currentRunId:()=> 'r',
+  getProgress:()=>[{id:'work',type:'task',status:atApproval?'done':'ready',done:atApproval},{id:'approve',type:'approval',status:atApproval?'ready':'pending'}],
+  flushRun:()=>new Promise(resolve=>releaseFlush=resolve),log(){}}}})
+ await store.refresh()
+ const requesting=store.autoSyncApproval()
+ atApproval=false;releaseFlush();await requesting
+ assert.equal(writes,0)
+ assert.equal(store.getState().reviewSync,null)
+})
+
 test('reuse keeps Korean keywords and uses the chosen source instead of the newest unrelated work', async () => {
   const worklogs = [
     {id: 'new', task: 'Unrelated invoice approval', kind: 'review', data: {}},
@@ -76,6 +118,36 @@ test('version comparison includes knowledge and same-count edge changes', async 
   const diff=await store.diffWithPrevious({title:'procedure',map:{...old.map,version:2,steps:[{...old.map.steps[0],detail:'Check alignment before setup',next:[{to:'c'}]},...old.map.steps.slice(1)]}})
   assert.ok(diff.changed[0].changes.some(c=>c.includes('Check alignment before setup')))
   assert.ok(diff.changed[0].changes.some(c=>c.includes('b → c')))
+})
+
+test('starter answer survives a failed save and reload, then reaches the saved work without completing any task', async () => {
+  const entries=new Map(), events=[]
+  const sessionStorage={getItem:k=>entries.get(k)??null,setItem:(k,v)=>entries.set(k,v)}
+  let fail=true, work={id:'1',task:'Prepare a delivery',data:{example:true}}
+  const fetch=async(path,opts)=>{
+    if(path==='/api/state')return response({me:{username:'kim'},users:[],worklogs:[structuredClone(work)],approvals:[],processes:[]})
+    if(path==='/api/runs')return response([])
+    if(path==='/api/worklogs/1/discovery'){
+      if(fail)return response({error:'Save unavailable'},503)
+      const payload=JSON.parse(opts.body)
+      work={...work,data:{...work.data,discovery:{before:{answer:payload.answer,answeredBy:payload.actingAs,answeredAt:1}}}}
+      return response(structuredClone(work))
+    }
+    throw Error(path)
+  }
+  const extra={sessionStorage,window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>null,log:(...args)=>events.push(args),notifyAction(){throw Error('Discovery must not complete a task')}}}}
+  const first=fixture(fetch,extra);await first.refresh()
+  first.requestPlaybookCreation(work);first.setStarterDraft('Sales confirms the order date')
+  await assert.rejects(first.saveStarterAnswer('1',first.getState().captureContext.answerDraft),/Save unavailable/)
+  const retry=fixture(fetch,extra);await retry.refresh()
+  assert.equal(retry.getState().captureContext.answerDraft,'Sales confirms the order date')
+  assert.equal(retry.getState().worklogs[0].data.discovery,undefined)
+  fail=false;await retry.saveStarterAnswer('1',retry.getState().captureContext.answerDraft)
+  const reloaded=fixture(fetch,extra);await reloaded.refresh()
+  assert.equal(reloaded.getState().worklogs[0].data.discovery.before.answer,'Sales confirms the order date')
+  assert.equal(reloaded.getState().captureContext.answerDraft,'')
+  assert.equal(reloaded.getState().captureContext.creationRequested,true)
+  assert.equal(events.at(-1)[1].discovery.before.answer,'Sales confirms the order date')
 })
 
 test('permanent review failure is visible, explicit retry succeeds, and the banner clears after sign-off', async () => {
