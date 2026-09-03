@@ -958,6 +958,10 @@ export function resolveDeviation(
   by: 'user' | 'agent' = 'user',
 ): { stepId: string; label: string; resolution: string } {
   if (!map) throw new Error('no process is loaded')
+  if (mapLooksComplete())
+    throw new Error(
+      'The run is complete and signed off — its record is frozen. Corrections require a new run (or an explicit audit-correction process), not a deviation.',
+    )
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) throw new Error(`unknown step "${stepId}" — see get_process_map for step ids`)
   if (step.type === 'approval')

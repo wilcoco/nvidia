@@ -570,11 +570,21 @@ function PlaybookList({ state }: { state: store.AppState }) {
     setRuns(await store.listRuns(id))
   }
 
+  const [cancelCount, setCancelCount] = useState(0)
   const follow = (p: LoadedProcess) => {
-    const pending = store.pendingReviewCount()
-    if (pending > 0 && !armCancel) {
-      setArmCancel(true)
-      setTimeout(() => setArmCancel(false), 6000)
+    if (!armCancel) {
+      void store.cancellableReviewCount().then((n) => {
+        if (n > 0) {
+          setCancelCount(n)
+          setArmCancel(true)
+          setTimeout(() => setArmCancel(false), 6000)
+        } else {
+          void store.followPlaybook(p.id).then(() => {
+            setFollowFlash(true)
+            setTimeout(() => setFollowFlash(false), 2500)
+          })
+        }
+      })
       return
     }
     setArmCancel(false)
@@ -622,7 +632,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
                 {followFlash
                   ? '✓ Run started — see the panel →'
                   : armCancel
-                    ? `⚠ Cancels ${store.pendingReviewCount()} pending review(s) — click again`
+                    ? `⚠ Cancels ${cancelCount} pending review(s) of unfinished runs — click again`
                     : '▶ Run this playbook'}
               </button>
               <VersionDiffView proc={selected} />{' '}

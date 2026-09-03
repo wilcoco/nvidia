@@ -454,10 +454,36 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
     .sort((a, b) => b.confidence - a.confidence)
 }
 
-/** How many pending reviews a new run would cancel — the UI asks for a second
- *  click instead of a native confirm (native dialogs freeze agent runtimes). */
-export function pendingReviewCount(): number {
-  return state.approvals.filter((a) => a.status === 'PENDING').length
+/** How many pending reviews a new run would actually cancel: only reviews of
+ *  runs that still have open work — runs merely awaiting sign-off keep theirs.
+ *  Used for a two-click arm instead of a native confirm (which freezes agent
+ *  runtimes). */
+export async function cancellableReviewCount(): Promise<number> {
+  const pending = state.approvals.filter((a) => a.status === 'PENDING')
+  if (pending.length === 0) return 0
+  try {
+    const runs = await listRuns()
+    const openRunIds = new Set(
+      runs
+        .filter(
+          (r) =>
+            r.status === 'active' &&
+            Array.isArray(r.steps) &&
+            r.steps.some(
+              (s) =>
+                s.type !== 'approval' &&
+                ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
+            ),
+        )
+        .map((r) => String(r.id)),
+    )
+    return pending.filter((a) => {
+      const wl = state.worklogs.find((w) => w.id === a.worklogId)
+      return wl?.data.runId != null && openRunIds.has(String(wl.data.runId))
+    }).length
+  } catch {
+    return pending.length
+  }
 }
 
 export async function followPlaybook(
@@ -535,17 +561,23 @@ export async function autoSyncApproval(): Promise<void> {
   // Everything before the sign-off must actually be handled.
   const before = prog.slice(0, prog.findIndex((p) => p.id === readyApproval.id))
   if (before.some((p) => !p.done && p.status !== 'not_applicable' && p.type !== 'decision')) return
+  // Any draft of this run — the synthesized completion record included — is
+  // the review subject; a retry after a failed first request must find it.
   let wl = state.worklogs.find(
-    (w) => String(w.data.runId ?? '') === String(runId) && w.status === 'draft' && w.data.systemGenerated !== true,
+    (w) => String(w.data.runId ?? '') === String(runId) && w.status === 'draft',
   )
   const proc = window.Understudy.getLoadedProcess?.()
   if (!proc) return
   if (!wl) {
-    // Only THIS run's own completion record counts as "already reviewed" —
-    // a stale runId on an old, unrelated entry must not suppress the review.
+    // Review already requested/decided only when this run's OWN record has
+    // moved past draft — a stale runId on an old, unrelated entry never
+    // suppresses the review.
     if (
       state.worklogs.some(
-        (w) => String(w.data.runId ?? '') === String(runId) && w.data.systemGenerated === true,
+        (w) =>
+          String(w.data.runId ?? '') === String(runId) &&
+          w.data.systemGenerated === true &&
+          w.status !== 'draft',
       )
     )
       return
@@ -816,6 +848,15 @@ export async function diffWithPrevious(p: {
     if (of_ !== nf) c.push(`captures [${nf || '—'}] (was [${of_ || '—'}])`)
     const oe = (o.next ?? []).length, ne = (s.next ?? []).length
     if (oe !== ne) c.push(`${ne} outgoing branch(es) (was ${oe})`)
+    for (const edge of s.next ?? []) {
+      const oldEdge = (o.next ?? []).find((x) => x.to === edge.to)
+      if (!oldEdge) continue
+      if ((oldEdge.condition ?? '') !== (edge.condition ?? ''))
+        c.push(`condition → ${edge.to}: “${edge.condition ?? '—'}” (was “${oldEdge.condition ?? '—'}”)`)
+      const oc = JSON.stringify(oldEdge.criteria ?? {})
+      const nc = JSON.stringify(edge.criteria ?? {})
+      if (oc !== nc) c.push(`criteria → ${edge.to}: ${nc} (was ${oc})`)
+    }
     if (c.length) changed.push({ label: s.label, changes: c })
   }
   return { prevVersion: prior.version || 1, added, removed, changed }

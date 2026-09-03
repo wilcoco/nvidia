@@ -41,12 +41,10 @@ Opening (0:00–0:25):
 > and every visitor brings their own agent.
 
 Closing (2:40–2:55):
-> The agent cannot simply declare success — order, evidence and human
-> approval gate every run. The agent is the door; the page is the house:
-> processes are created and judged with your agent at the desk, and the
-> work travels — assignees' inputs, handoffs and reviews run in any plain
-> browser, phones included. It starts from an ordinary work log — and ends
-> as the team's operating process.
+> Even the agent can't declare success — order, evidence and human approval
+> gate every run. Judgment lives at the desk with your agent; the work
+> travels to any browser, phones included. From an ordinary work log — to
+> the team's operating process.
 
 ## Chat prompts (English, verbatim)
 

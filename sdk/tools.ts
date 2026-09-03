@@ -444,7 +444,7 @@ const tools: ToolDef[] = [
           label: s.label,
           type: s.type,
           branches: s.next,
-          chosen: map.decisions?.filter((d) => d.stepId === s.id).slice(-1)[0] ?? null,
+          chosen: map.decisions?.filter((d) => d.stepId === s.id && !d.invalidated).slice(-1)[0] ?? null,
           note: 'Resolve with resolve_decision before moving past this step; loop-back choices re-open the loop body.',
         }))
       return {

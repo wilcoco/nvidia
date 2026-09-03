@@ -164,6 +164,7 @@ footer input { accent-color: #3b82f6; }
 let shadow: ShadowRoot | null = null
 // On phones the panel would cover ~86% of the screen — start collapsed there.
 let collapsed = typeof window !== 'undefined' && window.innerWidth < 560
+let seenApprovalCount = 0
 let skipConfirmId: string | null = null
 // The activity journal exists for the agent; humans see a collapsed summary.
 let activityOpen = false
@@ -653,6 +654,11 @@ function render() {
   // Let the host page adapt its layout to the panel (e.g. release the
   // right-hand margin when the panel is minimized on narrow screens).
   document.documentElement.setAttribute('data-understudy-panel', collapsed ? 'collapsed' : 'open')
+
+  // A consent request must be seen: a newly arrived approval card reopens
+  // a collapsed panel (the human can collapse it again).
+  if (asksStore.approvals.length > seenApprovalCount) collapsed = false
+  seenApprovalCount = asksStore.approvals.length
 
   const fab = el('button', 'fab', collapsed ? '🎭 Understudy' : '')
   if (collapsed) {

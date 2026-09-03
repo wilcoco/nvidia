@@ -33,7 +33,7 @@ interface UnderstudyProcessMap {
     completedBy?: string
     completedAt?: number
     resultData?: Record<string, unknown>
-    next?: Array<{ to: string; condition?: string }>
+    next?: Array<{ to: string; condition?: string; criteria?: Record<string, Record<string, unknown>> }>
   }>
   confirmed?: boolean
   version?: number
