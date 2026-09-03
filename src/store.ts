@@ -19,6 +19,14 @@ export interface IncidentData {
   /** Measurements that passed the decision criteria (post-adjustment values). */
   verification?: Record<string, number | string | boolean>
   verifiedAt?: string
+  reviewContext?: {
+    approvalStepId: string
+    approvalLabel: string
+    purpose: 'work' | 'plan' | 'unspecified'
+    purposeSource: 'declared' | 'legacy-label' | 'unspecified'
+    workChecks: 'failed' | 'passed' | 'unverified'
+    decisions: Array<{stepId: string; label: string; targetLabel: string; reason?: string; measurements: Record<string, unknown>; criteriaMet: boolean | null}>
+  } | null
   [key: string]: unknown
 }
 
@@ -84,6 +92,7 @@ export interface PlaybookMatch {
 }
 
 export interface AppState {
+  restoration: 'pending' | 'loading' | 'ready' | 'error'
   captureDraft: { task: string; sample: boolean }
   recentRuns: ProcessRun[]
   reviewSync: { runId: string; stepId: string; status: 'requesting' | 'ready' | 'error'; message?: string } | null
@@ -101,6 +110,7 @@ export interface AppState {
 }
 
 let state: AppState = {
+  restoration: 'pending',
   captureDraft: {task: '', sample: false},
   recentRuns: [],
   reviewSync: null,
@@ -230,7 +240,7 @@ export function logout(): void {
   window.Understudy.closePanel?.()
   resumeAttempted = false
   workspaceRestored = false
-  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, recentRuns: [], reviewSync: null })
+  commit({ restoration: 'pending', me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, recentRuns: [], reviewSync: null })
 }
 
 export function switchActingAs(username: string): void {
@@ -305,9 +315,16 @@ export async function requestApproval(
     approvalId: approval.id,
   })
   if (linked && window.Understudy.currentRunId?.() === runId) {
-    window.Understudy.notifyAction('request_review', approval.id)
+    // The response may arrive after rework, rejection or another submission.
+    // Persist intervening edits and confirm which request is still current.
+    await window.Understudy.flushRun?.()
+    await refresh()
+    if (window.Understudy.currentRunId?.() !== runId) return approval
+    const current = state.approvals.find(a => a.id === approval.id && a.status === 'PENDING')
+    if (!current) return approval
+    window.Understudy.notifyAction('request_review', current.id)
     // Publish the completed request step before handing the review to another tab.
-    if (linked) await window.Understudy.flushRun?.()
+    await window.Understudy.flushRun?.()
   }
   await refresh()
   return approval
@@ -616,6 +633,10 @@ export async function autoSyncApproval(): Promise<void> {
   let wl = state.worklogs.find((w) => String(w.data.runId ?? '') === String(runId) &&
     (w.data.approvalStepId === ready.id || (firstApproval && !w.data.approvalStepId)))
   if (wl && wl.status !== 'draft') {
+    if (wl.status === 'submitted') {
+      const review = state.approvals.find(a => a.worklogId === wl!.id && a.status === 'PENDING' && a.stepId === ready.id)
+      if (review) window.Understudy.notifyAction('request_review', review.id)
+    }
     if (wl.status === 'submitted' && state.reviewSync?.status !== 'ready') {
       commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
       window.Understudy.log(`Review request for "${ready.label}" confirmed from the server.`, {runId, stepId: ready.id})
@@ -659,6 +680,8 @@ export async function autoSyncApproval(): Promise<void> {
     const saved = state.worklogs.find(w => String(w.data.runId ?? '') === String(runId) &&
       (w.data.approvalStepId === ready.id || (firstApproval && !w.data.approvalStepId)))
     if (saved?.status === 'submitted' && state.approvals.some(a => a.worklogId === saved.id && a.status === 'PENDING')) {
+      const review = state.approvals.find(a => a.worklogId === saved.id && a.status === 'PENDING' && a.stepId === ready.id)
+      if (review) window.Understudy.notifyAction('request_review', review.id)
       commit({reviewSync: {runId, stepId: ready.id, status: 'ready'}})
       reviewAttempts.delete(key)
       window.Understudy.log(`Review request for "${ready.label}" confirmed from the server after reconnecting.`, {runId, stepId: ready.id})
@@ -699,6 +722,7 @@ export function resumeLastPlaybook(): void {
   if (resumeAttempted) return
   resumeAttempted = true
   const gen = sessionGen
+  commit({restoration: 'loading'})
   void (async () => {
     try {
       const runs = await listRuns()
@@ -719,8 +743,17 @@ export function resumeLastPlaybook(): void {
       try { id = localStorage.getItem('understudy.lastPlaybook') } catch { /* optional */ }
       if (id && runs.some((r) => r.processId === id && r.status !== 'abandoned') && !window.Understudy.getLoadedProcess?.())
         await followPlaybook(id, {silent: true, resume: true})
-    } catch { /* The work input stays usable if history cannot be loaded. */ }
+    } catch {
+      if (gen === sessionGen) commit({restoration: 'error'})
+    } finally {
+      if (gen === sessionGen && state.restoration === 'loading') commit({restoration: 'ready'})
+    }
   })()
+}
+
+export function retryRestoration(): void {
+  resumeAttempted = false
+  resumeLastPlaybook()
 }
 
 export function setCaptureDraft(task: string, sample = false): void {
@@ -953,6 +986,7 @@ export async function diffWithPrevious(p: {
     if ((o.detail ?? '') !== (s.detail ?? '')) c.push(`instructions: “${o.detail ?? '—'}” → “${s.detail ?? '—'}”`)
     if ((o.action ?? '') !== (s.action ?? '')) c.push(`action ${o.action ?? 'manual'} → ${s.action ?? 'manual'}`)
     if ((o.role ?? '') !== (s.role ?? '')) c.push(`owner ${o.role ?? 'anyone'} → ${s.role ?? 'anyone'}`)
+    if (o.approvalPurpose !== s.approvalPurpose) c.push(`approval purpose: ${o.approvalPurpose ?? 'unspecified'} → ${s.approvalPurpose ?? 'unspecified'}`)
     const of_ = (o.fields ?? []).join(','), nf = (s.fields ?? []).join(',')
     if (of_ !== nf) c.push(`captures [${nf || '—'}] (was [${of_ || '—'}])`)
     const oe = (o.next ?? []).length, ne = (s.next ?? []).length

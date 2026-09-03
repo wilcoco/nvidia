@@ -27,6 +27,8 @@ export interface Step {
   id: string
   label: string
   type: StepType
+  /** Whether the reviewer signs off completed work or a remediation plan only. */
+  approvalPurpose?: 'work' | 'plan'
   detail?: string
   /** Role responsible for this step (e.g. Contributor, Reviewer). Empty = anyone. */
   role?: string
@@ -93,6 +95,7 @@ export interface ProcessMap {
     to: string
     reason: string
     evidence?: string
+    measurements?: Record<string, unknown>
     ts: number
     /** Set when a later loop-back reopened this decision's body — it must be re-resolved. */
     invalidated?: boolean

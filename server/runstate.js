@@ -55,7 +55,88 @@ export function matchesReviewFingerprint(stored, run, scope) {
 export function evidencePatch(run, scope) {
   const values = {}
   for (const s of run.steps ?? []) if ((!scope || scope.includes(s.id)) && s.status === 'done' && s.resultData) Object.assign(values, s.resultData)
-  return { ...values, verification: null, verifiedRoute: null, verifiedAt: null }
+  return { ...values, verification: null, verifiedRoute: null, verifiedAt: null, reviewContext: null }
+}
+
+function primitiveValues(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  const reserved = ['runId', 'approvalStepId', 'systemGenerated', 'verification', 'verifiedRoute', 'verifiedAt', 'reviewContext']
+  return Object.fromEntries(Object.entries(value).filter(([key, v]) => !reserved.includes(key) &&
+    (['string', 'boolean'].includes(typeof v) || (typeof v === 'number' && Number.isFinite(v)))))
+}
+
+function criteriaResult(criteria, values) {
+  const rules = Object.entries(criteria ?? {})
+  if (!rules.length) return null
+  if (rules.some(([key]) => values[key] == null)) return null
+  return rules.every(([key, rule]) => Object.entries(rule).every(([op, t]) => {
+    const v = values[key]
+    return op === 'eq' ? v === t : op === 'ne' ? v !== t : typeof v === 'number' &&
+      (op === 'gt' ? v > t : op === 'gte' ? v >= t : op === 'lt' ? v < t : op === 'lte' ? v <= t : false)
+  }))
+}
+
+// Only persisted, non-superseded decisions and the saved approval definition
+// establish review meaning. Source-log verification is never copied back in.
+function reviewMeaning(run, map, scope, taskValues) {
+  const design = map?.steps ?? []
+  const target = design.find(s => s.id === approvalGate(run, map).stepId)
+  if (!target) return {}
+  const current = new Map()
+  for (const d of run.decisions ?? []) if (!d.invalidated && (!scope || scope.includes(d.stepId))) current.set(d.stepId, d)
+  const decisions = [], extra = {}, workChecks = []
+  for (let i = 0; i < design.length; i++) {
+    const step = design[i], d = current.get(step.id)
+    const edge = step.next?.find(e => e.to === d?.to)
+    if (!d || !edge) continue
+    let measured = d.measurements
+    if (!measured && d.evidence) { try { measured = JSON.parse(d.evidence) } catch { /* prose remains in the decision */ } }
+    const values = primitiveValues(measured)
+    // A decision cannot replace the values the assignee actually submitted.
+    for (const prior of design.slice(0, i + 1)) {
+      const recorded = run.steps?.find(s => s.id === prior.id && s.status === 'done')
+      Object.assign(values, primitiveValues(recorded?.resultData))
+    }
+    const checked = criteriaResult(edge.criteria, values)
+    decisions.push({stepId: step.id, label: step.label ?? step.id, to: d.to,
+      targetLabel: design.find(s => s.id === d.to)?.label ?? d.to, reason: d.reason,
+      measurements: values, criteria: edge.criteria ?? {}, criteriaMet: checked, ts: d.ts ?? null})
+    Object.assign(extra, values)
+    // Compare current evidence with saved work-signoff rules as well as the
+    // chosen remediation rule. Passing a redesign criterion is not a work pass.
+    for (const candidate of step.next ?? []) {
+      const approval = design.find(s => s.id === candidate.to && s.type === 'approval')
+      if (!approval || approval.approvalPurpose === 'plan' ||
+        (!approval.approvalPurpose && /re-?plan|escalat|redesign/i.test(approval.label ?? ''))) continue
+      const result = criteriaResult(candidate.criteria, values)
+      if (result !== null) workChecks.push(result)
+    }
+  }
+  const leadsToTarget = id => {
+    const visited = new Set()
+    while (id && !visited.has(id)) {
+      if (id === target.id) return true
+      visited.add(id)
+      const i = design.findIndex(s => s.id === id), step = design[i]
+      if (!step) return false
+      const edges = step.next ?? (design[i + 1] ? [{to: design[i + 1].id}] : [])
+      const chosen = current.get(id)
+      id = edges.length === 1 ? edges[0].to : edges.find(e => e.to === chosen?.to)?.to
+    }
+    return false
+  }
+  const route = [...decisions].reverse().find(d => d.criteriaMet !== false && leadsToTarget(d.to))
+  const legacyPlan = !target.approvalPurpose && route && /re-?plan|escalat|redesign/i.test(target.label ?? '')
+  const purpose = target.approvalPurpose ?? (legacyPlan ? 'plan' : 'unspecified')
+  const verification = {...extra, ...primitiveValues(taskValues)}
+  return { ...extra, ...taskValues,
+    verification: decisions.length ? verification : null,
+    verifiedRoute: route ? {label: target.label, pass: true, checked: route.criteriaMet === true, purpose} : null,
+    verifiedAt: route?.ts && Number.isFinite(route.ts) ? new Date(route.ts).toISOString() : null,
+    reviewContext: {approvalStepId: target.id, approvalLabel: target.label ?? target.id, purpose,
+      purposeSource: target.approvalPurpose ? 'declared' : legacyPlan ? 'legacy-label' : 'unspecified',
+      workChecks: workChecks.includes(false) ? 'failed' : workChecks.length ? 'passed' : 'unverified', decisions},
+  }
 }
 
 // Freeze the values a reviewer saw. A source log is history, while completed
@@ -66,7 +147,12 @@ export function reviewEvidence(run, map, scope, data = {}) {
   for (const step of map?.steps ?? [])
     if (!scope || scope.includes(step.id))
       for (const key of step.fields ?? []) delete values[key]
-  return { ...values, ...evidencePatch(run, scope) }
+  const patch = evidencePatch(run, scope)
+  const meaning = reviewMeaning(run, map, scope, patch)
+  return { ...values, ...patch, ...meaning,
+    ...(run.id != null ? {runId: String(run.id)} : {}),
+    ...(meaning.reviewContext ? {approvalStepId: meaning.reviewContext.approvalStepId} : {}),
+  }
 }
 
 /** The SDK executes the saved step order, excluding inactive branches. A review

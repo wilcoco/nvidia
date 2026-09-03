@@ -2,7 +2,7 @@ import type { BranchTarget, FieldDef, MapEdit, ProcessMap, Step, StepType, RunEv
 import { record } from './journal'
 import * as host from './host'
 import { onGapResolved } from './asks'
-import { validateFields, validateFieldValues, validateFieldBindings } from '../shared/fields'
+import { validateFields, validateFieldValues, validateFieldBindings, validateCriteria } from '../shared/fields'
 
 onGapResolved((gapKey) => markGapResolved(gapKey))
 
@@ -124,7 +124,10 @@ export function humanEditStep(stepId: string, field: 'label' | 'detail' | 'type'
   if (!step) return
   const from = String(step[field] ?? '')
   if (from === to) return
-  if (field === 'type') step.type = to as StepType
+  if (field === 'type') {
+    step.type = to as StepType
+    if (step.type !== 'approval') delete step.approvalPurpose
+  }
   else step[field] = to
   pushEdit({ stepId, field, from, to })
   record('user', 'map', `edited step "${step.label}": ${field} → ${to}`)
@@ -188,6 +191,9 @@ export function humanRemoveStep(stepId: string): void {
       // Both guards must hold (AND). Never overwrite a rule with the same key.
       const criteria = structuredClone(edge.criteria ?? {})
       for (const [key, rules] of Object.entries(successor.criteria ?? {})) {
+        if (removed.fields?.includes(key)) {
+          refuse(`“${key}” is measured again in this task. Combining observations from different stages would change the rule; keep this measurement or explicitly redesign it.`); return
+        }
         if (!s.fields?.includes(key) && !(key in criteria)) {
           refuse(`the remaining task must collect “${key}” before it can enforce the outgoing condition.`); return
         }
@@ -198,6 +204,8 @@ export function humanRemoveStep(stepId: string): void {
           ;(criteria[key] ??= {})[op] = value
         }
       }
+      const invalidCriteria = validateCriteria(criteria, map.fields)
+      if (invalidCriteria) { refuse(invalidCriteria); return }
       replacements.push({to: successor.to,
         condition: [...new Set([edge.condition, successor.condition].filter(Boolean))].join(' AND ') || undefined,
         ...(Object.keys(criteria).length ? {criteria} : {})})
@@ -347,11 +355,20 @@ export function markActionDone(
   // never one sitting on a branch that was not taken.
   const statuses = progress()
   const candidates = map.steps.filter((s) => s.action === actionName && !s.done)
-  const step = candidates.find((s) => statuses.get(s.id) === 'ready')
+  let step = candidates.find((s) => statuses.get(s.id) === 'ready')
+  // The task UI may have already completed the administrative request, or
+  // a rejected review may be resubmitted. Attach the receipt only within the
+  // currently ready approval's unsigned scope; never backfill arbitrary work.
+  if (!step && actionName === 'request_review' && resultId) {
+    const approvalIndex = map.steps.findIndex(s => s.type === 'approval' && ['ready', 'blocked'].includes(statuses.get(s.id) ?? ''))
+    const before = map.steps.slice(0, Math.max(0, approvalIndex))
+    const signedIndex = before.reduce((last, s, i) => s.type === 'approval' && s.done ? i : last, -1)
+    step = before.slice(signedIndex + 1).reverse().find(s => s.action === actionName && s.done && statuses.get(s.id) === 'done')
+  }
   if (!step) return null
   // A step that demands evidence completes only through its task card —
   // an action success carries no measured values.
-  if (step.fields?.length) {
+  if (!step.done && step.fields?.length) {
     const needed = (map.fields ?? []).filter(
       (f) => step.fields!.includes(f.key) && (f.required || f.confirm),
     )
@@ -365,7 +382,7 @@ export function markActionDone(
       return null
     }
   }
-  if ((step.next?.length ?? 0) === 1 && step.next![0].criteria && Object.keys(step.next![0].criteria!).length) {
+  if (!step.done && (step.next?.length ?? 0) === 1 && step.next![0].criteria && Object.keys(step.next![0].criteria!).length) {
     record(by, 'map', `"${step.label}" has exit criteria — complete it from the task card with the measured values`)
     notify()
     return null
@@ -376,10 +393,27 @@ export function markActionDone(
   const persona = actingPersona()
   step.completedBy = persona ?? step.completedBy
   step.completedAt = Date.now()
-  appendRunEvent(step, 'completed')
+  appendRunEvent(step, 'completed', actionName === 'request_review' && resultId ? `Review request #${resultId} recorded` : undefined)
   record(by, 'map', `completed step "${step.label}"${persona ? ` (by ${persona})` : ''}`)
   notify()
   return step
+}
+
+/** Reopening evidence starts a new review cycle, including its administrative
+ * request. Old completion events remain history, while live receipts are cleared. */
+function reopenReviewRequests(fromIndex: number): void {
+  if (!map) return
+  for (const s of map.steps.slice(fromIndex + 1)) {
+    if (s.type === 'approval' && s.done) break
+    if (s.action !== 'request_review' || !s.done) continue
+    appendRunEvent(s, 'reopened', `Evidence reopened; previous request${s.resultId ? ` #${s.resultId}` : ''} is historical`)
+    s.done = false
+    delete s.naReason
+    s.resultId = undefined
+    s.completedBy = undefined
+    s.completedAt = undefined
+    s.resultData = undefined
+  }
 }
 
 /** Agent refines a single step in place (e.g. writing captured judgment into its note). */
@@ -392,6 +426,7 @@ export function agentUpdateStep(
     humanOnly?: boolean
     role?: string
     fields?: string[]
+    approvalPurpose?: 'work' | 'plan'
   },
   branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
 ): { ok: boolean; error?: string; detail?: string; step?: Step } {
@@ -406,6 +441,8 @@ export function agentUpdateStep(
   const step = map.steps.find((s) => s.id === stepId)
   if (!step) return { ok: false, error: `unknown step "${stepId}"` }
   const changed: string[] = []
+  if (patch.approvalPurpose !== undefined && (step.type !== 'approval' || !['work', 'plan'].includes(patch.approvalPurpose)))
+    return {ok: false, error: 'Set approvalPurpose to work or plan on an approval step.'}
   if (patch.role !== undefined && patch.role !== '') {
     const st = host.getState() as { users?: Array<{ role?: unknown }> } | null
     const known = Array.isArray(st?.users)
@@ -425,6 +462,7 @@ export function agentUpdateStep(
       changed.push(field)
     }
   }
+  if (patch.approvalPurpose !== undefined) { step.approvalPurpose = patch.approvalPurpose; changed.push('approvalPurpose') }
   if (patch.fields !== undefined) {
     const contract = new Set((map.fields ?? []).map((f) => f.key))
     const bad = patch.fields.filter((k) => typeof k === 'string' && !contract.has(k))
@@ -587,7 +625,8 @@ export function resolveDecision(
   const signatureError = retrySignatureError(stepId, branchTo)
   if (signatureError) return {ok: false, error: 'signed_work_immutable', detail: signatureError}
   if (!map.decisions) map.decisions = []
-  map.decisions.push({ stepId, to: branchTo, reason, evidence: evidence ?? (measurements ? JSON.stringify(measurements) : undefined), ts: Date.now() })
+  map.decisions.push({ stepId, to: branchTo, reason, evidence: evidence ?? (measurements ? JSON.stringify(measurements) : undefined),
+    measurements: measurements ? structuredClone(measurements) : undefined, ts: Date.now() })
   // Measured resolutions are worth keeping on the business record itself,
   // together with WHERE they routed the run — a remediation branch can also
   // point forward, so direction alone says nothing about pass/fail.
@@ -630,6 +669,7 @@ export function resolveDecision(
         s.completedBy = undefined
         s.completedAt = undefined
         s.resultData = undefined
+        s.resultId = undefined
         reopened.push(s.label)
       }
       if (s.id !== stepId && (s.next?.length ?? 0) > 1) {
@@ -646,6 +686,7 @@ export function resolveDecision(
     if (reopened.length) record(by, 'map', `re-opened for the loop: ${reopened.join('; ')}`)
     if (resetDecisions.length)
       record(by, 'map', `decision(s) reset for the retry — must be re-resolved: ${resetDecisions.join('; ')}`)
+    reopenReviewRequests(to)
   }
   notify()
   return { ok: true, reopened }
@@ -789,6 +830,8 @@ export function humanToggleStepDone(
       step.completedBy = undefined
       step.completedAt = undefined
       step.resultData = undefined
+      step.resultId = undefined
+      reopenReviewRequests(idx)
     }
   }
   if (!map) return false
@@ -831,6 +874,7 @@ export function humanToggleStepDone(
           s.completedBy = undefined
           s.completedAt = undefined
           s.resultData = undefined
+          s.resultId = undefined
           reopened.push(s.label)
         }
         if ((s.next?.length ?? 0) > 1) {
@@ -848,6 +892,7 @@ export function humanToggleStepDone(
         record('user', 'map', `"${step.label}" loops back — re-opened for the retry: ${reopened.join('; ')}`)
       if (resetDecisions.length)
         record('user', 'map', `decision(s) reset for the retry — must be re-resolved: ${resetDecisions.join('; ')}`)
+      reopenReviewRequests(to)
     }
   }
   notify()

@@ -46,3 +46,46 @@ test('the final storage guard freezes run identity, evidence, attribution and ev
  const active={...run,status:'active',steps:[...run.steps,{id:'sign',type:'approval',status:'done',resultId:'review'},{id:'next',type:'task',status:'ready'}]}
  assert.throws(()=>guardRunUpdate(active,{steps:active.steps.map(s=>s.id==='a'?{...s,completedBy:'lee'}:s)},{steps:active.steps}),/signed_work_immutable/)
 })
+
+test('plan-only snapshots use current persisted decisions, retain failed work and ignore stale source metadata',()=>{
+ const design={steps:[{id:'m',type:'task',fields:['delta','ok']},
+  {id:'health',type:'decision',next:[{to:'work',criteria:{delta:{eq:0},ok:{eq:true}}},{to:'diagnose',criteria:{ok:{eq:false}}}]},
+  {id:'diagnose',type:'decision',next:[{to:'plan',criteria:{redesign:{eq:true}}},{to:'m',criteria:{redesign:{eq:false}}}]},
+  {id:'work',type:'approval',label:'Accept work',approvalPurpose:'work'},
+  {id:'plan',type:'approval',label:'Review next steps',approvalPurpose:'plan'}]}
+ const run={id:'actual-run',status:'active',steps:[{id:'m',type:'task',status:'done',resultData:{delta:12,ok:false}},
+  {id:'work',type:'approval',status:'not_applicable'},{id:'plan',type:'approval',status:'ready'}],decisions:[
+   {stepId:'health',to:'work',measurements:{delta:0,ok:true},invalidated:true,ts:1},
+   {stepId:'health',to:'diagnose',reason:'checks failed',ts:2},
+   {stepId:'diagnose',to:'plan',reason:'human confirmed',measurements:{redesign:true,delta:0,runId:'wrong-run',approvalStepId:'wrong-step'},evidence:'A schema mismatch',ts:3}]}
+ const scope=approvalGate(run,design).scope
+ const snapshot=reviewEvidence(run,design,scope,{verification:{delta:0,ok:true},verifiedRoute:{label:'Pass',pass:true},reviewContext:{purpose:'work'}})
+ assert.equal(snapshot.delta,12);assert.equal(snapshot.ok,false);assert.equal(snapshot.redesign,true)
+ assert.equal(snapshot.runId,'actual-run');assert.equal(snapshot.approvalStepId,'plan')
+ assert.equal(snapshot.verification.delta,12)
+ assert.equal(snapshot.verifiedRoute.label,'Review next steps')
+ assert.equal(snapshot.reviewContext.purpose,'plan');assert.equal(snapshot.reviewContext.workChecks,'failed')
+ assert.equal(snapshot.reviewContext.decisions.length,2)
+ assert.equal(snapshot.reviewContext.decisions[1].measurements.delta,12,'submitted evidence outranks conflicting decision measurements')
+ assert.equal(snapshot.verifiedAt,new Date(3).toISOString())
+ // Legacy plans use the saved target name and selected persisted route, never source labels.
+ delete design.steps[4].approvalPurpose;design.steps[4].label='Escalate and approve redesign plan'
+ assert.equal(reviewEvidence(run,design,scope).reviewContext.purposeSource,'legacy-label')
+ run.decisions[2].invalidated=true
+ // Health leads to an unresolved split: no evidence of routing to the plan.
+ assert.equal(reviewEvidence(run,design,scope).reviewContext.purpose,'unspecified')
+})
+
+test('a clean pass uses current evidence while missing or unbound decision claims remain unverified',()=>{
+ const design={steps:[{id:'m',type:'task',fields:['ok']},{id:'d',type:'decision',next:[{to:'a',criteria:{ok:{eq:true}}}]},{id:'a',type:'approval',approvalPurpose:'work'}]}
+ const run={status:'active',steps:[{id:'m',status:'done',resultData:{ok:true}},{id:'a',type:'approval',status:'ready'}],decisions:[{stepId:'d',to:'a',evidence:'{"ok":true}',ts:10}]}
+ const snapshot=reviewEvidence(run,design,['m','d'],{verifiedRoute:{label:'Escalate redesign'}})
+ assert.equal(snapshot.reviewContext.purpose,'work');assert.equal(snapshot.reviewContext.workChecks,'passed')
+ assert.equal(snapshot.verifiedRoute.checked,true)
+ run.steps[0].resultData={};run.decisions[0].evidence='Human described a check, no structured measurement'
+ const missing=reviewEvidence(run,design,['m','d'],{ok:true,verification:{ok:true}})
+ assert.equal(missing.ok,undefined);assert.equal(missing.verifiedRoute.checked,false)
+ assert.equal(missing.reviewContext.workChecks,'unverified')
+ run.decisions[0].to='nonexistent'
+ assert.equal(reviewEvidence(run,design,['m','d']).verification,null)
+})

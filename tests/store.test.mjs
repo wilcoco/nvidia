@@ -17,17 +17,17 @@ function fixture(fetch, extra = {}) {
 }
 const response = (data, status = 200) => ({ok: status < 400, status, json: async () => data})
 
-test('explicit review flushes new measurements and publishes its completed request before refresh',async()=>{
+test('explicit review persists new measurements and reconciles its receipt before completing the request',async()=>{
  const events=[]
  const worklogs=[{id:'w',task:'baseline',data:{runId:'r'},status:'draft'}]
  const store=fixture(async(path)=>{
   if(path.endsWith('/submit')){events.push('request');return response({id:'review',worklogId:'w',evidence:{delta:12,passed:false}})}
-  events.push('refresh');return response({me:{username:'kim'},users:[],worklogs,approvals:[],processes:[]})
+  events.push('refresh');return response({me:{username:'kim'},users:[],worklogs,approvals:[{id:'review',status:'PENDING'}],processes:[]})
  },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),currentRunId:()=> 'r',
   flushRun:async()=>events.push('flush'),notifyAction:()=>events.push('complete-request'),log(){}}}})
  await store.refresh();events.length=0
  const review=await store.requestApproval('w','lee')
- assert.deepEqual(events,['flush','request','complete-request','flush','refresh'])
+ assert.deepEqual(events,['flush','request','flush','refresh','complete-request','flush','refresh'])
  assert.equal(review.evidence.delta,12)
  assert.equal(review.evidence.passed,false)
 })
@@ -275,4 +275,54 @@ test('reload restores the exact run selected in this tab, even when a newer run 
  await second.refresh();await new Promise(r=>setTimeout(r,10))
  assert.equal(restored.runId,'old')
  assert.equal(restored.steps[0].resultData.delta,12)
+})
+
+test('restoration exposes loading and recoverable errors without creating a replacement execution',async()=>{
+ let release, fail=true, loaded=0, requests=[]
+ const run={id:'selected',processId:'p',status:'active',steps:[{id:'w',status:'done',resultData:{delta:12}}]}
+ const store=fixture(async(path,opts)=>{
+  requests.push({path,method:opts?.method})
+  if(path==='/api/state')return response({me:{username:'kim'},users:[],worklogs:[],approvals:[],processes:[]})
+  if(path==='/api/runs'){await new Promise(r=>release=r);if(fail)throw Error('offline');return response([run])}
+  if(path==='/api/runs/selected')return response(run)
+  if(path==='/api/processes/p')return response({id:'p',title:'Saved work',map:{steps:[]}})
+  throw Error(path)
+ },{sessionStorage:{getItem:k=>k==='understudy.selectedRun'?JSON.stringify({username:'kim',runId:'selected'}):null},
+  window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>null,loadProcess:()=>loaded++,log(){}}}})
+ await store.refresh()
+ assert.equal(store.getState().restoration,'loading');assert.equal(loaded,0)
+ release();await new Promise(r=>setTimeout(r,0))
+ assert.equal(store.getState().restoration,'error')
+ fail=false;store.retryRestoration();release();await new Promise(r=>setTimeout(r,10))
+ assert.equal(store.getState().restoration,'ready');assert.equal(loaded,1)
+ assert.ok(requests.every(r=>r.method!=='POST'))
+})
+
+test('reconnecting to a committed review attaches its receipt without submitting a second review',async()=>{
+ const notices=[],proc={steps:[{id:'r',type:'task',action:'request_review',done:true},{id:'a',type:'approval'}]}
+ const store=fixture(async(path,opts)=>{
+  assert.notEqual(opts?.method,'POST')
+  return response(path==='/api/state'?{me:{username:'kim'},users:[],processes:[],
+   worklogs:[{id:'w',status:'submitted',data:{runId:'run',approvalStepId:'a'}}],
+   approvals:[{id:'new-review',worklogId:'w',stepId:'a',status:'PENDING'}]}:[])
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>proc,currentRunId:()=> 'run',
+  getProgress:()=>[{id:'r',type:'task',status:'done',done:true},{id:'a',type:'approval',status:'ready'}],
+  notifyAction:(...args)=>notices.push(args),log(){}}}})
+ await store.refresh();await store.autoSyncApproval()
+ assert.deepEqual(notices,[['request_review','new-review']])
+})
+
+test('a delayed receipt from a rejected request cannot replace the newer pending review',async()=>{
+ let finish, phase='first'
+ const ids=[]
+ const store=fixture(async(path)=>{
+  if(path.endsWith('/submit'))return new Promise(r=>finish=()=>r(response({id:'old',worklogId:'w'})))
+  return response(path==='/api/state'?{me:{username:'kim'},users:[],processes:[],
+   worklogs:[{id:'w',data:{runId:'r'}}],approvals:phase==='first'?[]:[{id:'old',status:'REJECTED'},{id:'new',status:'PENDING'}]}:[])
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),currentRunId:()=> 'r',
+  flushRun:async()=>{},notifyAction:(_name,id)=>ids.push(id),log(){}}}})
+ await store.refresh()
+ const pending=store.requestApproval('w','lee')
+ await new Promise(r=>setTimeout(r,0));phase='new';finish();await pending
+ assert.equal(ids.length,0)
 })

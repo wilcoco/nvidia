@@ -31,7 +31,7 @@ non-approver decisions, and edits to approved records.
 > *A diagram can't refuse a bad pass decision. This playbook does.*
 Evidence: automated regression tests and the documented browser E2E scenarios exercise these refusals.
 
-## 4. Zero-API-key architecture
+## 4. No site-owned LLM API key
 The page ships tools without requiring a site-owned LLM API key or LLM
 backend. The visitor uses their own agent (ChatGPT, Gemini), whose usage
 limits and costs still apply.

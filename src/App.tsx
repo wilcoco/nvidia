@@ -258,6 +258,20 @@ function CorrectiveInput({ worklogId }: { worklogId: string }) {
 }
 
 function VerificationBlock({ w }: { w: store.Worklog }) {
+  const context = w.data.reviewContext
+  if (context) return <div className={`note verify-note ${context.purpose === 'plan' ? 'reroute' : 'neutral'}`}>
+    <div className="verify-head">{context.purpose === 'plan'
+      ? `Replanning approval — approves the plan only. ${context.workChecks === 'failed' ? 'Work validation remains failed.' : 'This does not certify successful work validation.'}`
+      : `Approval scope: ${context.approvalLabel}`}</div>
+    {context.purposeSource === 'legacy-label' && <div className="meta">Scope identified from this saved approval’s name and current route. Set an explicit approval purpose in the next revision.</div>}
+    {context.decisions.length > 0 && <details className="decision-evidence"><summary>Recorded decisions and evidence ({context.decisions.length})</summary>
+      {context.decisions.map(d => <div key={d.stepId} className="decision-evidence-row">
+        <strong>{d.label} → {d.targetLabel}</strong><div>{d.reason}</div>
+        <div>{Object.entries(d.measurements).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>
+        <div className="meta">{d.criteriaMet === true ? 'Selected route criteria met' : d.criteriaMet === false ? 'Recorded values do not meet this route’s criteria' : 'No complete machine check for this route'}</div>
+      </div>)}
+    </details>}
+  </div>
   const v = w.data.verification
   if (!v) return null
   const rows = Object.entries(v).map(([k, val]) => {
@@ -406,7 +420,9 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               </span>
               <span className={`status ${a.status.toLowerCase()}`}>{a.status}</span>
             </div>
-            {missingSnapshot && <p className="note">This older review has no saved evidence snapshot. A new review is required before approval; the original work log remains available in Work log.</p>}
+            {missingSnapshot && <p className="note">{a.status === 'PENDING'
+              ? 'This older pending review has no saved evidence snapshot. Request a new review before approval.'
+              : 'This historical review predates saved evidence snapshots. Its recorded outcome is unchanged; the original work log is available separately.'}</p>}
             {evidence.length > 0 && (
               <div className="meta review-evidence">
                 {evidence.map(([k, v]) => (
@@ -798,6 +814,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
       </div>
       <RunPicker />
       <ErrorNotice message={action.error || window.Understudy.getRunSyncError?.() || ''} />
+      {completeRun && state.approvals.filter(a => a.status === 'APPROVED' && a.evidence?.reviewContext?.purpose === 'plan' &&
+        String(a.evidence.runId ?? '') === String(runId) && proc.steps.some(s => s.id === a.stepId && s.done && s.resultId === String(a.id)))
+        .map(a => <VerificationBlock key={a.id} w={{data: a.evidence!} as store.Worklog} />)}
       {window.Understudy.getRunSyncError?.() && <button disabled={action.busy} onClick={() => void action.run(() => window.Understudy.flushRun?.())}>Retry saving progress</button>}
       {state.reviewSync && state.reviewSync.runId === runId && <div className="card review-sync" role="status">
         {state.reviewSync.status === 'requesting' ? 'Preparing the review request…' : state.reviewSync.status === 'ready' ? 'Review requested — waiting for the assigned reviewer.' : <>
@@ -1017,6 +1036,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
 }
 
 function RunTimeline({ proc }: { proc: UnderstudyProcessMap }) {
+  const [expanded, setExpanded] = useState(false)
   const events: Array<{ ts: number; text: string; kind: 'step' | 'decision' }> = []
   for (const s of proc.steps) {
     if (!proc.events?.length && s.done && s.completedAt)
@@ -1038,7 +1058,8 @@ function RunTimeline({ proc }: { proc: UnderstudyProcessMap }) {
       <div className="entry-head">
         <span className="task">🕒 Run timeline</span>
       </div>
-      {events.map((e, i) => (
+      {events.length > 6 && <button className="text-button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? 'Show recent events' : `Show all ${events.length} events`}</button>}
+      {(expanded ? events : events.slice(-6)).map((e, i) => (
         <div key={i} className={`meta ${e.kind === 'decision' ? 'tl-decision' : ''}`}>
           <span className="tl-time">{e.ts ? new Date(e.ts).toLocaleTimeString('en-US') : ''}</span> {e.text}
         </div>
@@ -1146,16 +1167,20 @@ export default function App() {
       <nav className="tabs" aria-label="Workspace">
         {tabs.map(([id, label]) => <button key={id} aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}{id === 'approvals' && pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}</button>)}
       </nav>
+      <p className="mobile-tab-hint">Swipe the tabs to see all workspace views →</p>
       <p className="mobile-scope">On mobile: enter your assigned task results and review requests. Use your desktop WebMCP agent to build processes and resolve decision branches.</p>
       {state.runStarted && <RunStartedNotice info={state.runStarted} />}
       {demoMode && <DemoStrip state={state} />}
       {tab !== 'overview' && interaction && (interaction.questions > 0 || interaction.approvals > 0) && <button className="attention-banner" onClick={() => window.Understudy.openPanel?.()}>Your agent needs your input <span>Open conversation →</span></button>}
       <main id="workspace-main">
+        {state.restoration === 'pending' || state.restoration === 'loading' ? <div className="empty-card" role="status">Restoring your workspace and selected execution…</div>
+          : state.restoration === 'error' ? <div className="empty-card" role="alert"><p>Your saved execution could not be restored. Retry before starting new work.</p><button onClick={() => store.retryRestoration()}>Retry restoring workspace</button></div> : <>
         {tab === 'overview' && <Overview state={state} navigate={setTab} />}
         {tab === 'tasks' && <MyTasks state={state} goReviews={() => setTab('approvals')} />}
         {tab === 'incidents' && <><div className="page-intro"><h1>Work log</h1><p>Record work and results. To teach a new process, start with the guided capture on <button className="text-button" onClick={() => setTab('overview')}>Start here</button>.</p></div><SuggestionCard /><IncidentForm /><IncidentList state={state} /></>}
         {tab === 'approvals' && <ApprovalsInbox state={state} />}
         {tab === 'playbooks' && <PlaybookList state={state} />}
+        </>}
       </main>
     </div>
   )

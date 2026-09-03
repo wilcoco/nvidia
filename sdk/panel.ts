@@ -449,6 +449,7 @@ function renderStep(
   if (step.action) card.appendChild(el('div', 'action-tag', `runs: ${step.action}`))
   if (step.humanOnly) card.appendChild(el('div', 'action-tag human-tag', '👤 human step'))
   if (step.role) meta.insertBefore(el('span', 'role-chip', `👤 ${step.role}`), meta.querySelector('.spacer'))
+  if (step.approvalPurpose) meta.insertBefore(el('span', 'role-chip', step.approvalPurpose === 'plan' ? 'Plan approval only' : 'Work approval'), meta.querySelector('.spacer'))
   if (status === 'blocked' && step.action) {
     const reason = preconditionFor(step.action)
     if (reason) card.appendChild(el('div', 'blocked-reason', `⛔ ${reason}`))
@@ -966,6 +967,8 @@ function render() {
     if (map.confirmed && isRunComplete()) {
       const card = el('div', 'run-summary')
       card.appendChild(el('div', 'rs-title', '🏁 Run complete — all required steps handled'))
+      if (map.steps.some(s => s.done && s.type === 'approval' && s.approvalPurpose === 'plan'))
+        card.appendChild(el('div', 'rs-line', '📋 Plan approved only — this does not certify successful work validation.'))
       const people = [
         ...new Set(
           map.steps.filter((s) => s.done && s.completedBy).map((s) => `${s.completedBy}${s.role ? ` (${s.role})` : ''}`),

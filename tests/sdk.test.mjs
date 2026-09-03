@@ -421,3 +421,68 @@ test('a branching task after sign-off can go forward but cannot retry signed wor
  assert.equal(map.resolveDecision('inspect','finish','continue').ok,true)
  assert.equal(map.progress().get('finish'),'ready')
 })
+
+test('reopening measurements resets the administrative request and receipts through resubmission',()=>{
+ const {map}=fixture()
+ map.loadSavedMap({title:'review cycle',fields:[{key:'qty',type:'number',required:true}],steps:[
+  step('m',{fields:['qty']}),step('r',{action:'request_review'}),step('a',{type:'approval',action:'approve_review'})]})
+ map.humanToggleStepDone('m',{qty:12});map.recordActionSuccess('request_review','44')
+ assert.equal(map.humanToggleStepDone('m'),true)
+ assert.equal(map.progress().get('m'),'ready')
+ assert.equal(map.progress().get('r'),'pending')
+ assert.equal(map.getMap().steps[1].resultId,undefined)
+ assert.equal(map.humanToggleStepDone('m',{}),false)
+ map.recordActionSuccess('request_review','premature')
+ assert.equal(map.getMap().steps[1].done,false)
+ map.humanToggleStepDone('m',{qty:7})
+ map.humanToggleStepDone('r') // task UI completes first; automatic request delivers receipt later
+ map.recordActionSuccess('request_review','45')
+ map.recordActionSuccess('request_review','46') // rejected then resubmitted
+ map.recordActionSuccess('request_review','46') // duplicate response
+ assert.equal(map.getMap().steps[1].resultId,'46')
+ const receipts=map.getMap().events.filter(e=>e.stepId==='r' && e.kind==='completed' && e.resultId).map(e=>e.resultId)
+ assert.equal(JSON.stringify(receipts),JSON.stringify(['44','45','46']))
+ map.markActionDone('approve_review','46')
+ const before=JSON.stringify(map.getMap())
+ map.recordActionSuccess('request_review','old-late-result')
+ assert.equal(JSON.stringify(map.getMap()),before)
+ map.loadSavedMap({title:'request with inputs',fields:[{key:'note',type:'string',required:true}],steps:[
+  step('r',{action:'request_review',fields:['note']}),step('a',{type:'approval'})]})
+ map.recordActionSuccess('request_review','missing-input')
+ assert.equal(map.getMap().steps[0].done,false)
+ map.humanToggleStepDone('r',{note:'Evidence attached'})
+ map.recordActionSuccess('request_review','receipt')
+ assert.equal(map.getMap().steps[0].resultId,'receipt')
+ assert.equal(map.getMap().steps[0].resultData.note,'Evidence attached')
+})
+
+test('deletion keeps distinct measurements and rejects impossible merged ranges atomically',()=>{
+ const {map}=fixture()
+ for(const repeated of [true,false]){
+  map.proposeMap({title:'two readings',fields:[{key:'qty',type:'number',required:true}],steps:[
+   step('q',{fields:['qty'],next:[{to:'tmp',criteria:{qty:{gt:10}}}]}),
+   step('tmp',{fields:repeated?['qty']:[],next:[{to:'a',criteria:{qty:{lte:5}}}]}),step('a',{type:'approval'})]})
+  const before=JSON.stringify(map.getMap().steps)
+  map.humanRemoveStep('tmp')
+  assert.equal(JSON.stringify(map.getMap().steps),before)
+  assert.match(map.getMap().editError,repeated?/different stages/:/No value/)
+ }
+ // Even compatible constraints must not collapse two separate observations.
+ map.getMap().steps[1].fields=['qty']
+ map.getMap().steps[1].next[0].criteria.qty={lt:20}
+ map.humanRemoveStep('tmp')
+ assert.match(map.getMap().editError,/different stages/)
+ map.getMap().steps[0].next[0].criteria.qty={gt:10,lte:5}
+ map.humanConfirmMap()
+ assert.equal(map.getMap().confirmed,false)
+ assert.match(map.getMap().saveError,/No value/)
+})
+
+test('decision measurements survive alongside human-readable evidence for the approval snapshot',()=>{
+ const {map}=fixture()
+ map.loadSavedMap({title:'plan',steps:[step('m'),step('d',{type:'decision',next:[{to:'a',criteria:{redesign:{eq:true}}},{to:'m'}]}),step('a',{type:'approval',approvalPurpose:'plan'})]})
+ map.humanToggleStepDone('m',{delta:12,ok:false})
+ assert.equal(map.resolveDecision('d','a','Redesign needed','Human confirmed the schema issue','agent',{redesign:true}).ok,true)
+ assert.equal(map.getMap().decisions[0].measurements.redesign,true)
+ assert.equal(map.getMap().decisions[0].evidence,'Human confirmed the schema issue')
+})

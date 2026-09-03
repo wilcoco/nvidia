@@ -27,12 +27,14 @@ interface UnderstudyProcessMap {
     id: string
     label: string
     type: 'task' | 'decision' | 'approval'
+    approvalPurpose?: 'work' | 'plan'
     detail?: string
     action?: string
     humanOnly?: boolean
     role?: string
     fields?: string[]
     done?: boolean
+    resultId?: string
     completedBy?: string
     completedAt?: number
     resultData?: Record<string, unknown>

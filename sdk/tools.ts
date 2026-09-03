@@ -43,6 +43,7 @@ const STEP_SCHEMA = {
     id: { type: 'string', description: 'Short unique id, e.g. "s1"' },
     label: { type: 'string', description: 'Human-readable step name' },
     type: { type: 'string', enum: ['task', 'decision', 'approval'] },
+    approvalPurpose: {type: 'string', enum: ['work', 'plan'], description: 'For approval steps, ask whether the person approves completed work (work) or only a remediation/redesign plan (plan). Plan approval never certifies that failed work checks passed.'},
     detail: { type: 'string', description: 'Optional one-line explanation' },
     role: {type: 'string', description: 'Owner role from describe_workspace'},
     humanOnly: {type: 'boolean'},
@@ -225,6 +226,7 @@ const tools: ToolDef[] = [
         label: { type: 'string' },
         detail: { type: 'string', description: 'Judgment rule / note shown on the step card' },
         action: { type: 'string', description: 'Host action bound to this step for replay' },
+        approvalPurpose: {type: 'string', enum: ['work', 'plan'], description: 'Approval scope confirmed by the human: completed work or a remediation plan only.'},
         branch_to: { type: 'string', description: 'Target step id of an existing edge to update' },
         branch_condition: { type: 'string', description: 'New condition for that edge' },
         branch_criteria: {
@@ -260,6 +262,7 @@ const tools: ToolDef[] = [
           humanOnly: args.humanOnly === undefined ? undefined : args.humanOnly === true,
           role: args.role === undefined ? undefined : String(args.role),
           fields: Array.isArray(args.fields) ? args.fields.map(String) : undefined,
+          approvalPurpose: args.approvalPurpose === undefined ? undefined : String(args.approvalPurpose) as 'work' | 'plan',
         },
         args.branch_to && (args.branch_condition || args.branch_criteria)
           ? {

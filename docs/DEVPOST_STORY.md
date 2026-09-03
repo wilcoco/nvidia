@@ -46,7 +46,7 @@ work-app into an agent-observable workspace, and closes a full loop:
   (`process_incomplete`) and edits to approved records
   (`approved_immutable`). Even the agent's own instructions must pass.
 
-Zero API keys anywhere: the page registers 20 tools via
+No site-owned LLM API key is required: the page registers 20 tools via
 `document.modelContext.registerTool()`, and the brain is whatever agent the
 visitor already uses.
 
@@ -60,7 +60,9 @@ visitor already uses.
   verbatim template questions (anti-parrot by design).
 - **Async by contract**: agent runtimes time out tool calls, so `ask_user`
   and gated `run_action` return pending ids the agent polls — consent
-  happens as unforgeable clicks on the page, never as chat text.
+  is requested through on-page confirmation controls. Server role and
+  evidence gates separately protect review operations; a UI click is not
+  cryptographic proof of human identity.
 - **Two host apps** prove it's a layer: a React work-log workspace with the
   full operations experience, and a deliberately plain, framework-free
   `plain.html` attached with a single script tag.
@@ -94,8 +96,10 @@ document.modelContext.registerTool({
   hung automated sessions; every confirmation became a two-click pattern.
 - **We were our own harshest judges**: we ran repeated adversarial AI
   audits (mock judging panels attacking order, evidence, roles, persistence,
-  concurrency, even crash-inputs) and fixed what they found — dozens of
-  defects over multiple rounds, each verified on the live deployment.
+  concurrency, even crash-inputs) and fixed what they found. The R3 audit
+  verified four earlier P1 fixes and six completed runs on the live build.
+  Recovery from lost responses and several safety variants were tested
+  locally; they were not production fault-injection experiments.
 
 ## Accomplishments that we're proud of
 
@@ -107,7 +111,7 @@ document.modelContext.registerTool({
 - **Self-onboarding**: agents compose correct workflows from tool
   descriptions alone — Google's Inspector generated a usable prompt for our
   app without any instruction from us.
-- The whole thing stays **zero-API-key** and attaches to a second app with
+- The host needs **no LLM API key** and attaches to a second app with
   one script tag.
 
 ## What we learned
@@ -119,11 +123,11 @@ document.modelContext.registerTool({
   Anything that matters to the next person has to land in page/server
   state, not in a private conversation.
 - Trust is an architecture, not a promise: submitted values as the record,
-  approvals as unforgeable clicks, immutable versions, honest scope
-  statements (personas are a demo device; decision branches are agent-lane
-  by design; mobile browsers don't support WebMCP today — so judgment
-  happens at the desk, while task cards, handoffs and reviews still work on
-  a phone).
+  server-enforced review roles and evidence gates, immutable versions, and
+  honest scope statements. Personas are a demo device. Process design and
+  branch decisions use a desktop WebMCP agent; small-screen testing covered
+  assigned inputs and reviews at 375px, not physical-device or mobile-agent
+  compatibility.
 
 ## What's next for Understudy
 
