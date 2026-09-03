@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "test:browser": "npm run build && node --test tests/browser-e2e.mjs",
-    "test:postgres": "node scripts/require-test-database.mjs && node --test tests/*.test.mjs",
+    "test:postgres": "node scripts/require-test-database.mjs && node --test --test-concurrency=1 tests/*.test.mjs",
     "release:manifest": "node scripts/release-manifest.mjs"
   },
   "dependencies": {
