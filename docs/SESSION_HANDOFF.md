@@ -1,7 +1,49 @@
-# Understudy — 세션 핸드오프 메모 (2026-09-03)
+# Understudy — 세션 핸드오프 메모 (2026-09-03, 13:50 갱신)
 
 다른 세션/에이전트가 이 프로젝트를 이어받기 위한 단일 문서.
-최종 라이브 빌드: **`0282f98`** · 저장소: github.com/wilcoco/nvidia (public, MIT)
+저장소: github.com/wilcoco/nvidia (public, MIT)
+
+## 0. 최종 커밋·배포 상태 (13:50 KST 검증)
+
+- 로컬 HEAD = origin/main = **`7816808`** `[09-03 13:44 #117]` — 미푸시 커밋 0.
+- 라이브 사이트도 **`7816808`** 서빙 확인(헤더 build sha + 번들 grep).
+- 크래시 가드 라이브 재현 검증: 비정수 id POST → `{"error":"invalid_id"}` 400,
+  직후 /api/state 200 (프로세스 생존).
+
+## 0-1. 코드 감사 15건 처리 결과 (13:44 배포분)
+
+| 결함 | 처리 | 비고 |
+|---|---|---|
+| R12 폴링이 질문 답변 입력 삭제 | ✅ 수정 | ask id별 draft 맵 보존 — 촬영 T1 필수 수정 |
+| R10 비정수 id → 프로세스 사망 | ✅ 수정 | intParam 400 + 에러넷 + unhandledRejection 로그. **라이브 재현 검증 완료** |
+| R11 동시 제출 중복 리뷰 / approve+reject 동시 성공 | ✅ 수정 | 워크로그당 pending 1건(409 duplicate_review) + decide 조건부 UPDATE(status='PENDING', 패자 409 already_decided) |
+| prior-1 steps:[]로 필수 단계 삭제 | ✅ 수정 | 기존 steps 있으면 빈 배열 거부 |
+| prior-2 타 런 승인이 액션명만으로 단계 완료 | ✅ 수정 | HostAction.selfReporting — notifyAction 자체보고 액션 5종은 러너 자동기록 제외 |
+| prior-4 재작업 성공이 dedupe로 무시 | ✅ 수정 | 액션에 바인딩된 미완료 단계가 있으면 재기록 허용 |
+| prior-5 낡은 승인 카드 무검증 실행 | ✅ 수정 | 실행 직전 prerequisiteGap+precondition 재검증, 위반 시 Stale approval 거부 |
+| R6 빈 DB에서 기본 계정 누락 | ✅ 수정 | SEED 사용자별 개별 존재검사·삽입 |
+| prior-7 액션 성공이 증빙 검사 생략 | ✅ 수정 | required/confirm 필드나 단일간선 exit criteria 있는 단계는 자동완료 거부, 태스크 카드로 유도 저널 |
+| R8 최신 200건 창으로 불변성 검사 | ✅ 수정 | db.getWorklog(id) 직접 조회로 교체(3개 라우트) |
+| R15 N/A·conditional 단계 체크 완료 | ✅ 수정 | 엔진 거부 + UI 체크박스 잠금 이중 |
+| R13 로그아웃 후 늦은 응답이 상태 부활 | ✅ 수정 | sessionGen 세대 가드 + 로그아웃 시 사용자 상태 전체 청소 |
+| R14 저장 실패가 confirmed 유지 | ✅ 수정 | saver 실패 시 confirmed=false 복귀 + 저널 "back to draft" |
+| R9 startRun 응답 역전으로 런 혼입 | ✅ 수정 | startSeq 시퀀스 가드, 늦은 응답 무시 |
+| prior-3 실계정 분리 시 승인→런 동기화 403 | ⏸ 보류 | 데모·심사는 단일 judge 로그인이라 발생 경로 없음. 근본 해결은 승인 라우트의 서버측 런 수렴(§5 참고). 다계정 운영 전 필수 |
+
+재검증: R10만 라이브 재현으로 확정. 나머지는 tsc+빌드+코드경로 확인
+수준 — **`7816808` 기준 브라우저 재감사는 미실시** (다음 세션 1순위).
+
+## 0-2. 시연 필수 조건
+
+- 베이스 플레이북: **"Customer-table staging migration with remediation" v6 (id 53)**
+  — 역할(C/O/R)·단계별 필드 완비, 드라이런 없음(촬영 중 가르쳐 추가하는 각본).
+  삭제 금지. 시연 라이브러리 13종 유지.
+- 촬영 전 청소: QA 플레이북(id65·66·67 등 'QA'/'E2E' 제목) DELETE +
+  `/api/admin/reset {scope:'worklogs'}`. **아직 미실행** — 감사 fixture
+  (런 #1~#5, 일지 #2~#8)가 프로드에 남아 있음.
+- 데모 영상: **아직 미촬영**. 계획 폴더 `~/Desktop/understudy-video/`
+  (T1~T4.mov) — 현재 폴더 없음. 각본=docs/SHOOTING_CUESHEET.md.
+  편집(Descript, AI 내레이션)→YouTube 공개→Devpost 폼이 남은 임계 경로.
 
 ## 1. 무엇을 만들었나
 
@@ -74,7 +116,7 @@ docs/       SUBMISSION.md(제출문) · KEY_STRENGTHS.md(특장점 12 정본)
 
 ## 5. 남은 일 (마감 순)
 
-1. **0282f98 재검** (관문: ①양쪽 루프백 — 재개 READY·선판정 거부·늦은
+1. **7816808 재검** (관문: 코드감사 15건 회귀 + ①양쪽 루프백 — 재개 READY·선판정 거부·늦은
    실패값 우선 ②3경로 자동 리뷰 1건+실패 후 재개 ③완결 런 deviation 거부
    ④chosen에 superseded 없음 ⑤복원 정합)
 2. **QA 잔재 청소**: `/api/admin/reset {scope:'worklogs'}` + QA 제목
