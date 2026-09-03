@@ -12,6 +12,13 @@ let completed = false
 let syncTimer: ReturnType<typeof setTimeout> | null = null
 let trackedMap: ProcessMap | null = null
 let writes: Promise<unknown> = Promise.resolve()
+let startError: string | null = null
+
+export function getRunStartError(): string | null { return startError }
+
+function announceRunState() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new CustomEvent('understudy:run-state'))
+}
 
 export function currentRunId(): string | null {
   return mapstore.getMap() === trackedMap && trackedMap?.confirmed ? runId : null
@@ -125,6 +132,8 @@ export function stopRunTracking(): void {
   runId = null
   completed = false
   syncFailureLogged = false
+  startError = null
+  announceRunState()
 }
 
 /** Reattach to a run that already exists (page reload) instead of starting a new one. */
@@ -133,6 +142,7 @@ export function resumeRunTracking(id: string): void {
   trackedMap = mapstore.getMap()
   runId = id
   completed = false
+  announceRunState()
   if (!subscribed) {
     subscribed = true
     mapstore.subscribe(scheduleSync)
@@ -161,9 +171,13 @@ export function startRunTracking(processId: string): void {
       if (seq !== startSeq) return // a newer load superseded this start — ignore the late response
       runId = run.id
       record('user', 'map', `started run ${run.id} of "${map.title}"`)
+      announceRunState()
       sync()
     })
-    .catch(() => {
-      /* offline/unauthenticated: run just isn't persisted */
+    .catch((err) => {
+      if (seq !== startSeq) return
+      startError = `Could not start this run: ${err instanceof Error ? err.message : String(err)}`
+      record('user', 'map', startError)
+      announceRunState()
     })
 }

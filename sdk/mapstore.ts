@@ -87,7 +87,7 @@ export function reportProblem(stepId: string, note: string): void {
 /** A confirmed (running) playbook is read-only for every role — structural
  *  changes go through an explicit draft revision that must be re-confirmed. */
 function structureLocked(): boolean {
-  return !!map?.confirmed
+  return !!(map?.confirmed || map?.saving)
 }
 
 /** Reopen the confirmed playbook as an editable draft revision (human gesture). */
@@ -152,17 +152,30 @@ export function humanRemoveStep(stepId: string): void {
 }
 
 export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string; version?: number }>): void {
-  if (!map) return
-  map.confirmed = true
-  pushEdit({ field: 'confirmed', to: 'true' })
-  record('user', 'map', `confirmed process "${map.title}"`)
-  notify()
+  if (!map || map.confirmed || map.saving) return
+  const confirm = (current: ProcessMap) => {
+    // A revised design is ready for a NEW execution. Do not present the
+    // previous run's completed tasks or decisions as this version's work.
+    current.decisions = []
+    current.steps = current.steps.map((step) => ({ ...step, done: false, naReason: undefined, resultId: undefined, completedBy: undefined, completedAt: undefined, resultData: undefined }))
+    current.confirmed = true
+    current.saving = false
+    pushEdit({ field: 'confirmed', to: 'true' })
+    record('user', 'map', `confirmed process "${current.title}"`)
+    notify()
+  }
   if (saver) {
     const current = map
+    current.saveError = undefined
+    current.saving = true
+    notify()
     // The library stores the DESIGN, never a run's state: strip decisions and
     // per-step execution residue before saving.
     const clean: ProcessMap = {
       ...current,
+      saving: undefined,
+      saveError: undefined,
+      confirmed: true,
       decisions: [],
       resolvedGaps: current.resolvedGaps,
       steps: current.steps.map((s) => ({
@@ -176,15 +189,21 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
       })),
     }
     saver(clean)
-      .then((saved) =>
+      .then((saved) => {
+        current.saving = false
+        if (map === current) {
+          current.sourceProcessId = saved.id
+          current.version = saved.version ?? current.version ?? 1
+          confirm(current)
+        }
         record(
           'user',
           'map',
           saved.version && saved.version > 1
             ? `saved "${current.title}" as v${saved.version} (id ${saved.id}) — same playbook, new immutable revision; earlier ids stay as history`
             : `saved "${current.title}" to the shared process library (id ${saved.id})`,
-        ),
-      )
+        )
+      })
       .catch((err) => {
         record(
           'user',
@@ -192,11 +211,13 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
           `saving "${current.title}" FAILED: ${err instanceof Error ? err.message : err} — the map is back to draft; fix and confirm again`,
         )
         if (map === current) {
+          current.saving = false
           current.confirmed = false
+          current.saveError = `Could not save: ${err instanceof Error ? err.message : err}. Your draft is still here; try saving again.`
           notify()
         }
       })
-  }
+  } else confirm(map)
 }
 
 /** Load a process someone saved earlier (already confirmed). Completion state starts fresh. */
@@ -346,7 +367,7 @@ export function agentUpdateStep(
   branch?: { to: string; condition?: string; criteria?: Record<string, Record<string, number | string | boolean>> },
 ): { ok: boolean; error?: string; detail?: string; step?: Step } {
   if (!map) return { ok: false, error: 'no process map exists yet — propose one first' }
-  if (map.confirmed)
+  if (structureLocked())
     return {
       ok: false,
       error: 'confirmed_readonly',
@@ -587,7 +608,7 @@ export function resolveDecision(
 
 /** Set/replace the playbook's data contract (from the required_context interview). */
 export function setMapFields(fields: FieldDef[]): { ok: boolean; error?: string; detail?: string; fields?: FieldDef[] } {
-  if (map?.confirmed)
+  if (structureLocked())
     return {
       ok: false,
       error: 'confirmed_readonly',
@@ -618,24 +639,24 @@ export function humanToggleStepDone(
   stepId: string,
   values?: Record<string, unknown>,
   opts?: { allowSkip?: boolean },
-): void {
+): boolean {
   {
     const step = map?.steps.find((s) => s.id === stepId)
     const role = host.actorRole()
     if (step?.type === 'approval') {
       record('user', 'map', `blocked: "${step.label}" completes only via a successful review action`)
       notify()
-      return
+      return false
     }
     if (step?.role && role && step.role !== role && !step.done) {
       record('user', 'map', `blocked: "${step.label}" belongs to ${step.role}; active persona is ${role}`)
       notify()
-      return
+      return false
     }
     if (step && step.done && mapLooksComplete()) {
       record('user', 'map', `blocked: the run is complete — its record is frozen; start a new run to redo work`)
       notify()
-      return
+      return false
     }
     if (step && step.done) {
       // Un-completing is reserved for the persona who did it (or its owning role).
@@ -644,7 +665,7 @@ export function humanToggleStepDone(
       if (!allowed) {
         record('user', 'map', `blocked: "${step.label}" was completed by ${step.completedBy}; only they (or the ${step.role ?? 'owning'} role) may reopen it`)
         notify()
-        return
+        return false
       }
     }
     // Exit criteria on a NON-branching step gate its completion: "restore
@@ -676,7 +697,7 @@ export function humanToggleStepDone(
             `blocked: "${step.label}" cannot complete — its exit criteria failed: ${violated.join('; ')}`,
           )
           notify()
-          return
+          return false
         }
       }
     }
@@ -685,7 +706,7 @@ export function humanToggleStepDone(
       if (st0 === 'not_applicable' || st0 === 'conditional') {
         record('user', 'map', `blocked: "${step.label}" is not on the active path — its branch was not taken`)
         notify()
-        return
+        return false
       }
     }
     if (step && !step.done && !opts?.allowSkip && map?.confirmed) {
@@ -693,7 +714,7 @@ export function humanToggleStepDone(
       if (st === 'pending') {
         record('user', 'map', `blocked: "${step.label}" is not the next step — finish earlier steps first (or skip explicitly from the panel)`)
         notify()
-        return
+        return false
       }
     }
     if (step && !step.done) {
@@ -716,7 +737,7 @@ export function humanToggleStepDone(
             `blocked: "${step.label}" requires ${missing.map((f) => f.label ?? f.key).join(', ')} before it can be completed`,
           )
           notify()
-          return
+          return false
         }
       }
       const persona = actingPersona()
@@ -733,9 +754,9 @@ export function humanToggleStepDone(
       step.resultData = undefined
     }
   }
-  if (!map) return
+  if (!map) return false
   const step = map.steps.find((s) => s.id === stepId)
-  if (!step) return
+  if (!step) return false
   step.done = !step.done
   pushEdit({ stepId, field: 'done', to: String(step.done) })
   {
@@ -791,6 +812,7 @@ export function humanToggleStepDone(
     }
   }
   notify()
+  return true
 }
 
 export interface MapGap {

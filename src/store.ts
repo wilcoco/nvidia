@@ -89,6 +89,7 @@ export interface AppState {
   draft: DraftContext
   dismissedSuggestions: string[]
   runStarted: { title: string; version?: number; next?: string } | null
+  captureContext: { id: string; task: string; creationRequested?: boolean } | null
 }
 
 let state: AppState = {
@@ -102,17 +103,18 @@ let state: AppState = {
   draft: {},
   dismissedSuggestions: [],
   runStarted: null,
+  captureContext: null,
 }
 
 const listeners = new Set<() => void>()
 
 function commit(patch: Partial<AppState>) {
+  state = { ...state, ...patch }
   try {
     window.dispatchEvent(new CustomEvent('understudy:host-state'))
   } catch {
     /* ignore */
   }
-  state = { ...state, ...patch }
   listeners.forEach((fn) => fn())
 }
 
@@ -190,7 +192,7 @@ export function logout(): void {
     /* ignore */
   }
   window.Understudy.unloadProcess?.()
-  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null })
+  commit({ me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null })
 }
 
 export function switchActingAs(username: string): void {
@@ -238,6 +240,7 @@ export async function createWorklog(input: WorklogInput): Promise<Worklog> {
     { worklogId: wl.id },
   )
   window.Understudy.notifyAction('log_work_item', wl.id)
+  if (!runId) commit({ captureContext: { id: wl.id, task: wl.task }, draft: {kind: wl.kind === 'routine work' ? undefined : wl.kind, urgent: wl.urgent, task: wl.task, hasInput: true} })
   await refresh()
   return wl
 }
@@ -334,7 +337,7 @@ export function dismissSuggestion(processId: string, reason?: string): void {
 }
 
 const FIELD_LABEL: Record<string, (v: unknown) => string> = {
-  kind: (v) => `incident type: ${v}`,
+  kind: (v) => `work category: ${v}`,
   colorChange: () => 'right after a color change',
   urgent: () => 'urgent line-stop condition',
 }
@@ -655,6 +658,16 @@ export function dismissRunStarted(): void {
   commit({ runStarted: null })
 }
 
+export function clearCaptureContext(): void {
+  commit({ captureContext: null, draft: {} })
+}
+
+/** Explicit page intent for the visitor's WebMCP agent to pick up. */
+export function requestPlaybookCreation(work: Pick<Worklog, 'id' | 'task'>): void {
+  commit({captureContext: {id: work.id, task: work.task, creationRequested: true}})
+  window.Understudy.log(`requested a NEW playbook from work log #${work.id}: “${work.task}”. Ask about the work before and after it, owners and rules, then draft from the answers for human review.`, {worklogId: work.id, intent: 'create_playbook'})
+}
+
 /* Process library (shared across users via the server) */
 
 export async function saveProcess(map: { title: string; steps: unknown[]; version?: number }): Promise<ProcessSummary> {
@@ -667,11 +680,13 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
   const donor = prior
     .filter((p) => p.appliesWhen)
     .sort((a, b) => (b.version || 1) - (a.version || 1))[0]
-  const latest = state.worklogs[0]
+  const mapWithMeta = map as Record<string, unknown>
+  const sourceId = mapWithMeta.sourceWorklogId ?? state.captureContext?.id
+  const latest = state.worklogs.find((w) => w.id === sourceId) ?? state.worklogs.find((w) => w.data.systemGenerated !== true)
   const STOP = new Set(['the','and','with','from','after','before','during','this','that','have','has','was','were','been','still','while','when','onto','into','over'])
   const derivedKeywords = latest
-    ? [...new Set(latest.task.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/)
-        .filter((w) => w.length > 3 && !STOP.has(w)))].slice(0, 6)
+    ? [...new Set(latest.task.toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu, ' ').split(/\s+/)
+        .filter((w) => (w.length > 3 || (w.length > 1 && /[^a-z0-9-]/.test(w))) && !STOP.has(w)))].slice(0, 6)
     : []
   const derivedApplies = latest
     ? {
@@ -681,7 +696,6 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
       }
     : undefined
   const derivedPriority = latest?.urgent ? { urgent: true } : undefined
-  const mapWithMeta = map as Record<string, unknown>
   const saved = await api<ProcessSummary>('/api/processes', {
     title: map.title,
     map: {
@@ -698,7 +712,9 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
     { processId: saved.id },
   )
   await refresh()
-  return saved
+  // The save endpoint does not include a top-level version in either adapter.
+  // Return the version we persisted so the panel's next revision is accurate.
+  return { ...saved, version }
 }
 
 export async function listProcesses(): Promise<ProcessSummary[]> {
@@ -831,16 +847,22 @@ export async function diffWithPrevious(p: {
 }
 
 export async function deleteProcess(id: string): Promise<void> {
-  await fetch(`/api/processes/${id}`, {
+  const response = await fetch(`/api/processes/${id}`, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${getToken()}` },
+    signal: AbortSignal.timeout(15000),
   })
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}))
+    throw new ApiError(response.status, error.detail ?? error.error ?? response.statusText)
+  }
   window.Understudy.log(`deleted process ${id} from the library`)
   await refresh()
 }
 
 export async function resetDemoData(scope: 'worklogs' | 'all'): Promise<void> {
   await api('/api/admin/reset', { scope })
+  commit({ captureContext: null })
   try {
     localStorage.removeItem('understudy.lastPlaybook')
   } catch {

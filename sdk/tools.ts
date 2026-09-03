@@ -6,6 +6,7 @@ import { setWebmcpStatus } from './panel'
 import { startHostAction, preconditionFor } from './runner'
 import { startRunTracking } from './runsync'
 import type { ProcessMap } from './types'
+import { describeOnboarding } from './onboarding'
 
 interface ToolDef {
   name: string
@@ -58,11 +59,12 @@ const tools: ToolDef[] = [
   {
     name: 'describe_workspace',
     description:
-      'Start here. Describes this web app: what it is, what actions the agent can run on it, and whether a process map already exists. Understudy is a layer that lets you (the agent) watch what the human does in this app, structure their work into a business process, and later execute that process for them. The goal is never a record of the event itself — it is the process around it: what must be prepared, checked or prevented BEFORE work like this, and what must be verified, managed and signed off AFTER, captured from the human and enforced on the next run.',
+      'Start here, especially when a first-time visitor asks "What is this?", "How do I use it?", or "이게 뭐야? 어떻게 써?". Read-only: returns a plain-language introduction, guidance for explaining creating vs running a playbook, and the current session context. Answer in the visitor’s language, then offer one relevant next step. No tool names or long invitation phrase are required from the visitor. Do not start work merely to answer an introductory question. Also lists the available actions and process status for continuing with WebMCP.',
     inputSchema: schema(),
     execute: async () => ({
       app: host.getAppName(),
       url: location.href,
+      onboarding: describeOnboarding(),
       how_this_works:
         'The human works in the app; every meaningful action is journaled. Read the journal with get_recent_actions, infer the workflow, and propose_process_map to render it beside their work. The human edits your map directly in the page (read edits via get_map_edits, and their answers via get_recent_actions). Once the map is confirmed, replay it with run_action step by step — and while a confirmed process is loaded, get_process_progress tells you what is done, what comes next, and what was skipped, so you can coach the human through it. When the human starts an entry that matches NO saved playbook (find_relevant_processes), that is the capture moment: draft a map immediately and interview them with get_map_gaps while they work — the process takes shape on their screen as they answer.',
       available_actions: host.listActions(),

@@ -37,12 +37,15 @@ interface UnderstudyProcessMap {
     next?: Array<{ to: string; condition?: string; criteria?: Record<string, Record<string, unknown>> }>
   }>
   confirmed?: boolean
+  saving?: boolean
+  saveError?: string
   version?: number
   decisions?: Array<{ stepId: string; to: string; reason?: string; ts?: number; invalidated?: boolean }>
   fields?: UnderstudyFieldDef[]
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>
   sourceWorklogId?: string
+  sourceProcessId?: string
 }
 
 interface UnderstudyProcessSummary {
@@ -55,6 +58,7 @@ interface UnderstudyProcessSummary {
 interface UnderstudyApi {
   init(opts?: {
     appName?: string
+    panelInitiallyCollapsed?: boolean
     autoCapture?: 'full' | 'min' | 'off'
     stateProvider?: () => unknown
     actions?: UnderstudyHostAction[]
@@ -95,9 +99,13 @@ interface UnderstudyApi {
   notifyAction(name: string, resultId?: string): void
   unloadProcess?(): void
   currentRunId?(): string | null
+  getRunStartError?(): string | null
   isRunComplete?(): boolean
   getProgress?(): Array<{ id: string; label: string; type: string; role?: string; fields?: string[]; status?: string; done?: boolean }>
-  completeStep?(stepId: string, values?: Record<string, unknown>): void
+  completeStep?(stepId: string, values?: Record<string, unknown>): { ok: boolean; error?: string }
+  openPanel?(): void
+  getInteractionState?(): { connected: boolean; questions: number; approvals: number }
+  getPendingDecision?(): { id: string; label: string } | null
   reportProblem?(stepId: string, note: string): void
   getLoadedProcess(): UnderstudyProcessMap | null
 }

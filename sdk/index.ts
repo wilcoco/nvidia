@@ -11,11 +11,11 @@
  */
 import { record } from './journal'
 import { startCapture } from './capture'
-import { mountPanel } from './panel'
+import { mountPanel, openPanel, getInteractionState } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
-import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete } from './runsync'
+import { loadSavedMap, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
+import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, getRunStartError } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
@@ -30,7 +30,7 @@ function init(opts: InitOptions = {}): void {
   for (const action of opts.actions ?? []) host.registerAction(action)
 
   const boot = () => {
-    mountPanel()
+    mountPanel(opts.panelInitiallyCollapsed)
     const mode = opts.autoCapture ?? 'full'
     if (mode !== 'off') startCapture(mode)
     registerWebmcpTools()
@@ -94,8 +94,12 @@ function getLoadedProcess(): ProcessMap | null {
 }
 
 /** Host worklists complete a step through the same role/order-guarded lane as the panel checkbox. */
-function completeStep(stepId: string, values?: Record<string, unknown>): void {
-  humanToggleStepDone(stepId, values)
+function completeStep(stepId: string, values?: Record<string, unknown>): { ok: boolean; error?: string } {
+  const map = getMap()
+  if (!map?.confirmed) return { ok: false, error: 'Confirm and run a playbook before completing its tasks.' }
+  if (map.steps.find((s) => s.id === stepId)?.done) return { ok: false, error: 'This task is already complete.' }
+  const ok = humanToggleStepDone(stepId, values)
+  return { ok, ...(ok ? {} : { error: 'This task could not complete. Check its required inputs, role and pass criteria in the playbook.' }) }
 }
 
 /** Host worklists flag a blocked step; journaled for the agent and the team. */
@@ -148,5 +152,9 @@ window.addEventListener('beforeunload', (e) => {
   completeStep,
   reportProblem,
   currentRunId,
+  getRunStartError,
   isRunComplete,
+  openPanel,
+  getInteractionState,
+  getPendingDecision: () => pendingDecision(),
 }

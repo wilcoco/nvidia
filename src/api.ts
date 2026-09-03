@@ -42,8 +42,9 @@ export async function api<T>(path: string, body?: unknown): Promise<T> {
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(15000),
   })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new ApiError(res.status, (data as { error?: string }).error ?? res.statusText)
+  if (!res.ok) throw new ApiError(res.status, (data as { detail?: string; error?: string }).detail ?? (data as { error?: string }).error ?? res.statusText)
   return data as T
 }

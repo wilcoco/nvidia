@@ -1,5 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import * as store from './store'
+import Overview, { type WorkspaceTab } from './Overview'
+import SuggestionCard from './SuggestionCard'
+import { AgentInvite, ErrorNotice, useAction, useWorkspaceUpdates } from './ui'
 
 function today(): string {
   return new Date().toISOString().slice(0, 10)
@@ -37,80 +40,39 @@ function Login() {
 
   return (
     <div className="login-wrap">
+      <section className="login-intro">
+        <div className="brand"><span className="brand-mark">u</span>Understudy</div>
+        <div className="eyebrow">A SHARED WORKSPACE FOR YOU AND YOUR AGENT</div>
+        <h1>Your know-how.<br /><span>Your team’s next playbook.</span></h1>
+        <p>Describe your work. Your agent uses WebMCP to ask what belongs before and after it, then builds a process from your answers. The team follows it in order and reuses it when similar work comes up.</p>
+        <ol><li>Start with the work you’re doing.</li><li>Discover the surrounding steps and owners.</li><li>Run the process together. Reuse it next time.</li></ol>
+        <span className="tech-tag">Powered by WebMCP</span>
+      </section>
       <form className="card login" onSubmit={submit}>
-        <h1>
-          🎭 Understudy{' '}
-          <span className="sub">turn work into living playbooks</span>
-        </h1>
-        <p className="hint">
-          Demo accounts — <code>kim</code> / <code>linepulse</code> (line worker),{' '}
-          <code>lee</code> / <code>linepulse</code> (team lead), <code>judge</code> /{' '}
-          <code>webmcp2026</code> (reviewer)
-        </p>
+        <div className="eyebrow">EXPLORE THE WORKSPACE</div>
+        <h2>Try it together.</h2>
+        <p className="hint">The demo account is ready. Bring your WebMCP-capable agent, or explore the saved playbooks first.</p>
         <label>
           Username
-          <input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
+          <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
         </label>
         <label>
           Password
-          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          <input type="password" value={password} autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} required />
         </label>
-        {error && <p className="error">{error}</p>}
+        <ErrorNotice message={error} />
         <button className="primary" disabled={busy}>
-          {busy ? 'Signing in…' : 'Sign in'}
+          {busy ? 'Opening workspace…' : 'Enter demo workspace →'}
         </button>
+        <p className="login-disclaimer">Shared demo data. Switch between contributor, operations and reviewer roles inside.</p>
       </form>
     </div>
   )
 }
 
-function SuggestionCard() {
-  const matches = store.computeMatches().filter((m) => m.tier === 'strong').slice(0, 2)
-  const [followedId, setFollowedId] = useState<string | null>(null)
-  if (matches.length === 0) return null
-  return (
-    <div className="card suggestion">
-      <div className="entry-head">
-        <span className="task">
-          📋 {matches.length > 1 ? `${matches.length} related playbooks found — pick one` : 'Related playbook found'}
-        </span>
-      </div>
-      {matches.map((m) => (
-        <div key={m.processId} className="suggestion-item">
-          <div className="entry-head">
-            <span className="suggestion-title">
-              {m.title} <span className="version-tag">v{m.version}</span>
-            </span>
-            <span className="confidence">{Math.round(m.confidence * 100)}% match</span>
-          </div>
-          <div className="meta">Matched because: {m.reasons.join(' · ')}</div>
-          <div className="decide">
-            <button
-              className="primary"
-              onClick={() => {
-                void store.followPlaybook(m.processId).then(() => {
-                  setFollowedId(m.processId)
-                  setTimeout(() => setFollowedId(null), 2500)
-                })
-              }}
-            >
-              {followedId === m.processId ? '✓ Loaded — see the panel →' : 'Follow this playbook'}
-            </button>
-            <button
-              className="ghost"
-              data-flow-ignore
-              onClick={() => store.dismissSuggestion(m.processId, 'not relevant to this incident')}
-            >
-              Not relevant
-            </button>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
 
 function IncidentForm() {
+  const action = useAction()
   const [date, setDate] = useState(today())
   const [line, setLine] = useState('A')
   const [kind, setKind] = useState('routine work')
@@ -151,7 +113,7 @@ function IncidentForm() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!task.trim()) return
-    await store.createWorklog({
+    const saved = await action.run(() => store.createWorklog({
       date,
       line,
       task: task.trim(),
@@ -171,7 +133,8 @@ function IncidentForm() {
             .filter(([, v]) => v !== undefined),
         ),
       },
-    })
+    }))
+    if (!saved) return
     setFieldValues({})
     setTask('')
     setUrgent(false)
@@ -248,17 +211,19 @@ function IncidentForm() {
           Urgent — blocked / needs reviewer now
         </label>
       </div>
-      <button type="submit" className="primary">
-        Save work log
+      <button type="submit" className="primary" disabled={action.busy}>
+        {action.busy ? 'Saving…' : 'Save work log'}
       </button>
+      <ErrorNotice message={action.error} />
     </form>
   )
 }
 
 function CorrectiveInput({ worklogId }: { worklogId: string }) {
   const [text, setText] = useState('')
+  const action = useAction()
   return (
-    <div className="decide">
+    <div><div className="decide">
       <input
         placeholder="Corrective action taken, e.g. reduced viscosity to 17s…"
         value={text}
@@ -267,13 +232,16 @@ function CorrectiveInput({ worklogId }: { worklogId: string }) {
       <button
         onClick={() => {
           if (!text.trim()) return
-          void store.recordCorrectiveAction(worklogId, { actionTaken: text.trim() })
-          setText('')
+          void action.run(async () => {
+            await store.recordCorrectiveAction(worklogId, { actionTaken: text.trim() })
+            setText('')
+          })
         }}
+        disabled={action.busy || !text.trim()}
       >
         Save action
       </button>
-    </div>
+    </div><ErrorNotice message={action.error} /></div>
   )
 }
 
@@ -328,10 +296,12 @@ function conditions(w: store.Worklog): string {
 }
 
 function IncidentList({ state }: { state: store.AppState }) {
+  const action = useAction()
   const mine = state.worklogs.filter((w) => w.createdBy === state.actingAs)
   if (mine.length === 0) return <p className="empty">No entries yet. Log an incident or routine work above.</p>
   return (
     <div className="list">
+      <ErrorNotice message={action.error} />
       {mine.map((w) => (
         <div
           key={w.id}
@@ -349,7 +319,7 @@ function IncidentList({ state }: { state: store.AppState }) {
             // The click on a specific entry IS the human's decision: load the
             // clear winner immediately; fall back to the suggestion card only
             // when the match is ambiguous.
-            if (best.length > 0) void store.followPlaybook(best[0].processId)
+            if (best.length > 0) void action.run(() => store.followPlaybook(best[0].processId))
           }}
         >
           <div className="entry-head">
@@ -374,18 +344,14 @@ function IncidentList({ state }: { state: store.AppState }) {
           {(w.status === 'draft' || w.status === 'rejected') && (
             <button
               onClick={() =>
-                void store.requestApproval(w.id, 'lee').catch((err) => {
-                  window.Understudy.log(
-                    `review request refused: ${err instanceof Error ? err.message : err}`,
-                    { worklogId: w.id },
-                  )
-                })
+                void action.run(() => store.requestApproval(w.id, 'lee'))
               }
+              disabled={action.busy}
             >
               {w.status === 'rejected' ? 'Resubmit to Lee for review' : 'Send to Lee for review'}
             </button>
           )}
-          {!w.data.actionTaken && w.status !== 'draft' && w.status !== 'approved' && (
+          {w.status === 'rejected' && (
             <CorrectiveInput worklogId={w.id} />
           )}
         </div>
@@ -396,10 +362,18 @@ function IncidentList({ state }: { state: store.AppState }) {
 
 function ApprovalsInbox({ state }: { state: store.AppState }) {
   const [comments, setComments] = useState<Record<string, string>>({})
-  const inbox = state.approvals.filter((a) => a.approver === state.actingAs)
-  if (inbox.length === 0) return <p className="empty">No review requests for {state.actingAs}.</p>
+  const [showHistory, setShowHistory] = useState(false)
+  const action = useAction()
+  const all = state.approvals.filter((a) => a.approver === state.actingAs)
+  const inbox = all.filter((a) => showHistory || a.status === 'PENDING')
+  const reviewer = state.users.find((u) => u.role === 'Reviewer')
   return (
     <div className="list">
+      <div className="page-intro"><h1>Review the evidence.</h1><p>Check the submitted results before signing off. Changed evidence requires a new review.</p></div>
+      {reviewer && state.actingAs !== reviewer.username && <div className="empty-card"><p>Reviews are assigned to {reviewer.name}, the demo reviewer.</p><button className="secondary" onClick={() => store.switchActingAs(reviewer.username)}>Switch to {reviewer.name} · Reviewer</button></div>}
+      <label className="history-toggle"><input type="checkbox" checked={showHistory} onChange={(e) => setShowHistory(e.target.checked)} />Include completed and cancelled reviews</label>
+      <ErrorNotice message={action.error} />
+      {inbox.length === 0 && <p className="empty">No {showHistory ? '' : 'pending '}reviews for this role. New requests appear here when the required work is complete.</p>}
       {inbox.map((a) => {
         const wl = state.worklogs.find((w) => w.id === a.worklogId)
         const evidence = wl
@@ -439,29 +413,24 @@ function ApprovalsInbox({ state }: { state: store.AppState }) {
               <div className="decide">
                 <input
                   placeholder="Comment (optional for approve)"
+                  aria-label={`Review comment for request ${a.id}`}
                   value={comments[a.id] ?? ''}
                   onChange={(e) => setComments({ ...comments, [a.id]: e.target.value })}
                 />
                 <button
                   className="primary"
+                  disabled={action.busy}
                   onClick={() =>
-                    void store
-                      .decideApproval(a.id, 'APPROVED', comments[a.id] || undefined)
-                      .catch((err) => {
-                        window.Understudy.log(
-                          `approval refused: ${err instanceof Error ? err.message : err}`,
-                          { worklogId: a.worklogId },
-                        )
-                      })
+                    void action.run(() => store.decideApproval(a.id, 'APPROVED', comments[a.id] || undefined))
                   }
                 >
                   Approve
                 </button>
                 <button
                   className="danger"
-                  disabled={!(comments[a.id] ?? '').trim()}
+                  disabled={action.busy || !(comments[a.id] ?? '').trim()}
                   title={(comments[a.id] ?? '').trim() ? undefined : 'A rejection needs a reason — write a comment first'}
-                  onClick={() => void store.decideApproval(a.id, 'REJECTED', comments[a.id].trim())}
+                  onClick={() => void action.run(() => store.decideApproval(a.id, 'REJECTED', comments[a.id].trim()))}
                 >
                   Reject
                 </button>
@@ -520,19 +489,22 @@ const latestPerTitle = store.latestPerTitle
 
 function VersionDiffView({ proc }: { proc: LoadedProcess }) {
   const [diff, setDiff] = useState<store.VersionDiff | null | 'loading'>(null)
+  const action = useAction()
   if ((proc.map.version ?? 1) <= 1) return null
   if (diff === null)
     return (
-      <button
+      <span><ErrorNotice message={action.error} /><button
         className="ghost"
         data-flow-ignore
         onClick={() => {
           setDiff('loading')
-          void store.diffWithPrevious(proc).then((d) => setDiff(d ?? null))
+          void action.run(async () => {
+            try { setDiff(await store.diffWithPrevious(proc)) } catch (err) { setDiff(null); throw err }
+          })
         }}
       >
         Compare with v{(proc.map.version ?? 2) - 1}
-      </button>
+      </button></span>
     )
   if (diff === 'loading') return <p className="meta">Comparing…</p>
   return (
@@ -559,58 +531,49 @@ function VersionDiffView({ proc }: { proc: LoadedProcess }) {
 function PlaybookList({ state }: { state: store.AppState }) {
   const [selected, setSelected] = useState<LoadedProcess | null>(null)
   const [runs, setRuns] = useState<store.ProcessRun[]>([])
-  const [followFlash, setFollowFlash] = useState(false)
   const [armCancel, setArmCancel] = useState(false)
-  const visible = latestPerTitle(state.processes)
+  const [deleteArmed, setDeleteArmed] = useState(false)
+  const [cancelCount, setCancelCount] = useState(0)
+  const [query, setQuery] = useState('')
+  const action = useAction()
+  const visible = latestPerTitle(state.processes).filter((p) => p.title.toLowerCase().includes(query.toLowerCase()))
   const historyCount = (title: string) => state.processes.filter((p) => p.title === title).length - 1
 
-  const open = async (id: string) => {
-    const p = await store.getProcess(id)
+  const open = (id: string) => action.run(async () => {
+    const [p, history] = await Promise.all([store.getProcess(id), store.listRuns(id)])
     setSelected({ id: p.id, title: p.title, createdBy: p.createdBy, map: p.map as UnderstudyProcessMap })
-    setRuns(await store.listRuns(id))
-  }
-
-  const [cancelCount, setCancelCount] = useState(0)
-  const follow = (p: LoadedProcess) => {
+    setRuns(history)
+    setArmCancel(false)
+    setDeleteArmed(false)
+  })
+  const follow = (p: LoadedProcess) => action.run(async () => {
     if (!armCancel) {
-      void store.cancellableReviewCount().then((n) => {
-        if (n > 0) {
-          setCancelCount(n)
-          setArmCancel(true)
-          setTimeout(() => setArmCancel(false), 6000)
-        } else {
-          void store.followPlaybook(p.id).then(() => {
-            setFollowFlash(true)
-            setTimeout(() => setFollowFlash(false), 2500)
-          })
-        }
-      })
-      return
+      const count = await store.cancellableReviewCount()
+      if (count > 0) { setCancelCount(count); setArmCancel(true); return }
     }
     setArmCancel(false)
-    void store.followPlaybook(p.id).then(() => {
-      setFollowFlash(true)
-      setTimeout(() => setFollowFlash(false), 2500)
-    })
-  }
+    await store.followPlaybook(p.id)
+  })
 
   if (state.processes.length === 0) {
     return (
-      <p className="empty">
-        No playbooks yet. Handle an incident in the app, let the agent draft the response process,
-        then press “Confirm &amp; save to library” in the Understudy panel.
-      </p>
+      <div className="empty-card"><h1>Your team’s playbooks start here.</h1><p>Describe one task on Start here, then let your agent ask about its rules. The playbook appears here after you review and save the draft.</p><AgentInvite prompt="What is Understudy and how do I use it? Help me turn one of my tasks into a playbook, asking me one question at a time." /></div>
     )
   }
 
   return (
     <div className="proc-layout">
+      <div className="page-intro"><h1>Choose a playbook. Start a run.</h1><p>Each run collects its own evidence and approval. Earlier revisions stay in the history.</p></div>
+      <label className="library-search">Find a playbook<input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name…" /></label>
+      <ErrorNotice message={action.error} />
+      {visible.length === 0 && <p className="empty">No playbooks match “{query}”. Try another name.</p>}
       <div className="list">
         {visible.map((p) => (
           <button
             key={p.id}
             className={`card proc-item ${selected?.id === p.id ? 'selected' : ''}`}
             onClick={() => void open(p.id)}
+            disabled={action.busy}
           >
             <span className="task">
               {p.title} <span className="version-tag">v{p.version || 1}</span>
@@ -628,24 +591,24 @@ function PlaybookList({ state }: { state: store.AppState }) {
           <div className="entry-head">
             <span className="task">{selected.title}</span>
             <span>
-              <button className={armCancel ? 'danger' : 'primary'} onClick={() => follow(selected)}>
-                {followFlash
-                  ? '✓ Run started — see the panel →'
-                  : armCancel
-                    ? `⚠ Cancels ${cancelCount} pending review(s) of unfinished runs — click again`
-                    : '▶ Run this playbook'}
+              <button className={armCancel ? 'danger' : 'primary'} disabled={action.busy} onClick={() => void follow(selected)}>
+                {action.busy ? 'Loading…' : armCancel
+                  ? `Confirm new run — cancels ${cancelCount} pending review(s)`
+                  : 'Run this playbook →'}
               </button>
-              <VersionDiffView proc={selected} />{' '}
+              {armCancel && <button className="ghost" onClick={() => setArmCancel(false)}>Keep current work</button>}
+              <VersionDiffView key={selected.id} proc={selected} />{' '}
               <button
                 className="ghost"
                 data-flow-ignore
                 onClick={() => {
-                  void store.deleteProcess(selected.id)
-                  setSelected(null)
+                  if (!deleteArmed) { setDeleteArmed(true); return }
+                  void action.run(async () => { await store.deleteProcess(selected.id); setSelected(null); setDeleteArmed(false) })
                 }}
               >
-                Delete
+                {deleteArmed ? 'Confirm delete of this revision' : 'Delete revision…'}
               </button>
+              {deleteArmed && <button className="ghost" onClick={() => setDeleteArmed(false)}>Keep revision</button>}
             </span>
           </div>
           <p className="meta">
@@ -677,34 +640,15 @@ function PlaybookList({ state }: { state: store.AppState }) {
   )
 }
 
-function RunStartedModal({ info }: { info: NonNullable<store.AppState['runStarted']> }) {
-  // Presenter-friendly: the toast dismisses itself so the next click always
-  // lands on the UI, never on the backdrop.
+function RunStartedNotice({ info }: { info: NonNullable<store.AppState['runStarted']> }) {
   useEffect(() => {
-    const t = setTimeout(() => store.dismissRunStarted(), 5000)
-    return () => clearTimeout(t)
-  }, [])
+    const timer = setTimeout(() => store.dismissRunStarted(), 7000)
+    return () => clearTimeout(timer)
+  }, [info])
   return (
-    <div className="modal-backdrop" onClick={() => store.dismissRunStarted()}>
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>
-          ▶ Run started — {info.title}
-          {info.version ? <span className="version-tag"> v{info.version}</span> : null}
-        </h3>
-        {info.next && (
-          <p>
-            First step: <b>{info.next}</b>
-          </p>
-        )}
-        <p className="hint">
-          The panel on the right guides this run: a yellow border marks your next step, red marks a
-          skipped one, and the playbook's required data fields are now part of the work-log form.
-          Out-of-order or criteria-violating moves will be blocked.
-        </p>
-        <button className="primary" onClick={() => store.dismissRunStarted()}>
-          Got it — start working
-        </button>
-      </div>
+    <div className="run-notice" role="status">
+      <span><b>{window.Understudy.getRunStartError?.() ? 'Run could not start.' : window.Understudy.currentRunId?.() ? 'Run started.' : 'Starting run…'}</b> {info.title}</span>
+      <button className="ghost" aria-label="Dismiss run notification" onClick={() => store.dismissRunStarted()}>×</button>
     </div>
   )
 }
@@ -714,21 +658,35 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const [taskValues, setTaskValues] = useState<Record<string, Record<string, string | boolean>>>({})
   const [problemFor, setProblemFor] = useState<string | null>(null)
   const [problemText, setProblemText] = useState('')
+  const [taskError, setTaskError] = useState('')
+  const action = useAction()
+  const inputScope = useRef<{ map: UnderstudyProcessMap | null; runId?: string | null }>({ map: null })
   useEffect(() => {
-    const f = () => setTick((t) => t + 1)
+    const f = () => {
+      const map = window.Understudy.getLoadedProcess()
+      const runId = window.Understudy.currentRunId?.()
+      if (map !== inputScope.current.map || runId !== inputScope.current.runId) {
+        setTaskValues({}); setTaskError(''); setProblemFor(null); setProblemText('')
+        inputScope.current = { map, runId }
+      }
+      setTick((t) => t + 1)
+    }
+    f()
     window.addEventListener('understudy:mapchange', f)
-    return () => window.removeEventListener('understudy:mapchange', f)
+    window.addEventListener('understudy:run-state', f)
+    return () => {
+      window.removeEventListener('understudy:mapchange', f)
+      window.removeEventListener('understudy:run-state', f)
+    }
   }, [])
   const proc = window.Understudy.getLoadedProcess?.()
   const prog = window.Understudy.getProgress?.() ?? []
   const runId = window.Understudy.currentRunId?.()
+  const runError = window.Understudy.getRunStartError?.()
   const myRole = state.users.find((u) => u.username === state.actingAs)?.role
   if (!proc || prog.length === 0)
     return (
-      <p className="empty">
-        No process is running. Follow a playbook (Playbooks tab, or click a work-log entry) and its
-        steps will be assigned here by role.
-      </p>
+      <div className="empty-card"><h1>Your next step lives here.</h1><p>Teach a process from Start here, or run a saved playbook. Tasks will appear with their required evidence and owner.</p><button onClick={() => window.Understudy.openPanel?.()}>Open playbook</button></div>
     )
   const stepOf = (id: string) => proc.steps.find((s) => s.id === id)
   const fieldDefs = proc.fields ?? []
@@ -782,16 +740,18 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         })
         .filter(([, v]) => v !== undefined),
     )
+    const outcome = window.Understudy.completeStep?.(p.id, values)
+    if (!outcome?.ok) { setTaskError(outcome?.error ?? 'Could not complete this task.'); return }
+    setTaskError('')
     rememberValues(values)
-    window.Understudy.completeStep?.(p.id, values)
+    setTaskValues((prev) => ({ ...prev, [p.id]: {} }))
   }
   return (
     <div className="list">
-      <div className="meta">
-        {proc.title}
-        {runId ? ` · run #${runId}` : ''} · path {done}/{required} done · map {prog.length} nodes · your
-        role: {myRole ?? '—'}
-      </div>
+      <div className="page-intro"><div className="eyebrow">{myRole ?? 'YOUR WORK'}</div><h1>{proc.title}</h1><p>{done} of {required} required tasks complete{runId ? ` · run #${runId}` : runError ? ' · execution not started' : ' · starting execution…'}</p><progress value={done} max={Math.max(1, required)} aria-label="Required tasks complete" /></div>
+      <ErrorNotice message={runError ?? undefined} />
+      {runError && proc.sourceProcessId && <button disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(proc.sourceProcessId!))}>Retry starting this run</button>}
+      <ErrorNotice message={taskError || action.error} />
       {(() => {
         const rejected = state.approvals.find(
           (a) =>
@@ -814,13 +774,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             <button
               className="primary"
               onClick={() =>
-                void store.requestApproval(rejected.worklogId, 'lee').catch((err) => {
-                  window.Understudy.log(
-                    `resubmit refused: ${err instanceof Error ? err.message : err}`,
-                    { worklogId: rejected.worklogId },
-                  )
-                })
+                void action.run(() => store.requestApproval(rejected.worklogId, 'lee'))
               }
+              disabled={action.busy}
             >
               Resubmit for review
             </button>
@@ -828,11 +784,11 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
         )
       })()}
       {mine.length === 0 && theirs.length === 0 && (
-        <p className="empty">
+        <div className="empty-card"><p>
           {window.Understudy.isRunComplete?.()
             ? '✅ Run complete — every required step is handled and signed off.'
-            : 'Nothing is assignable right now — a decision is awaiting resolution (ask the agent).'}
-        </p>
+            : 'The next route needs your agent’s judgment. Your submitted evidence is ready to check.'}
+        </p>{!window.Understudy.isRunComplete?.() && <AgentInvite hint="Ask your agent: “Do these results meet the rules? What should we do next?” It can check the evidence and explain the next step." label="Copy request to check the evidence" prompt="Read get_process_progress in Understudy. Use the submitted measurements and resolve_decision to choose the valid route. Explain any failed check and guide the assigned person through rework before requesting approval." />}</div>
       )}
       {mine.map((p) => {
         const st = stepOf(p.id)
@@ -846,7 +802,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             return d.required ? raw[d.key] === undefined || raw[d.key] === '' : false
           }
           if (!d.required) return false
-          return raw[d.key] === undefined || String(raw[d.key]).trim() === ''
+          return raw[d.key] === undefined || String(raw[d.key]).trim() === '' || (d.type === 'number' && !Number.isFinite(Number(raw[d.key])))
         })
         const prev = prevDone(p.id)
         const next = nextUp(p.id)
@@ -936,8 +892,8 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
               <div className="meta">Decision point — resolve it with the agent (measurements required).</div>
             ) : (
               <div className="decide">
-                <button className="primary" disabled={missingRequired} onClick={() => complete(p)}>
-                  {missingRequired ? 'Fill required fields…' : 'Complete & submit'}
+                <button className="primary" disabled={missingRequired || p.status !== 'ready' || !runId} onClick={() => complete(p)}>
+                  {p.status !== 'ready' ? 'Resolve the blocker first' : missingRequired ? 'Fill required fields…' : 'Complete & submit'}
                 </button>
                 <button className="ghost" data-flow-ignore onClick={() => setProblemFor(problemFor === p.id ? null : p.id)}>
                   Report a problem
@@ -979,8 +935,9 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
             <span className="task">⏳ Waiting on {p.role}</span>
           </div>
           <div className="meta">
-            {p.label} — switch persona to {p.role} to complete it, or ask the agent who is blocked.
+            {p.label}
           </div>
+          {state.users.find((u) => u.role === p.role) && <button className="secondary" onClick={() => store.switchActingAs(state.users.find((u) => u.role === p.role)!.username)}>Continue as {state.users.find((u) => u.role === p.role)!.name} · {p.role}</button>}
         </div>
       ))}
       <RunTimeline proc={proc} />
@@ -1059,101 +1016,71 @@ function DemoStrip({ state }: { state: store.AppState }) {
 
 export default function App() {
   const state = useSyncExternalStore(store.subscribe, store.getState)
-  const [tab, setTab] = useState<'incidents' | 'tasks' | 'approvals' | 'playbooks'>(() =>
-    typeof window !== 'undefined' && window.innerWidth < 560 ? 'tasks' : 'incidents',
-  )
+  const [tab, setTab] = useState<WorkspaceTab>('overview')
   const [demoMode, setDemoMode] = useState(false)
-  const [resetFlash, setResetFlash] = useState(false)
+  const [resetArmed, setResetArmed] = useState(false)
+  const reset = useAction()
+  useWorkspaceUpdates()
 
+  useEffect(() => { void store.refresh() }, [])
+  // The evolving process beside the work is the desktop's primary experience.
   useEffect(() => {
-    void store.refresh()
-  }, [])
+    if (state.me && window.innerWidth >= 560) window.Understudy.openPanel?.()
+  }, [state.me?.username])
+  useEffect(() => {
+    if (state.runStarted) {
+      setTab('tasks')
+      if (window.innerWidth >= 1000) window.Understudy.openPanel?.()
+    }
+  }, [state.runStarted])
+  useEffect(() => { if (!state.me) { setTab('overview'); setResetArmed(false) } }, [state.me?.username])
 
-  if (!state.authChecked) return null
+  if (!state.authChecked) return <div className="loading-screen" role="status">Opening Understudy…</div>
   if (!state.me) return <Login />
 
-  const acting = state.users.find((u) => u.username === state.actingAs)
-  const pendingForMe = state.approvals.filter(
-    (a) => a.approver === state.actingAs && a.status === 'PENDING',
-  ).length
+  const pendingForMe = state.approvals.filter((a) => a.approver === state.actingAs && a.status === 'PENDING').length
+  const interaction = window.Understudy.getInteractionState?.()
+  const tabs: Array<[WorkspaceTab, string]> = [['overview', 'Start here'], ['tasks', 'My tasks'], ['approvals', 'Reviews'], ['playbooks', 'Playbooks'], ['incidents', 'Work log']]
 
   return (
     <div className="app">
-      {state.runStarted && <RunStartedModal info={state.runStarted} />}
-      {demoMode && <DemoStrip state={state} />}
       <header className="topbar">
-        <h1>
-          🎭 Understudy{' '}
-          <span className="sub">
-            turn work into living playbooks · demo workspace <span className="buildid">build {__BUILD__}</span>
-          </span>
-        </h1>
+        <button className="brand" onClick={() => setTab('overview')} aria-label="Understudy home"><span className="brand-mark">u</span>Understudy</button>
         <div className="userbox">
-          <span>
-            Signed in: {state.me.name} · acting as {acting?.name ?? state.actingAs}
-          </span>
-          <select value={state.actingAs} onChange={(e) => store.switchActingAs(e.target.value)}>
-            {state.users
-              .filter((u) => u.username !== 'judge')
-              .map((u) => (
-                <option key={u.username} value={u.username}>
-                  {u.name} ({u.role})
-                </option>
-              ))}
-          </select>
-          <button
-            className="ghost"
-            data-flow-ignore
-            title="Presenter aid: shows the role relay and whose turn it is"
-            onClick={() => setDemoMode((d) => !d)}
-          >
-            {demoMode ? '🎬 Demo mode on' : 'Demo mode'}
-          </button>
-          <button
-            className="ghost"
-            data-flow-ignore
-            title="Clear incident logs, reviews and run records so you start from a clean slate (playbooks are kept)"
-            onClick={() => {
-              void store.resetDemoData('worklogs').then(() => {
-                setResetFlash(true)
-                setTimeout(() => setResetFlash(false), 2000)
-              })
-            }}
-          >
-            {resetFlash ? '✓ Cleared' : 'Start fresh demo'}
-          </button>
-          <button className="ghost" onClick={() => store.logout()} data-flow-ignore>
-            Sign out
-          </button>
+          <label className="persona-label">Working as
+            <select aria-label="Working as" value={state.actingAs} onChange={(e) => store.switchActingAs(e.target.value)}>
+              {state.users.filter((u) => u.username !== 'judge').map((u) => <option key={u.username} value={u.username}>{u.name} · {u.role}</option>)}
+            </select>
+          </label>
+          <details className="workspace-menu">
+            <summary aria-label="Workspace settings">···</summary>
+            <div className="workspace-menu-content">
+              <p className="meta">Signed in as {state.me.name} · build {__BUILD__}</p>
+              <label className="check"><input type="checkbox" checked={demoMode} onChange={(e) => setDemoMode(e.target.checked)} />Show role relay</label>
+              <button className="secondary" onClick={() => store.logout()}>Sign out</button>
+              <details className="reset-settings"><summary>Reset demo records</summary>
+                <p className="meta">Deletes shared work logs, reviews and runs for every demo user. Saved playbooks stay.</p>
+                <button className="danger" disabled={reset.busy} onClick={() => {
+                  if (!resetArmed) { setResetArmed(true); return }
+                  void reset.run(async () => { await store.resetDemoData('worklogs'); setResetArmed(false); setTab('overview') })
+                }}>{reset.busy ? 'Resetting…' : resetArmed ? 'Confirm — clear shared demo records' : 'Clear demo records…'}</button>
+                {resetArmed && <button className="ghost" onClick={() => setResetArmed(false)}>Cancel</button>}
+                <ErrorNotice message={reset.error} />
+              </details>
+            </div>
+          </details>
         </div>
       </header>
-
-      <nav className="tabs">
-        <button className={tab === 'incidents' ? 'active' : ''} onClick={() => setTab('incidents')}>
-          Work log
-        </button>
-        <button className={tab === 'tasks' ? 'active' : ''} onClick={() => setTab('tasks')}>
-          My tasks
-        </button>
-        <button className={tab === 'approvals' ? 'active' : ''} onClick={() => setTab('approvals')}>
-          Reviews{pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}
-        </button>
-        <button className={tab === 'playbooks' ? 'active' : ''} onClick={() => setTab('playbooks')}>
-          Playbooks{state.processes.length > 0 && (
-            <span className="pill blue">{latestPerTitle(state.processes).length}</span>
-          )}
-        </button>
+      <nav className="tabs" aria-label="Workspace">
+        {tabs.map(([id, label]) => <button key={id} aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}{id === 'approvals' && pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}</button>)}
       </nav>
-
-      <main>
+      {state.runStarted && <RunStartedNotice info={state.runStarted} />}
+      {demoMode && <DemoStrip state={state} />}
+      {tab !== 'overview' && interaction && (interaction.questions > 0 || interaction.approvals > 0) && <button className="attention-banner" onClick={() => window.Understudy.openPanel?.()}>Your agent needs your input <span>Open conversation →</span></button>}
+      <main id="workspace-main">
+        {tab === 'overview' && <Overview state={state} navigate={setTab} />}
         {tab === 'tasks' && <MyTasks state={state} goReviews={() => setTab('approvals')} />}
-        {tab === 'incidents' && (
-          <>
-            <SuggestionCard />
-            <IncidentForm />
-            <IncidentList state={state} />
-          </>
-        )}
+        {tab === 'incidents' && <><div className="page-intro"><h1>Work log</h1><p>Record work and results. To teach a new process, start with the guided capture on <button className="text-button" onClick={() => setTab('overview')}>Start here</button>.</p></div><SuggestionCard /><IncidentForm /><IncidentList state={state} /></>}
         {tab === 'approvals' && <ApprovalsInbox state={state} />}
         {tab === 'playbooks' && <PlaybookList state={state} />}
       </main>

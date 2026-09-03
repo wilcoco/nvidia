@@ -13,6 +13,20 @@ let webmcpStatus = 'not detected'
 export function setWebmcpStatus(status: string): void {
   webmcpStatus = status
   scheduleRender()
+  announceInteraction()
+}
+
+export function getInteractionState() {
+  return { connected: webmcpStatus === 'connected', questions: asksStore.asks.length, approvals: asksStore.approvals.length }
+}
+
+function announceInteraction() {
+  window.dispatchEvent(new CustomEvent('understudy:agent-state'))
+}
+
+export function openPanel(): void {
+  collapsed = false
+  render()
 }
 
 const CSS = `
@@ -165,6 +179,7 @@ let shadow: ShadowRoot | null = null
 // On phones the panel would cover ~86% of the screen — start collapsed there.
 let collapsed = typeof window !== 'undefined' && window.innerWidth < 560
 let seenApprovalCount = 0
+let seenQuestionCount = 0
 // In-progress free-text answers, keyed by ask id — the 5s host-state poll
 // rebuilds the DOM and must not eat what the human is typing.
 const answerDrafts = new Map<string, string>()
@@ -173,9 +188,10 @@ let skipConfirmId: string | null = null
 let activityOpen = false
 let renderQueued = false
 
-export function mountPanel(): void {
+export function mountPanel(initiallyCollapsed?: boolean): void {
   window.addEventListener('understudy:host-state', () => scheduleRender())
   if (document.getElementById(HOST_ID)) return
+  if (initiallyCollapsed !== undefined) collapsed = initiallyCollapsed
   const host = document.createElement('div')
   host.id = HOST_ID
   document.body.appendChild(host)
@@ -190,8 +206,16 @@ export function mountPanel(): void {
   shadow.appendChild(root)
 
   journal.subscribe(scheduleRender)
-  mapstore.subscribe(scheduleRender)
-  asksStore.subscribe(scheduleRender)
+  let previousMap = mapstore.getMap()
+  let wasConfirmed = previousMap?.confirmed
+  mapstore.subscribe(() => {
+    const nextMap = mapstore.getMap()
+    if (nextMap && !nextMap.confirmed && (nextMap !== previousMap || wasConfirmed)) collapsed = false
+    previousMap = nextMap
+    wasConfirmed = nextMap?.confirmed
+    scheduleRender()
+  })
+  asksStore.subscribe(() => { scheduleRender(); announceInteraction() })
   render()
 }
 
@@ -273,7 +297,7 @@ function renderStep(
   if (status === 'not_applicable') meta.appendChild(el('span', 'chip na', 'N/A'))
   meta.appendChild(el('span', 'spacer'))
 
-  const locked = !!mapstore.getMap()?.confirmed
+  const locked = !!(mapstore.getMap()?.confirmed || mapstore.getMap()?.saving)
   const label = el('span', `label${locked ? ' ro' : ''}`, step.label)
   if (!locked) {
   label.title = 'Click to rename'
@@ -672,14 +696,14 @@ function render() {
 
   // Let the host page adapt its layout to the panel (e.g. release the
   // right-hand margin when the panel is minimized on narrow screens).
-  document.documentElement.setAttribute('data-understudy-panel', collapsed ? 'collapsed' : 'open')
-
   // A consent request must be seen: a newly arrived approval card reopens
   // a collapsed panel (the human can collapse it again).
-  if (asksStore.approvals.length > seenApprovalCount) collapsed = false
+  if (asksStore.approvals.length > seenApprovalCount || asksStore.asks.length > seenQuestionCount) collapsed = false
   seenApprovalCount = asksStore.approvals.length
+  seenQuestionCount = asksStore.asks.length
+  document.documentElement.setAttribute('data-understudy-panel', collapsed ? 'collapsed' : 'open')
 
-  const fab = el('button', 'fab', collapsed ? '🎭 Understudy' : '')
+  const fab = el('button', 'fab', collapsed ? 'Open playbook & conversation' : '')
   if (collapsed) {
     fab.onclick = () => {
       collapsed = false
@@ -693,13 +717,14 @@ function render() {
 
   // Header
   const header = el('header')
-  header.appendChild(el('span', 'logo', '🎭 Understudy'))
+  header.appendChild(el('span', 'logo', 'Playbook & conversation'))
   const status = el('span', 'status')
   const dot = el('span', `dot${webmcpStatus === 'connected' ? ' on' : ''}`)
   status.appendChild(dot)
-  status.appendChild(el('span', undefined, `WebMCP ${webmcpStatus}`))
+  status.appendChild(el('span', undefined, webmcpStatus === 'connected' ? 'WebMCP ready' : 'WebMCP unavailable'))
   header.appendChild(status)
   const close = el('button', 'close', '—')
+  close.setAttribute('aria-label', 'Minimize conversation panel')
   close.onclick = () => {
     collapsed = true
     render()
@@ -804,12 +829,12 @@ function render() {
   const map = mapstore.getMap()
   if (!map) {
     mapSection.appendChild(
-      el('div', 'empty', 'No process yet. Do your work — the agent drafts the process around each event: what to prepare and prevent before it, what to verify and sign off after it.'),
+      el('div', 'empty', 'Your agent’s questions and draft playbook appear here. You can start by asking what this page does.'),
     )
     const invite =
-      'Work along with me on this page. Watch what I do, guide me with the saved playbooks, and ask me questions when a process is missing knowledge.'
+      'What is this page, and how can you help me use it?'
     const tip = el('div', 'invite-box')
-    tip.appendChild(el('div', 'invite-hint', 'Using an AI agent? Invite it once:'))
+    tip.appendChild(el('div', 'invite-hint', 'Start naturally in your agent’s chat:'))
     tip.appendChild(el('div', 'invite-text', `“${invite}”`))
     const copy = el('button', 'invite-copy', '🤖 Copy agent invite')
     copy.onclick = async () => {
@@ -830,8 +855,8 @@ function render() {
         'div',
         'map-hint',
         map.confirmed
-          ? 'Live guide — the agent follows along as you work. Yellow border = do this next · red = skipped · dotted = only if its branch applies. The structure is read-only while running; use "Propose changes" to draft a revision.'
-          : "The agent drafted this from your work — it's yours to correct before saving: click any text to reword it, hover a card to change its type (task / decision / approval) or remove it.",
+          ? 'Follow your tasks in the workspace. This map shows the route and its checks.'
+          : 'Review your agent’s draft. Click a step name or rule to correct it, then confirm below.',
       ),
     )
     if (map.fields?.length) {
@@ -919,8 +944,9 @@ function render() {
       const btn = el(
         'button',
         undefined,
-        store ? (map.version ? `Save as v${nextV} to library` : 'Confirm & save to library') : 'Confirm process',
+        map.saving ? 'Saving playbook…' : store ? (map.version ? `Save as v${nextV} to library` : 'Confirm & save to library') : 'Confirm process',
       )
+      btn.disabled = !!map.saving
       btn.onclick = () =>
         mapstore.humanConfirmMap(store ? (m) => store.save(m) : undefined)
       bar.appendChild(btn)
@@ -929,6 +955,11 @@ function render() {
       )
     }
     mapSection.appendChild(bar)
+    if (map.saveError) {
+      const error = el('div', 'skip-confirm', map.saveError)
+      error.setAttribute('role', 'alert')
+      mapSection.appendChild(error)
+    }
   }
   body.appendChild(mapSection)
 

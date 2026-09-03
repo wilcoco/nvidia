@@ -72,6 +72,8 @@ export interface ProcessMap {
   fields?: FieldDef[]
   entry?: string
   confirmed?: boolean
+  saving?: boolean
+  saveError?: string
   /** Conditions under which this playbook applies (used for auto-suggestion). */
   appliesWhen?: Record<string, unknown>
   priorityWhen?: Record<string, unknown>
@@ -169,6 +171,7 @@ export interface ProcessStoreAdapter {
 
 export interface InitOptions {
   appName?: string
+  panelInitiallyCollapsed?: boolean
   /** 'full' captures clicks/submits/changes automatically; 'min' captures navigation only
    *  (for apps that emit their own semantic logs via Understudy.log). */
   autoCapture?: 'full' | 'min' | 'off'

@@ -5,7 +5,8 @@ import './styles.css'
 import * as store from './store'
 
 window.Understudy.init({
-  appName: 'Understudy — Work Log Demo Workspace',
+  appName: 'Understudy — teach and run living playbooks with WebMCP',
+  panelInitiallyCollapsed: true,
   // The demo app emits its own semantic journal entries via Understudy.log,
   // so automatic click capture is limited to navigation.
   autoCapture: 'min',
@@ -18,6 +19,7 @@ window.Understudy.init({
       incidents: s.worklogs,
       reviews: s.approvals,
       savedPlaybooks: s.processes,
+      playbookRequest: s.captureContext?.creationRequested ? {worklogId: s.captureContext.id, task: s.captureContext.task, intent: 'create_playbook'} : null,
     }
   },
   processStore: {
@@ -56,8 +58,10 @@ window.Understudy.init({
       // run may carry it. If the completion record doesn't exist yet (it is
       // synthesized moments later at sign-off), retry once — then give up
       // rather than stamping another run's paperwork.
+      const runId = window.Understudy.currentRunId?.()
+      const sourceMap = window.Understudy.getLoadedProcess()
       const attach = (attempt: number): void => {
-        const runId = window.Understudy.currentRunId?.()
+        if (!runId || window.Understudy.currentRunId?.() !== runId || window.Understudy.getLoadedProcess() !== sourceMap) return
         const produced = meta.producedIds.find((p) => p.action === 'log_work_item')
         const byRun = runId
           ? store.getState().worklogs.find((w) => w.data.runId === runId)
@@ -68,7 +72,7 @@ window.Understudy.init({
             label: meta.branchLabel,
             pass: meta.toApproval,
             checked: meta.criteriaChecked,
-          })
+          }).catch((err) => window.Understudy.log(`Could not save verification: ${err instanceof Error ? err.message : err}`))
         } else if (attempt < 3) {
           setTimeout(() => attach(attempt + 1), 1500)
         }
@@ -81,7 +85,8 @@ window.Understudy.init({
   branchResolver: (condition) => {
     const c = condition.toLowerCase()
     if (c.includes('urgent')) {
-      const latest = store.getState().worklogs[0]
+      const runId = window.Understudy.currentRunId?.()
+      const latest = runId ? store.getState().worklogs.find((w) => String(w.data.runId) === runId) : undefined
       return latest ? Boolean(latest.urgent) : undefined
     }
     return undefined
@@ -145,6 +150,8 @@ window.Understudy.init({
     {
       // Legacy aliases: playbooks saved before the rename may still call these.
       name: 'log_incident',
+      selfReporting: true,
+      roles: ['Contributor'],
       hidden: true,
       description: '(legacy alias of log_work_item)',
       params: {
@@ -167,6 +174,8 @@ window.Understudy.init({
     },
     {
       name: 'record_corrective_action',
+      selfReporting: true,
+      roles: ['Contributor'],
       hidden: true,
       description: '(legacy alias of record_step_result)',
       params: {
