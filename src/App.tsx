@@ -365,7 +365,7 @@ function IncidentList({ state }: { state: store.AppState }) {
             </div>
           )}
           <VerificationBlock w={w} />
-          {w.status === 'draft' && (
+          {(w.status === 'draft' || w.status === 'rejected') && (
             <button
               onClick={() =>
                 void store.requestApproval(w.id, 'lee').catch((err) => {
@@ -376,7 +376,7 @@ function IncidentList({ state }: { state: store.AppState }) {
                 })
               }
             >
-              Send to Lee for review
+              {w.status === 'rejected' ? 'Resubmit to Lee for review' : 'Send to Lee for review'}
             </button>
           )}
           {!w.data.actionTaken && w.status !== 'draft' && w.status !== 'approved' && (

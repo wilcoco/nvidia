@@ -415,6 +415,17 @@ export async function followPlaybook(
   processId: string,
   opts?: { silent?: boolean; resume?: boolean },
 ): Promise<void> {
+  // Starting a new run supersedes the previous active one — if that run still
+  // has a review pending, the human decides before it is cancelled.
+  if (!opts?.silent && !opts?.resume) {
+    const pending = state.approvals.filter((a) => a.status === 'PENDING')
+    if (pending.length > 0) {
+      const ok = window.confirm(
+        `Starting a new run will supersede the current one and CANCEL ${pending.length} pending review(s) awaiting a decision. Continue?`,
+      )
+      if (!ok) return
+    }
+  }
   const p = await getProcess(processId)
   let resume: { runId: string; steps?: unknown[]; decisions?: unknown[] } | undefined
   if (opts?.resume) {
