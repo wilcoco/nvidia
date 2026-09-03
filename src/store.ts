@@ -272,11 +272,50 @@ export async function decideApproval(
   // An approval advances the loaded run ONLY when it belongs to that run —
   // approving unrelated work must never tick another run's sign-off step.
   const runId = window.Understudy.currentRunId?.()
-  if (runId && wl?.data.runId != null && String(wl.data.runId) === String(runId)) {
+  const targetRunId = wl?.data.runId != null ? String(wl.data.runId) : null
+  if (runId && targetRunId === String(runId)) {
     window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
+  } else if (targetRunId && decision === 'APPROVED') {
+    // The reviewed entry belongs to a run that is NOT on screen: its server
+    // row must still converge — sign-off done (with approver, time, review
+    // id) and, when nothing else is open, the run completed.
+    try {
+      const runs = await listRuns()
+      const row = runs.find((r) => String(r.id) === targetRunId)
+      if (row && row.status !== 'abandoned' && Array.isArray(row.steps)) {
+        const steps = row.steps.map((s) => ({ ...s })) as Array<Record<string, unknown>>
+        const signoff = steps.find(
+          (s) => s.type === 'approval' && !['done', 'not_applicable'].includes(String(s.status ?? '')),
+        )
+        if (signoff) {
+          signoff.status = 'done'
+          signoff.completedBy = state.actingAs
+          signoff.completedAt = Date.now()
+          signoff.resultId = decided.id
+        }
+        const stillOpen = steps.some(
+          (s) =>
+            s.type !== 'approval' &&
+            ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
+        )
+        const approvalsLeft = steps.some(
+          (s) => s.type === 'approval' && !['done', 'not_applicable'].includes(String(s.status ?? '')),
+        )
+        await updateRun(row.id, {
+          steps,
+          ...(!stillOpen && !approvalsLeft ? { status: 'completed' } : {}),
+        })
+        window.Understudy.log(
+          `approval recorded on run #${targetRunId}: sign-off completed by ${state.actingAs}${!stillOpen && !approvalsLeft ? ' — run completed' : ''}`,
+          { approvalId },
+        )
+      }
+    } catch {
+      /* the run row converges on its next sync if this patch fails */
+    }
   } else if (runId) {
     window.Understudy.log(
-      `review decision on "${wl?.task ?? decided.worklogId}" recorded — unrelated to run #${runId}, so the run's sign-off step remains open`,
+      `review decision on "${wl?.task ?? decided.worklogId}" recorded — no run of its own to advance`,
       { approvalId },
     )
   }

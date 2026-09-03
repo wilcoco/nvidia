@@ -302,15 +302,23 @@ app.post('/api/runs', auth, async (req, res) => {
   const all = await db.listRuns()
   for (const r of all) {
     if (r.status === 'active' && String(r.id) !== String(run.id)) {
-      // A run whose synced steps show nothing open actually finished — its
-      // completed sync merely lost a race. Classify honestly.
+      // Three-way classification: real open work → abandoned (+ cancel its
+      // reviews); everything done → completed; only sign-off outstanding →
+      // stays ACTIVE awaiting approval (multi-pending is supported).
       const steps = Array.isArray(r.steps) ? r.steps : []
       const open = steps.filter(
         (s) => s && s.type !== 'approval' && ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
       )
-      const finished = steps.length > 0 && open.length === 0
-      await db.updateRun(r.id, { status: finished ? 'completed' : 'abandoned' })
-      if (!finished) await cancelPendingApprovalsForRun(r.id)
+      const approvalsOutstanding = steps.some(
+        (s) => s && s.type === 'approval' && !['done', 'not_applicable'].includes(String(s.status ?? '')),
+      )
+      if (open.length > 0) {
+        await db.updateRun(r.id, { status: 'abandoned' })
+        await cancelPendingApprovalsForRun(r.id)
+      } else if (steps.length > 0 && !approvalsOutstanding) {
+        await db.updateRun(r.id, { status: 'completed' })
+      }
+      // else: awaiting sign-off — leave active, keep its pending review.
     }
   }
   res.json(run)
