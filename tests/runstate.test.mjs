@@ -60,13 +60,16 @@ test('plan-only snapshots use current persisted decisions, retain failed work an
    {stepId:'diagnose',to:'plan',reason:'human confirmed',measurements:{redesign:true,delta:0,runId:'wrong-run',approvalStepId:'wrong-step'},evidence:'A schema mismatch',ts:3}]}
  const scope=approvalGate(run,design).scope
  const snapshot=reviewEvidence(run,design,scope,{verification:{delta:0,ok:true},verifiedRoute:{label:'Pass',pass:true},reviewContext:{purpose:'work'}})
- assert.equal(snapshot.delta,12);assert.equal(snapshot.ok,false);assert.equal(snapshot.redesign,true)
+ assert.equal(snapshot.delta,12);assert.equal(snapshot.ok,false);assert.equal(snapshot.redesign,undefined,'decision-only values are not flattened into general evidence')
  assert.equal(snapshot.runId,'actual-run');assert.equal(snapshot.approvalStepId,'plan')
  assert.equal(snapshot.verification.delta,12)
  assert.equal(snapshot.verifiedRoute.label,'Review next steps')
  assert.equal(snapshot.reviewContext.purpose,'plan');assert.equal(snapshot.reviewContext.workChecks,'failed')
  assert.equal(snapshot.reviewContext.decisions.length,2)
  assert.equal(snapshot.reviewContext.decisions[1].measurements.delta,12,'submitted evidence outranks conflicting decision measurements')
+ assert.equal(snapshot.reviewContext.decisions[1].measurements.redesign,true)
+ assert.equal(snapshot.reviewContext.decisions[1].measurementSources.redesign,'decision-provided')
+ assert.equal(snapshot.reviewContext.decisions[1].measurementSources.delta,'task-submitted')
  assert.equal(snapshot.verifiedAt,new Date(3).toISOString())
  // Legacy plans use the saved target name and selected persisted route, never source labels.
  delete design.steps[4].approvalPurpose;design.steps[4].label='Escalate and approve redesign plan'

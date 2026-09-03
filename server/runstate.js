@@ -84,7 +84,7 @@ function reviewMeaning(run, map, scope, taskValues) {
   if (!target) return {}
   const current = new Map()
   for (const d of run.decisions ?? []) if (!d.invalidated && (!scope || scope.includes(d.stepId))) current.set(d.stepId, d)
-  const decisions = [], extra = {}, workChecks = []
+  const decisions = [], workChecks = []
   for (let i = 0; i < design.length; i++) {
     const step = design[i], d = current.get(step.id)
     const edge = step.next?.find(e => e.to === d?.to)
@@ -92,16 +92,18 @@ function reviewMeaning(run, map, scope, taskValues) {
     let measured = d.measurements
     if (!measured && d.evidence) { try { measured = JSON.parse(d.evidence) } catch { /* prose remains in the decision */ } }
     const values = primitiveValues(measured)
+    const measurementSources = Object.fromEntries(Object.keys(values).map(key => [key, 'decision-provided']))
     // A decision cannot replace the values the assignee actually submitted.
     for (const prior of design.slice(0, i + 1)) {
       const recorded = run.steps?.find(s => s.id === prior.id && s.status === 'done')
-      Object.assign(values, primitiveValues(recorded?.resultData))
+      const submitted = primitiveValues(recorded?.resultData)
+      Object.assign(values, submitted)
+      for (const key of Object.keys(submitted)) measurementSources[key] = 'task-submitted'
     }
     const checked = criteriaResult(edge.criteria, values)
     decisions.push({stepId: step.id, label: step.label ?? step.id, to: d.to,
       targetLabel: design.find(s => s.id === d.to)?.label ?? d.to, reason: d.reason,
-      measurements: values, criteria: edge.criteria ?? {}, criteriaMet: checked, ts: d.ts ?? null})
-    Object.assign(extra, values)
+      measurements: values, measurementSources, criteria: edge.criteria ?? {}, criteriaMet: checked, ts: d.ts ?? null})
     // Compare current evidence with saved work-signoff rules as well as the
     // chosen remediation rule. Passing a redesign criterion is not a work pass.
     for (const candidate of step.next ?? []) {
@@ -128,8 +130,8 @@ function reviewMeaning(run, map, scope, taskValues) {
   const route = [...decisions].reverse().find(d => d.criteriaMet !== false && leadsToTarget(d.to))
   const legacyPlan = !target.approvalPurpose && route && /re-?plan|escalat|redesign/i.test(target.label ?? '')
   const purpose = target.approvalPurpose ?? (legacyPlan ? 'plan' : 'unspecified')
-  const verification = {...extra, ...primitiveValues(taskValues)}
-  return { ...extra, ...taskValues,
+  const verification = primitiveValues(taskValues)
+  return { ...taskValues,
     verification: decisions.length ? verification : null,
     verifiedRoute: route ? {label: target.label, pass: true, checked: route.criteriaMet === true, purpose} : null,
     verifiedAt: route?.ts && Number.isFinite(route.ts) ? new Date(route.ts).toISOString() : null,

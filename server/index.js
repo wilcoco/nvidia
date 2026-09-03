@@ -486,4 +486,8 @@ app.use((err, _req, res, _next) => {
   res.status(status).json({ error: status === 500 ? 'internal_error' : err.message })
 })
 
-app.listen(PORT, () => console.log(`[server] listening on :${PORT} (db: ${db.kind})`))
+const server = app.listen(PORT, () => {
+  const address = server.address()
+  const actualPort = typeof address === 'object' && address ? address.port : PORT
+  console.log(`[server] listening on :${actualPort} (db: ${db.kind})`)
+})

@@ -70,6 +70,9 @@ const CSS = `
   box-shadow: -4px 0 24px rgba(0,0,0,.35); font-size: 13px;
 }
 .panel.collapsed { display: none; }
+button:focus-visible, input:focus-visible, select:focus-visible, [role="button"]:focus-visible {
+  outline: 3px solid #6ee7b7; outline-offset: 3px;
+}
 .fab {
   position: fixed; bottom: 16px; right: 16px; z-index: 2147483000;
   background: #0f172a; color: #fff; border: none; border-radius: 999px;
@@ -159,9 +162,11 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step button.del { background: none; border: none; color: #475569; cursor: pointer; flex: none; }
 .step button.del:hover { color: #f87171; }
 .step select { background: #0f172a; color: #cbd5e1; border: 1px solid #334155; border-radius: 4px; font-size: 10px; }
-/* Editing affordances stay out of the way until the card is hovered. */
+/* Editing affordances stay out of the way until the card is hovered or a
+   keyboard user moves focus into it. Invisible controls remain tabbable and
+   become visible as soon as focus enters the card. */
 .step select, .step button.del { opacity: 0; transition: opacity .15s; }
-.step:hover select, .step:hover button.del { opacity: 1; }
+.step:hover select, .step:hover button.del, .step:focus-within select, .step:focus-within button.del { opacity: 1; }
 .step .action-tag { display: none; }
 .step:hover .action-tag { display: block; }
 .branch { margin: 5px 0 0; padding: 4px 8px; border-radius: 7px; color: #8b96a8; font-size: 11px; display: flex; gap: 5px; align-items: center; flex-wrap: wrap; background: rgba(52,211,153,.05); border: 1px solid rgba(52,211,153,.14); }
@@ -371,24 +376,35 @@ function renderStep(
   const locked = !!(mapstore.getMap()?.confirmed || mapstore.getMap()?.saving)
   const label = el('span', `label${locked ? ' ro' : ''}`, step.label)
   if (!locked) {
-  label.title = 'Click to rename'
-  label.onclick = () => {
-    const input = el('input', 'label-edit') as HTMLInputElement
-    input.value = step.label
-    row.replaceChild(input, label)
-    input.focus()
-    input.select()
-    const commit = () => mapstore.humanEditStep(step.id, 'label', input.value.trim() || step.label)
-    input.onkeydown = (e) => {
-      if (e.isComposing) return
-      if (e.key === 'Enter') input.blur()
-      if (e.key === 'Escape') {
-        input.onblur = null
-        input.blur()
+    const editLabel = () => {
+      if (!label.isConnected) return
+      const input = el('input', 'label-edit') as HTMLInputElement
+      input.value = step.label
+      input.setAttribute('aria-label', `Step name: ${step.label}`)
+      row.replaceChild(input, label)
+      input.focus()
+      input.select()
+      const commit = () => mapstore.humanEditStep(step.id, 'label', input.value.trim() || step.label)
+      input.onkeydown = (e) => {
+        if (e.isComposing) return
+        if (e.key === 'Enter') input.blur()
+        if (e.key === 'Escape') {
+          input.onblur = null
+          input.blur()
+        }
       }
+      input.onblur = commit
     }
-    input.onblur = commit
-  }
+    label.title = 'Click or press Enter to rename'
+    label.tabIndex = 0
+    label.setAttribute('role', 'button')
+    label.setAttribute('aria-label', `Rename step: ${step.label}`)
+    label.onclick = editLabel
+    label.onkeydown = (e) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return
+      e.preventDefault()
+      editLabel()
+    }
   }
   row.appendChild(label)
 
@@ -400,6 +416,7 @@ function renderStep(
     typeSel.appendChild(opt)
   }
   typeSel.onchange = () => mapstore.humanEditStep(step.id, 'type', typeSel.value)
+  typeSel.setAttribute('aria-label', `Step type for ${step.label}`)
   if (!locked) meta.appendChild(typeSel)
 
   const del = el('button', 'del', '✕')
@@ -413,24 +430,35 @@ function renderStep(
   if ((step.type !== 'decision' || step.detail) && (!locked || step.detail)) {
     const detail = el('div', `detail${step.detail ? '' : ' detail-empty'}`, step.detail || '+ add note')
     if (!locked) {
-    detail.title = 'Click to edit this note (judgment rules live here)'
-    detail.onclick = () => {
-      const input = el('input', 'detail-edit') as HTMLInputElement
-      input.value = step.detail ?? ''
-      input.placeholder = 'the rule or threshold that guides this step…'
-      card.replaceChild(input, detail)
-      input.focus()
-      const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())
-      input.onkeydown = (e) => {
-        if (e.isComposing) return
-        if (e.key === 'Enter') input.blur()
-        if (e.key === 'Escape') {
-          input.onblur = null
-          input.blur()
+      const editDetail = () => {
+        if (!detail.isConnected) return
+        const input = el('input', 'detail-edit') as HTMLInputElement
+        input.value = step.detail ?? ''
+        input.placeholder = 'the rule or threshold that guides this step…'
+        input.setAttribute('aria-label', `Step note for ${step.label}`)
+        card.replaceChild(input, detail)
+        input.focus()
+        const commit = () => mapstore.humanEditStep(step.id, 'detail', input.value.trim())
+        input.onkeydown = (e) => {
+          if (e.isComposing) return
+          if (e.key === 'Enter') input.blur()
+          if (e.key === 'Escape') {
+            input.onblur = null
+            input.blur()
+          }
         }
+        input.onblur = commit
       }
-      input.onblur = commit
-    }
+      detail.title = 'Click or press Enter to edit this note (judgment rules live here)'
+      detail.tabIndex = 0
+      detail.setAttribute('role', 'button')
+      detail.setAttribute('aria-label', `${step.detail ? 'Edit' : 'Add'} note for ${step.label}`)
+      detail.onclick = editDetail
+      detail.onkeydown = (e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        editDetail()
+      }
     }
     card.appendChild(detail)
   }

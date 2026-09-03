@@ -1,6 +1,9 @@
 # Devpost submission — Understudy
 
-*(Paste-ready text for the submission form. Update the video URL before submitting.)*
+*(Paste-ready text for the submitted project. Public links verified on 2026-09-04.)*
+
+- Demo video: https://youtu.be/kKhdmuNePNM
+- Source repository: https://github.com/wilcoco/nvidia
 
 ## Elevator pitch (short)
 
@@ -123,6 +126,8 @@ through the declarative attribute API.
 ## Try it (reviewers)
 
 - Live: https://nvidia-production-f205.up.railway.app
+- Video: https://youtu.be/kKhdmuNePNM (2:50, English narration and burned-in English captions)
+- Source: https://github.com/wilcoco/nvidia (MIT)
 - Sign in: **judge / webmcp2026** (pre-filled; kim & lee / linepulse also work)
 - Use **Workspace settings → Start a new work item** to clear the current tab’s
   unsaved workspace while preserving saved records and other reviewers’ work.

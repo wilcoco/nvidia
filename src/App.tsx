@@ -267,7 +267,10 @@ function VerificationBlock({ w }: { w: store.Worklog }) {
     {context.decisions.length > 0 && <details className="decision-evidence"><summary>Recorded decisions and evidence ({context.decisions.length})</summary>
       {context.decisions.map(d => <div key={d.stepId} className="decision-evidence-row">
         <strong>{d.label} → {d.targetLabel}</strong><div>{d.reason}</div>
-        <div>{Object.entries(d.measurements).map(([k, v]) => `${k}: ${String(v)}`).join(' · ')}</div>
+        <div>{Object.entries(d.measurements).map(([k, v]) => <span key={k} className="decision-measurement">
+          {k}: {String(v)} <small>{d.measurementSources?.[k] === 'decision-provided'
+            ? 'decision evidence' : d.measurementSources?.[k] === 'task-submitted' ? 'task submission' : 'source unavailable'}</small>
+        </span>)}</div>
         <div className="meta">{d.criteriaMet === true ? 'Selected route criteria met' : d.criteriaMet === false ? 'Recorded values do not meet this route’s criteria' : 'No complete machine check for this route'}</div>
       </div>)}
     </details>}

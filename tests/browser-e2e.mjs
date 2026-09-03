@@ -1,0 +1,128 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {spawn} from 'node:child_process'
+import {existsSync} from 'node:fs'
+import {chromium} from 'playwright-core'
+
+const defaultChrome = process.platform === 'darwin'
+  ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+  : process.platform === 'win32'
+    ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+    : '/usr/bin/google-chrome'
+const chrome = process.env.CHROME_PATH || defaultChrome
+
+test('rendered desktop authoring and 375px role relay survive approval and reload', {skip: !existsSync(chrome), timeout: 60_000}, async()=>{
+  let base = ''
+  let stderr = ''
+  const server = spawn(process.execPath, ['server/index.js'], {
+    env: {...process.env, DATABASE_URL: '', PORT: '0'},
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  server.stderr.on('data', chunk => { stderr += String(chunk) })
+  await new Promise((resolve, reject) => {
+    server.stdout.on('data', chunk => {
+      const match = String(chunk).match(/listening on :(\d+)/)
+      if (match) { base = `http://127.0.0.1:${match[1]}`; resolve() }
+    })
+    server.once('exit', code => reject(Error(stderr || `server exited ${code}`)))
+  })
+
+  let browser
+  try {
+    browser = await chromium.launch({executablePath: chrome, headless: true})
+    const context = await browser.newContext({viewport: {width: 1280, height: 900}})
+    const page = await context.newPage()
+    const title = `Browser E2E ${Date.now()}`
+    await page.goto(base)
+    await page.getByRole('button', {name: /Enter demo workspace/}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+
+    await page.evaluate((mapTitle) => {
+      window.Understudy.draftRevision({
+        title: mapTitle,
+        appliesWhen: {kind: 'operations', keywords: ['browser', 'handoff']},
+        fields: [
+          {key: 'packageCount', label: 'Package count', type: 'number', required: true},
+          {key: 'handoffCode', label: 'Handoff code', type: 'string', required: true},
+        ],
+        steps: [
+          {id: 'prepare', label: 'Prepare packages', detail: 'Count every package.', type: 'task', role: 'Contributor', fields: ['packageCount'], next: [{to: 'handoff'}]},
+          {id: 'handoff', label: 'Record handoff', detail: 'Record the receiving code.', type: 'task', role: 'Operations', fields: ['handoffCode'], next: [{to: 'approve'}]},
+          {id: 'approve', label: 'Approve completed handoff', type: 'approval', role: 'Reviewer', approvalPurpose: 'work'},
+        ],
+      }, 'browser-e2e-draft')
+    }, title)
+
+    const panel = page.locator('#understudy-panel-host')
+    const label = panel.getByRole('button', {name: 'Rename step: Prepare packages'})
+    await label.focus()
+    await label.press('Enter')
+    const labelInput = panel.getByRole('textbox', {name: 'Step name: Prepare packages'})
+    await labelInput.fill('Prepare counted packages')
+    await labelInput.press('Enter')
+
+    const note = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
+    await note.focus()
+    await note.press('Enter')
+    const noteInput = panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'})
+    await noteInput.fill('Count every package before handoff.')
+    await noteInput.press('Enter')
+    await page.waitForTimeout(100)
+
+    const typeSelect = panel.getByRole('combobox', {name: 'Step type for Prepare counted packages'})
+    await typeSelect.focus()
+    await page.waitForTimeout(200)
+    assert.equal(await typeSelect.evaluate(el => getComputedStyle(el).opacity), '1')
+    const remove = panel.getByRole('button', {name: 'Remove step: Prepare counted packages'})
+    await remove.focus()
+    await page.waitForTimeout(200)
+    assert.equal(await remove.evaluate(el => getComputedStyle(el).opacity), '1')
+
+    await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
+    await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 1)
+    await panel.getByRole('button', {name: 'Propose changes (new draft)'}).click()
+    const secondNote = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
+    await secondNote.focus()
+    await secondNote.press('Enter')
+    await panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'}).fill('Count and verify every package before handoff.')
+    await panel.getByRole('textbox', {name: 'Step note for Prepare counted packages'}).press('Enter')
+    await panel.getByRole('button', {name: 'Save as v2 to library'}).click()
+    await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 2)
+
+    await page.getByRole('button', {name: 'My tasks', exact: true}).click()
+    await page.getByRole('button', {name: /Run this playbook/}).click()
+    await page.waitForFunction(() => Boolean(window.Understudy.currentRunId?.()))
+
+    // Assigned task entry and approval are the supported phone workflow.
+    const mobileRunId = await page.evaluate(() => window.Understudy.currentRunId?.())
+    await page.setViewportSize({width: 375, height: 768})
+    await page.reload()
+    await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await page.waitForFunction((expected) => window.Understudy.currentRunId?.() === expected, mobileRunId)
+    await page.getByRole('button', {name: 'My tasks', exact: true}).click()
+    await page.getByRole('combobox', {name: 'Working as'}).selectOption('kim')
+    await page.getByRole('spinbutton', {name: 'Package count*'}).fill('4')
+    await page.getByRole('button', {name: 'Complete & submit'}).click()
+    await page.getByRole('combobox', {name: 'Working as'}).selectOption('park')
+    await page.getByRole('textbox', {name: 'Handoff code*'}).fill('MOBILE-42')
+    await page.getByRole('button', {name: 'Complete & submit'}).click()
+    await page.getByText('Review requested — waiting for the assigned reviewer.').waitFor()
+
+    await page.getByRole('combobox', {name: 'Working as'}).selectOption('lee')
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: /^Reviews/}).click()
+    await page.getByRole('button', {name: 'Approve'}).click()
+    await page.getByRole('button', {name: 'My tasks', exact: true}).click()
+    await page.getByText(/Run complete/).waitFor()
+    const runId = await page.evaluate(() => window.Understudy.currentRunId?.())
+
+    await page.reload()
+    await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await page.waitForFunction((expected) => window.Understudy.currentRunId?.() === expected && window.Understudy.isRunComplete?.() === true, runId)
+    assert.equal(await page.evaluate(() => window.Understudy.getLoadedProcess()?.version), 2)
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true)
+  } finally {
+    await browser?.close()
+    server.kill()
+    await new Promise(resolve => server.exitCode !== null ? resolve() : server.once('exit', resolve))
+  }
+})

@@ -25,7 +25,7 @@ export interface IncidentData {
     purpose: 'work' | 'plan' | 'unspecified'
     purposeSource: 'declared' | 'legacy-label' | 'unspecified'
     workChecks: 'failed' | 'passed' | 'unverified'
-    decisions: Array<{stepId: string; label: string; targetLabel: string; reason?: string; measurements: Record<string, unknown>; criteriaMet: boolean | null}>
+    decisions: Array<{stepId: string; label: string; targetLabel: string; reason?: string; measurements: Record<string, unknown>; measurementSources?: Record<string, 'task-submitted' | 'decision-provided'>; criteriaMet: boolean | null}>
   } | null
   [key: string]: unknown
 }

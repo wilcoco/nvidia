@@ -7,11 +7,11 @@ import vm from 'node:vm'
 const bundle = await build({stdin:{contents:"export * from './src/store'",resolveDir:process.cwd()},bundle:true,format:'cjs',platform:'node',write:false})
 const modes=[['memory',''],...(process.env.TEST_DATABASE_URL?[['postgres',process.env.TEST_DATABASE_URL]]:[])]
 for(const [mode,url] of modes) test(`${mode}: review delivery recovers across real HTTP commits and lost responses`, async()=>{
- const port=18988, base=`http://127.0.0.1:${port}`
- const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,DATABASE_URL:url,PORT:String(port)},stdio:['ignore','pipe','pipe']})
+ let base=''
+ const server=spawn(process.execPath,['server/index.js'],{env:{...process.env,DATABASE_URL:url,PORT:'0'},stdio:['ignore','pipe','pipe']})
  let stderr=''; server.stderr.on('data',b=>stderr+=b)
  try {
-  await new Promise((resolve,reject)=>{server.stdout.on('data',b=>{if(String(b).includes('listening'))resolve()});server.once('exit',c=>reject(Error(stderr||String(c))))})
+  await new Promise((resolve,reject)=>{server.stdout.on('data',b=>{const match=String(b).match(/listening on :(\d+)/);if(match){base=`http://127.0.0.1:${match[1]}`;resolve()}});server.once('exit',c=>reject(Error(stderr||String(c))))})
   const login=await fetch(`${base}/api/auth/login`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'judge',password:'webmcp2026'})}).then(r=>r.json())
   const request=async(path,body)=>{
    const res=await fetch(base+path,{method:body?'POST':'GET',headers:{Authorization:`Bearer ${login.token}`,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined})
