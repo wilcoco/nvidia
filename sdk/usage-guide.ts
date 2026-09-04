@@ -43,7 +43,7 @@ export function buildUsageGuide(language: GuideLanguage, topic: GuideTopic, dism
     item.textContent = step
     list.appendChild(item)
   }
-  if (overview) add('p', ko ? '예: “고객 주문을 출고 준비 중” → 주문 확인 → 포장 → 배송 인계 → 수령 확인. 반복 업무를 여러 사람이 나누어 처리하는 팀에 맞습니다.' : 'Example: “Preparing a customer order” becomes order confirmation → packing → delivery handoff → receipt. It helps teams coordinate recurring work across people.')
+  if (overview) add('p', ko ? 'Example: “Preparing a customer order” → Confirm order → Pack order → Delivery handoff → Confirm receipt. 반복 업무를 여러 사람이 나누어 처리하는 팀에 맞습니다.' : 'Example: “Preparing a customer order” becomes order confirmation → packing → delivery handoff → receipt. It helps teams coordinate recurring work across people.')
   else add('p', ko ? '일반 브라우저에서는 WebMCP 에이전트의 채팅을 연결해 사용하세요. 이 패널에는 질문과 프로세스가 표시됩니다.' : 'In a standalone browser, use the chat of your connected WebMCP agent. This panel displays questions and the process.')
   const next = add('button', overview ? ko ? '사용 방법 보기 →' : 'Show me how →' : ko ? '서비스 소개 보기' : 'What is this service?')
   next.onclick = () => changeTopic(overview ? 'usage' : 'overview')
