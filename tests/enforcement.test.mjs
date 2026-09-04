@@ -91,6 +91,52 @@ test('completed evidence cannot change under a stale branch and only its role ma
   assert.equal(accepted.steps[0].completedBy,undefined)
 })
 
+test('a recovery owner atomically reopens another role without losing event attribution',()=>{
+  const map={fields:[
+    {key:'defectCount',type:'number',required:true},
+    {key:'disposition',type:'select',options:['Pass','Retry'],required:true},
+    {key:'remediationConfirmed',type:'boolean',confirm:true,required:true},
+  ],steps:[
+    {id:'inspect',type:'task',label:'Inspect',role:'Contributor',fields:['defectCount','disposition'],next:[{to:'evaluate'}]},
+    {id:'evaluate',type:'decision',label:'Evaluate',role:'Contributor',next:[
+      {to:'approve',criteria:{defectCount:{eq:0},disposition:{eq:'Pass'}}},
+      {to:'remediate',criteria:{disposition:{eq:'Retry'}}},
+    ]},
+    {id:'remediate',type:'task',label:'Remediate',role:'Operations',fields:['remediationConfirmed'],
+      next:[{to:'inspect',criteria:{remediationConfirmed:{eq:true}}}]},
+    {id:'approve',type:'approval',label:'Approve',role:'Reviewer'},
+  ]}
+  const failedDecision={stepId:'evaluate',to:'remediate',reason:'retry',measurements:{defectCount:3,disposition:'Retry'},
+    ts:10,decidedBy:'kim',authenticatedBy:'judge'}
+  const run={id:'loop',startedBy:'judge',status:'active',steps:[
+    {id:'inspect',type:'task',status:'done',resultData:{defectCount:3,disposition:'Retry'},completedBy:'kim',authenticatedBy:'judge',completedAt:5},
+    {id:'remediate',type:'task',status:'ready'},
+    {id:'approve',type:'approval',status:'conditional'},
+  ],decisions:[failedDecision],events:[]}
+  const completed={id:'recovery-event',ts:20,kind:'completed',stepId:'remediate',label:'Remediate',actor:'park',values:{remediationConfirmed:true}}
+  const reopened={id:'reopen-event',ts:20,kind:'reopened',stepId:'inspect',label:'Inspect',actor:'park',note:'Retry from Remediate'}
+  const sourceReset={id:'source-reset',ts:21,kind:'reopened',stepId:'remediate',label:'Remediate',actor:'park',note:'Retry from Remediate'}
+  const parkPatch=enforceRunUpdate(run,{
+    steps:run.steps.map((step)=>step.id==='inspect'?{id:'inspect',type:'task',status:'ready'}:step),
+    decisions:[{...failedDecision,invalidated:true}],events:[completed,reopened,sourceReset],status:'active',
+  },map,{...operator,authenticatedAs:'judge'})
+  assert.equal(parkPatch.steps.find((step)=>step.id==='inspect').status,'ready')
+  assert.deepEqual(parkPatch.events.find((event)=>event.id===completed.id),{...completed,label:'Remediate',authenticatedBy:'judge'})
+
+  const persisted={...run,...parkPatch,events:parkPatch.events}
+  const fresh={id:'fresh-inspection',ts:30,kind:'completed',stepId:'inspect',label:'Inspect',actor:'kim',values:{defectCount:0,disposition:'Pass'}}
+  const kimPatch=enforceRunUpdate(persisted,{
+    steps:persisted.steps.map((step)=>step.id==='inspect'?{...step,status:'done',resultData:{defectCount:0,disposition:'Pass'}}:step),
+    decisions:[...persisted.decisions,{stepId:'evaluate',to:'approve',reason:'pass',measurements:{defectCount:0,disposition:'Pass'},ts:30}],
+    events:[...persisted.events,fresh],status:'active',
+  },map,{...contributor,authenticatedAs:'judge'})
+  const durableRecovery=kimPatch.events.find((event)=>event.id===completed.id)
+  assert.equal(durableRecovery.actor,'park')
+  assert.equal(durableRecovery.authenticatedBy,'judge')
+  assert.equal(durableRecovery.ts,20)
+  assert.equal(kimPatch.events.filter((event)=>event.id===completed.id).length,1)
+})
+
 test('server completion follows persisted decisions and ignores pending unchosen branches',()=>{
   const map={entry:'measure',steps:[
     {id:'measure',type:'task',next:[{to:'health'}]},

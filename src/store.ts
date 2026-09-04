@@ -260,13 +260,25 @@ export function logout(): void {
   commit({ restoration: 'pending', me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, pausedDrafts: [], recentRuns: [], reviewSync: null })
 }
 
-export function switchActingAs(username: string): void {
+export async function switchActingAs(username: string): Promise<boolean> {
   if (!state.users.some((u) => u.username === username)) {
     window.Understudy.log(`refused persona switch: unknown user "${username}"`)
-    return
+    return false
+  }
+  if (state.actingAs === username) return true
+  const previous = state.actingAs
+  try {
+    // Persist all events with the persona who created them before changing the
+    // role used by the run adapter. A failed flush keeps the persona in place,
+    // so a later retry cannot relabel an unsaved audit event.
+    await window.Understudy.flushRun?.()
+  } catch (error) {
+    window.Understudy.log(`refused persona switch from ${previous} to ${username}: ${error instanceof Error ? error.message : error}`)
+    return false
   }
   commit({ actingAs: username })
   window.Understudy.log(`switched active persona to ${username}`)
+  return true
 }
 
 export interface WorklogInput {

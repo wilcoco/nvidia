@@ -206,6 +206,51 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   const routedAfter=(await call(`/runs/${routed.id}`,owner)).body
   assert.equal(routedAfter.status,'completed')
 
+  // A recovery owner completes a backward loop and thereby reopens work owned
+  // by another role. The atomic transition and its audit actor must survive a
+  // later persona's fresh submission and an independent login read.
+  const loopMap={title:'TEST cross-role recovery audit',fields:[
+    {key:'defectCount',type:'number',required:true},
+    {key:'disposition',type:'select',options:['Pass','Retry'],required:true},
+    {key:'remediationConfirmed',type:'boolean',confirm:true,required:true},
+  ],steps:[
+    {id:'inspect',type:'task',label:'Inspect',role:'Contributor',fields:['defectCount','disposition'],next:[{to:'evaluate'}]},
+    {id:'evaluate',type:'decision',label:'Evaluate',role:'Contributor',next:[
+      {to:'approve',criteria:{defectCount:{eq:0},disposition:{eq:'Pass'}}},
+      {to:'remediate',criteria:{disposition:{eq:'Retry'}}},
+    ]},
+    {id:'remediate',type:'task',label:'Remediate',role:'Operations',fields:['remediationConfirmed'],
+      next:[{to:'inspect',criteria:{remediationConfirmed:{eq:true}}}]},
+    {id:'approve',type:'approval',label:'Approve',role:'Reviewer'},
+  ]}
+  const loopProcess=(await call('/processes',owner,{title:loopMap.title,map:loopMap,actingAs:'kim'})).body
+  let loop=(await call('/runs',owner,{processId:loopProcess.id,title:loopMap.title})).body
+  const firstEvent={id:`loop-first-${loop.id}`,ts:10,kind:'completed',stepId:'inspect',label:'Inspect',actor:'kim',values:{defectCount:3,disposition:'Retry'}}
+  loop=(await call(`/runs/${loop.id}`,owner,{actingAs:'kim',steps:loop.steps.map(step=>step.id==='inspect'
+    ? {...step,status:'done',resultData:{defectCount:3,disposition:'Retry'}}:step),events:[firstEvent]})).body
+  const failedDecision={stepId:'evaluate',to:'remediate',reason:'retry',measurements:{defectCount:3,disposition:'Retry'},ts:11}
+  loop=(await call(`/runs/${loop.id}`,owner,{actingAs:'kim',decisions:[failedDecision]})).body
+  const recoveryEvent={id:`loop-recovery-${loop.id}`,ts:20,kind:'completed',stepId:'remediate',label:'Remediate',actor:'park',values:{remediationConfirmed:true}}
+  const reopenEvent={id:`loop-reopen-${loop.id}`,ts:20,kind:'reopened',stepId:'inspect',label:'Inspect',actor:'park',note:'Retry from Remediate'}
+  const parkTransition=await call(`/runs/${loop.id}`,owner,{actingAs:'park',
+    steps:loop.steps.map(step=>step.id==='inspect'?{id:'inspect',type:'task',status:'ready'}:step),
+    decisions:[{...loop.decisions[0],invalidated:true}],events:[...loop.events,recoveryEvent,reopenEvent]})
+  assert.equal(parkTransition.status,200,JSON.stringify(parkTransition.body))
+  loop=parkTransition.body
+  assert.equal(loop.events.find(event=>event.id===recoveryEvent.id).actor,'park')
+  const freshEvent={id:`loop-fresh-${loop.id}`,ts:30,kind:'completed',stepId:'inspect',label:'Inspect',actor:'kim',values:{defectCount:0,disposition:'Pass'}}
+  const freshDecision={stepId:'evaluate',to:'approve',reason:'pass',measurements:{defectCount:0,disposition:'Pass'},ts:30}
+  const kimTransition=await call(`/runs/${loop.id}`,owner,{actingAs:'kim',
+    steps:loop.steps.map(step=>step.id==='inspect'?{...step,status:'done',resultData:{defectCount:0,disposition:'Pass'}}:step),
+    decisions:[...loop.decisions,freshDecision],events:[...loop.events,freshEvent]})
+  assert.equal(kimTransition.status,200,JSON.stringify(kimTransition.body))
+  const secondLogin=(await call(`/runs/${loop.id}`,reviewer)).body
+  const durableRecovery=secondLogin.events.find(event=>event.id===recoveryEvent.id)
+  assert.equal(durableRecovery.actor,'park')
+  assert.equal(durableRecovery.authenticatedBy,'judge')
+  assert.equal(durableRecovery.ts,20)
+  assert.equal(secondLogin.events.filter(event=>event.id===recoveryEvent.id).length,1)
+
  } finally {
   server.kill()
   await new Promise(r=>server.exitCode!==null?r():server.once('exit',r))

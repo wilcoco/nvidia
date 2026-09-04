@@ -1,4 +1,5 @@
 import {accountableTerminal, routeProgress} from './route.js'
+import {validateFieldValues} from '../shared/fields.js'
 
 function refuse(error, detail, status = 409) {
   throw Object.assign(new Error(error), { status, code: error, detail })
@@ -58,6 +59,52 @@ function isNewDecision(decision, previous = []) {
     old?.ts === decision.ts && Boolean(old?.invalidated) === Boolean(decision.invalidated))
 }
 
+/** A retry task can atomically complete and reopen an earlier loop body in one
+ * browser snapshot. The recovery owner authorizes that state-machine
+ * transition; they are not claiming to perform the tasks being reopened. */
+function authorizedLoopReopens(run, patch, map, authority, incoming, decisions) {
+  const allowed = new Set()
+  if (!Array.isArray(patch.steps) || !Array.isArray(patch.events)) return allowed
+  const design = map?.steps ?? []
+  const previousGate = routeProgress(map, run.steps ?? [], run.decisions ?? []).next
+  if (!previousGate || previousGate.type !== 'task') return allowed
+  const sourceIndex = design.findIndex((step) => step.id === previousGate.id)
+  const source = design[sourceIndex]
+  if (!source || (source.role && source.role !== authority.role)) return allowed
+  const oldEventIds = new Set((run.events ?? []).map((event) => event.id))
+  const newEvents = patch.events.filter((event) => event && !oldEventIds.has(event.id))
+  const completed = newEvents.find((event) => event.kind === 'completed' && event.stepId === source.id &&
+    (event.actor === undefined || event.actor === authority.actor))
+  if (!completed) return allowed
+  const sourceRuntime = incoming.find((step) => step.id === source.id)
+  if (accountableTerminal(sourceRuntime)) return allowed
+  const fields = (map?.fields ?? []).filter((field) => (source.fields ?? []).includes(field.key))
+  if (fields.length !== (source.fields ?? []).length || validateFieldValues(fields, completed.values).length) return allowed
+
+  for (const edge of source.next ?? []) {
+    const targetIndex = design.findIndex((step) => step.id === edge.to)
+    if (targetIndex < 0 || targetIndex > sourceIndex || criteriaResult(edge.criteria, completed.values ?? {}) !== true) continue
+    const priorDecisions = (run.decisions ?? []).filter((decision) => !decision.invalidated &&
+      design.findIndex((step) => step.id === decision.stepId) >= targetIndex &&
+      design.findIndex((step) => step.id === decision.stepId) <= sourceIndex)
+    if (priorDecisions.some((old) => !decisions.some((current) => current.stepId === old.stepId &&
+      current.to === old.to && current.ts === old.ts && current.invalidated))) continue
+    const reopened = design.slice(targetIndex, sourceIndex + 1)
+      .filter((definition) => definition.type !== 'decision')
+      .filter((definition) => {
+        const saved = (run.steps ?? []).find((step) => step.id === definition.id)
+        const next = incoming.find((step) => step.id === definition.id)
+        return accountableTerminal(saved) && !accountableTerminal(next)
+      })
+    if (!reopened.length || reopened.some((definition) => !newEvents.some((event) =>
+      event.kind === 'reopened' && event.stepId === definition.id &&
+      event.ts >= completed.ts && (event.actor === undefined || event.actor === authority.actor)))) continue
+    for (const definition of reopened) allowed.add(definition.id)
+    break
+  }
+  return allowed
+}
+
 /**
  * Revalidate a browser run snapshot inside the storage transaction.
  * `authority` must be derived from the authenticated session, never request
@@ -111,6 +158,8 @@ export function enforceRunUpdate(run, patch, map, authority) {
       }
     }
   }
+
+  const loopReopens = authorizedLoopReopens(run, patch, map, authority, incoming, decisions)
 
   for (const decision of decisions.filter((item) => item && !item.invalidated)) {
     const step = byDesign.get(decision.stepId)
@@ -166,7 +215,8 @@ export function enforceRunUpdate(run, patch, map, authority) {
       }
       continue
     }
-    if (definition.role && authority.role !== definition.role)
+    const loopReopen = reopened && loopReopens.has(step.id)
+    if (definition.role && authority.role !== definition.role && !loopReopen)
       refuse('role_mismatch', `The ${definition.role} role must complete ${definition.label || definition.id}.`, 403)
     if (newlyTerminal) {
       const gate = liveGate(map, incoming, decisions, step.id)
@@ -198,7 +248,7 @@ export function enforceRunUpdate(run, patch, map, authority) {
       delete step.resultId
       delete step.resultData
     }
-    substantive.push(step.id)
+    if (!loopReopen) substantive.push(step.id)
   }
   if (substantive.length > 1)
     refuse('multiple_step_transition', 'Complete one assigned step per server update so each transition has a single accountable actor.')
@@ -206,13 +256,18 @@ export function enforceRunUpdate(run, patch, map, authority) {
   if (patch.status === 'abandoned' && authority.authenticatedAs !== run.startedBy && !authority.canAdmin)
     refuse('not_run_owner', 'Only the run owner may abandon this execution.', 403)
 
+  const oldEvents = new Map((run.events ?? []).map((event) => [event.id, event]))
   const submittedEvents = Array.isArray(patch.events) ? patch.events.map((event) => {
-    if ((run.events ?? []).some((old) => old.id === event.id)) return event
+    // The first accepted event is the audit record. Later full snapshots may
+    // omit server fields or carry a different active persona; never rewrite it.
+    if (oldEvents.has(event.id)) return structuredClone(oldEvents.get(event.id))
     if (event.kind === 'approval')
       refuse('approval_server_owned', 'Approval audit events are written only by the server.', 403)
     const definition = byDesign.get(event.stepId) ??
       (event.stepId?.startsWith('gate:') ? byDesign.get(event.stepId.slice(5)) : undefined)
     if (!definition) refuse('invalid_event_step', 'Audit events must reference a saved playbook step.', 400)
+    if (event.actor !== undefined && event.actor !== authority.actor)
+      refuse('event_actor_mismatch', 'A new audit event must be submitted by the persona who created it.', 403)
     return { ...event, label: definition.label || definition.id, actor: authority.actor, authenticatedBy: authority.authenticatedAs }
   }) : []
   const events = submittedEvents.length || serverEvents.length ? [...submittedEvents, ...serverEvents] : undefined

@@ -157,6 +157,27 @@ test('QA playbooks stay auditable but are hidden from the visitor library', () =
   assert.equal(store.visibleSavedProcesses(processes).map((process) => process.id).join(','), 'real')
 })
 
+test('persona changes flush audit work under the old actor and stop on failure', async () => {
+  const flushedAs = []
+  let fail = false
+  let store
+  store = fixture(async () => response({me:{username:'judge'},users:[
+    {username:'kim',role:'Contributor'},{username:'park',role:'Operations'},{username:'lee',role:'Reviewer'},
+  ],worklogs:[],approvals:[],processes:[]}), {window:{dispatchEvent(){},Understudy:{
+    getLoadedProcess:()=>null,log(){},flushRun:async()=>{
+      flushedAs.push(store.getState().actingAs)
+      if(fail) throw Error('pending run write failed')
+    },
+  }}})
+  await store.refresh()
+  assert.equal(await store.switchActingAs('park'),true)
+  assert.equal(store.getState().actingAs,'park')
+  fail=true
+  assert.equal(await store.switchActingAs('lee'),false)
+  assert.equal(store.getState().actingAs,'park')
+  assert.equal(flushedAs.join(','),'kim,park')
+})
+
 
 test('work input restores after reload and an empty unrelated form does not replace its saved draft', async () => {
   const entries = new Map()

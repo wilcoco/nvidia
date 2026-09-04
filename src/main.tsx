@@ -258,9 +258,9 @@ window.Understudy.init({
       description:
         'Switch the active demo persona (kim = contributor, lee = reviewer) so one person can play both sides.',
       params: { username: { type: 'string', required: true } },
-      handler: (p) => {
-        store.switchActingAs(String(p.username))
-        return { actingAs: store.getState().actingAs }
+      handler: async (p) => {
+        const switched = await store.switchActingAs(String(p.username))
+        return { switched, actingAs: store.getState().actingAs }
       },
     },
   ],
