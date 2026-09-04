@@ -160,7 +160,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           <h2>What belongs before and after this work?</h2>
           <blockquote>{captured.task}</blockquote>
           <p>Choose a related playbook to run, or build a new one from this work.</p>
-          <SuggestionCard includeCandidates />
+          <SuggestionCard />
           <button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Make a new playbook →</button>
         </section>
       ) : (
@@ -170,7 +170,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         </div>
       )}
 
-      {note.trim() && <SuggestionCard includeCandidates />}
+      {note.trim() && <SuggestionCard />}
 
       {!captured?.creationRequested && <RunPicker onOpened={() => navigate('tasks')} />}
       {(proc || (captured && !captured.creationRequested)) && <section className="overview-bottom">

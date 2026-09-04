@@ -2,9 +2,12 @@ import { useState } from 'react'
 import * as store from './store'
 import { ErrorNotice, useAction } from './ui'
 
-export default function SuggestionCard({ includeCandidates = false }: { includeCandidates?: boolean }) {
+export default function SuggestionCard() {
   const action = useAction()
-  const matches = store.computeMatches().filter((m) => m.tier === 'strong' || includeCandidates).slice(0, 2)
+  // Candidate matches are useful context for an agent, but too weak for a
+  // user-facing recommendation. The page shows only matches supported by
+  // specific keywords or structured conditions from the current work.
+  const matches = store.computeMatches().filter((m) => m.tier === 'strong').slice(0, 2)
   const [followedId, setFollowedId] = useState<string | null>(null)
   const [preview, setPreview] = useState<{ id: string; map: UnderstudyProcessMap } | null>(null)
   if (matches.length === 0) return null
@@ -21,9 +24,9 @@ export default function SuggestionCard({ includeCandidates = false }: { includeC
             <span className="suggestion-title">
               {m.title} <span className="version-tag">v{m.version}</span>
             </span>
-              <span className="confidence">{m.tier === 'candidate' ? 'Check whether it fits' : 'Related to your work'}</span>
+              <span className="confidence">Related to your work</span>
           </div>
-          <div className="meta">Suggested because: {m.reasons.join(' · ')}{m.tier === 'candidate' ? '. Check its steps and conditions before choosing it.' : ''}</div>
+          <div className="meta">Suggested because: {m.reasons.join(' · ')}</div>
           <div className="decide">
             <button disabled={action.busy} aria-expanded={preview?.id === m.processId} onClick={() => {
               if (preview?.id === m.processId) { setPreview(null); return }
