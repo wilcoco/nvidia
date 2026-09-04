@@ -3,12 +3,13 @@
 The differentiators we must never omit from any intro material (submission,
 video, Q&A). Each entry: the claim, the one-liner, and where it is proven.
 
-## 1. The essence: raw log → established process
-A worker leaves one as-is sentence ("ran the schema migration on staging").
-The agent interviews out what they never think to write down — what to
-prepare and prevent **before**, what to verify and sign off **after**, the
-warning signs, the pass thresholds, the approver — and the process takes
-shape beside their work.
+## 1. The essence: one work sentence → reviewed, executable process
+A person starts in chat or on the page with one as-is sentence ("ran the
+schema migration on staging"). A readable page card confirms that source once,
+then the visitor's agent asks about judgment the formal process or work record
+often omits — what to prepare and prevent **before**, what to verify and sign
+off **after**, the warning signs, pass thresholds, and approver. The process
+takes shape beside the work without asking the person to enter it again.
 > *Not a record of the event — the process around it.*
 Proof: live interview cards → map growing in the panel (demo Scenes 1–2).
 
@@ -16,6 +17,9 @@ Proof: live interview cards → map growing in the panel (demo Scenes 1–2).
 The human corrects the map — by clicking the text or by telling the agent in
 chat — and the agent reads those edits back (`get_map_edits`); its next
 questions and judgments change because of them.
+Each raw answer remains Draft evidence with its source until one **Save as vN**
+confirms the reviewed map and evidence together. Legacy playbooks without this
+metadata remain valid as previously reviewed versions.
 > *Chat carries intent; the page carries evidence and consent.*
 Proof: rename a step / restructure by chat, then ask the agent what changed.
 

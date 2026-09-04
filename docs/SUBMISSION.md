@@ -7,22 +7,21 @@
 
 ## Elevator pitch (short)
 
-Understudy is a WebMCP layer that lets an AI agent learn how your
-experts actually work — by watching them do it. The human works; the agent
-maps the process beside them; the human corrects the map and teaches it the
-organization's judgment; the playbook then guides the next worker, catches
-skipped steps before they happen, and executes fixes with human approval.
-The point is bigger than logging the event: around every work event,
-Understudy captures what must be prepared and prevented *before* it and what
-must be verified and signed off *after* it — and makes that surrounding
-process executable in the integrated workspace. The portable SDK supplies
-observation, interview and map tools; shared enforcement additionally requires
-the included action, process-store and server integration.
+Understudy is a WebMCP layer that helps a visitor's agent find judgment missing
+from formal processes and turn it into reviewed, executable playbooks. Start
+with one work sentence in chat or on the page. The page asks for a readable
+human confirmation, then the agent asks focused questions while the process
+map grows beside the work. The person corrects the map and confirms the whole
+revision once; the saved playbook then guides the next worker, checks required
+evidence, routes recovery, and sends exact evidence for human approval. The
+portable SDK supplies observation, interview and map tools; shared enforcement
+additionally requires the included action, process-store and server integration.
 
 **At a glance — what makes it stand out**
 
-- Raw one-line work log → interviewed into an established process (the
-  before/prevention and after/verification the expert never writes down).
+- One work sentence in chat or on the page → a reviewed source record → focused
+  questions about the before/prevention and after/verification that formal
+  procedures often omit.
 - Bidirectional teaching: edit the map by click or by chat — the agent reads
   the edits back and changes its behavior.
 - The map is a runtime: the engine refuses out-of-order decisions and
@@ -51,18 +50,20 @@ the included action, process-store and server integration.
 
 ## What it does
 
-Understudy works with an active WebMCP agent session — you invite the agent
-("work along this with me"); during that conversation it reads, asks and acts on
-the same page; the playbook-suggestion cards and the live NEXT/SKIPPED map
-colors are computed by the page. Ask a compatible WebMCP agent on an
-Understudy-enabled page: *"Work along this incident with me, following our
-process."* The agent reads the page's structured state,
+Understudy works with an active WebMCP agent session. A visitor can begin in
+chat with one ordinary work sentence. The requested write appears on the page
+as a human-readable **“Use this as the starting point?”** card; one confirmation
+saves the source and opens the first focused question without duplicate entry.
+During the conversation, the agent reads, asks and acts on the same page; the
+playbook-suggestion cards and live NEXT/SKIPPED map colors are computed by the
+page. The agent reads the page's structured state,
 finds the matching playbook (with confidence and reasons), and joins the run:
 
-- **Capture** — while an expert handles real work (a staging schema
-  migration, an incident), the agent reads
+- **Capture** — while a person handles real work (a staging schema migration,
+  an incident), the visitor's agent reads
   the action journal and drafts a step-by-step response playbook, live, next
-  to their work.
+  to their work. Its focused questions preserve the person's raw answers as
+  Draft evidence until the whole playbook is saved once as Human-confirmed.
 - **Teach** — the human edits the map in place: renames steps, fixes branch
   conditions, writes judgment rules ("lower viscosity to 17s only above 18
   after a color change"). The agent reads the edits (`get_map_edits`) — they
@@ -131,7 +132,7 @@ through the declarative attribute API.
 ## Try it (reviewers)
 
 - Live: https://nvidia-production-f205.up.railway.app
-- Video: https://youtu.be/kKhdmuNePNM (2:50, English narration and burned-in English captions)
+- Video: https://youtu.be/kKhdmuNePNM (English narration and burned-in English captions)
 - Source: https://github.com/wilcoco/nvidia (MIT)
 - Sign in: **judge / webmcp2026** (pre-filled; kim & lee / linepulse also work)
 - Use **Workspace settings → Start a new work item** to clear the current tab’s
@@ -139,8 +140,9 @@ through the declarative attribute API.
 - Tested client: the **Codex desktop app’s built-in browser** with an agent
   discovering and invoking the registered WebMCP tools. Other clients need
   separate compatibility verification.
-- Ask: *“What is this, and how do I use it?”* Then describe one work activity,
-  answer the on-page questions and review the process map before saving it.
+- Ask: *“What is this, and how do I use it?”* Then describe one work activity
+  in chat, approve the readable starting-point card on the page, answer the
+  focused questions, and review the process map before saving it.
 - Full walkthrough: `docs/DEMO_SCRIPT.md`. No payment or personal data; all
   scenario data is fictional.
 
@@ -151,9 +153,9 @@ a process **you can already describe**, and the picture is where it ends.
 Understudy differs on both ends of the pipeline:
 
 - **Input**: it captures the process from *observed work plus interviews* —
-  surfacing the tacit parts (early-warning signs, pass thresholds, rework
-  loops, who signs off) that experts never think to write down. A prompt box
-  can't start there.
+  surfacing judgment that formal procedures often omit (early-warning signs,
+  pass thresholds, rework loops, and who signs off). The answers remain source
+  evidence until the person confirms the complete revision.
 - **Output**: in the integrated workspace the map is not documentation but a
   governed runtime: it is
   suggested to the next worker automatically, renders NEXT/SKIPPED live,

@@ -11,9 +11,9 @@ processes. Daily execution still depends on tacit judgment that rarely fits
 inside those systems: which weak signal means stop, which exception justifies
 a detour, how to recover, and when a handoff is actually safe. These gaps sit
 between formally defined steps. The operational record may say only *"ran the
-schema migration on staging,"* while the expert's real decision process goes
+schema migration on staging,"* while the experienced worker's judgment goes
 unrecorded. When that person is unavailable, the official process remains but
-its practical judgment layer disappears.
+part of its practical judgment layer disappears.
 
 We first tried the usual answer: put an LLM inside the app and ask it
 questions. WebMCP reverses that relationship: **the page provides the tools,
@@ -34,21 +34,29 @@ observation, interviews, the process panel, and 21 WebMCP tools. Registered
 host actions add operation; the included process store and authenticated
 server guard add shared, governed execution.
 
-- **Capture.** A worker saves an ordinary work entry. The agent reads the
-  action journal, drafts the process *around* that event, and asks one focused
-  question card at a time. For judgment-heavy steps the interview adapts from
-  a real incident to observable cues, the tempting novice mistake,
-  boundaries/exceptions, and failure/recovery. Questions, raw answers and
-  timestamps stay attached to the relevant step as non-executable source
-  evidence.
+A visitor can begin in their compatible AI chat with one ordinary work
+sentence. Through WebMCP, the page presents the requested change as a
+human-readable **“Use this as the starting point?”** card. One confirmation
+saves the source record, opens **Create process**, and focuses the first
+question without asking the person to type the work again. The same flow is
+available from the page for people who prefer to start there.
+
+- **Capture.** A person describes an ordinary work event in chat or on the
+  page. Both entry points create the same reviewed source record. The visitor's
+  agent reads the action journal, drafts the process *around* that event, and
+  asks one focused question card at a time. For judgment-heavy steps the
+  interview adapts from a concrete incident to observable cues, the tempting
+  novice mistake, boundaries/exceptions, and failure/recovery. Questions, raw
+  answers, authors, and timestamps stay attached to the relevant step as
+  non-executable **Draft evidence**.
 - **Teach.** The worker corrects the map directly — rename a step, adjust a
   branch, or explain a missing rule in chat. The agent reads those edits with
   `get_map_edits`, updates its next question, and leaves the revised map for
   human review. The existing **Save as vN** action confirms the whole map and
-  its captured judgment together; there is no confirmation click after every
-  answer. Saving a revision creates a new version with lineage. Older saved
-  playbooks without elicitation metadata remain valid as previously reviewed
-  versions.
+  its captured judgment together, changing Draft evidence to
+  **Human-confirmed**; there is no confirmation click after every answer.
+  Saving a revision creates a new version with lineage. Older saved playbooks
+  without elicitation metadata remain valid as previously reviewed versions.
 - **Operate.** A saved playbook becomes assigned work. Contributor,
   Operations, and Reviewer roles receive their next task in order. Task cards
   render the playbook's typed data contract, including required numbers,
@@ -71,7 +79,7 @@ visitor's agent uses its own account, limits, and cost.
 ## How we built it
 
 - **Understudy SDK** (TypeScript → bundled `understudy.js`): an action journal,
-  adaptive expert-interview state machine, question and approval cards, a
+  adaptive judgment-interview state machine, question and approval cards, a
   shadow-DOM process panel with a mini flowchart, and the WebMCP tool surface.
 - **Process engine:** typed fields, role ownership, branch criteria,
   loop-backs that reopen the loop body, invalidation of superseded decisions,
@@ -126,7 +134,8 @@ document.modelContext.registerTool({
   checks, never prompt wording.
 - **Automatable confirmation needs page UI.** Native dialogs froze agent
   browsers, so destructive or state-changing confirmations became explicit
-  page cards and two-step buttons.
+  page cards and two-step buttons. Business-language summaries are visible by
+  default; raw action names and JSON remain available under Technical details.
 - **Testing required adversarial roles.** We repeatedly attacked order,
   evidence, identity, retries, review delivery, concurrency, restoration, and
   malformed inputs. We distinguish LIVE E2E evidence from local memory,
@@ -143,6 +152,9 @@ document.modelContext.registerTool({
 - A process that starts from one ordinary work entry, grows through questions
   and human correction, becomes a versioned execution, and is suggested again
   for related work.
+- A chat-first start that turns conversational intent into a readable page
+  confirmation, then opens the first focused question and growing process map
+  without duplicate entry.
 - A reusable 21-tool WebMCP surface plus an explicit integration model: one
   script for observation and teaching, registered actions for operation, and a
   store/server adapter for governed shared execution.
@@ -158,6 +170,9 @@ document.modelContext.registerTool({
 - Chat carries intent; **the page and server must carry evidence, consent, and
   authorization.** Anything needed by the next worker cannot remain only in a
   private conversation.
+- A tool call is not a usable confirmation by itself. People need to see the
+  business meaning of the proposed change before approving it, while technical
+  payloads remain inspectable rather than becoming the primary interface.
 - Trust needs layers: untrusted-content labeling, narrow tools, per-action
   approval, session-derived identity, server-side transition checks, evidence
   snapshots, immutable sign-off, and honest statements about what was tested.
