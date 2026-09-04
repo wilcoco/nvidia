@@ -62,6 +62,38 @@ test('adaptive expert interview preserves source evidence without turning prose 
  assert.equal(map.getMap().steps[1].elicitation.confirmed,true)
  assert.equal(map.getMap().steps[1].elicitation.confirmedBy,'kim')
 })
+test('only the explicit skip control declines an expert interview question', () => {
+ const {map,asks}=fixture()
+ map.proposeMap({title:'literal workflow language',steps:[
+  step('route',{type:'decision',next:[{to:'recover'},{to:'approve'}]}),
+  step('recover'),step('approve',{type:'approval'})]})
+ const answerNext=(answer,options)=>{
+  const gap=map.mapGaps().find(g=>g.stepId==='route'&&g.kind.startsWith('knowledge_'))
+  const id=asks.askUser(`Question for ${gap.stage}`,undefined,true,gap.resolves_gap)
+  asks.answerAsk(id,answer,options)
+ }
+ answerNext('A recent rollout failed after the total count hid a segment mismatch.')
+ answerNext('The expert compares the segment counts and the verification-query result.')
+ answerNext('A novice may skip verification queries and approve from the total row count alone.')
+ answerNext('The usual rule is not applicable only when the archived segment has been formally excluded.')
+ answerNext('If verification fails, defer rollout, correct the filter, and repeat the dry run.')
+ const record=map.getMap().steps[0].elicitation
+ assert.deepEqual(Array.from(record.answers,answer=>answer.disposition),['accepted','accepted','accepted','accepted','accepted'])
+ assert.match(record.noviceMistake,/skip verification queries/)
+ assert.match(record.boundaries[0],/not applicable only when/)
+ assert.match(record.failureRecovery,/defer rollout/)
+
+ const explicit=fixture()
+ explicit.map.proposeMap({title:'explicit decline',steps:[
+  step('route',{type:'decision',next:[{to:'recover'},{to:'approve'}]}),
+  step('recover'),step('approve',{type:'approval'})]})
+ const gap=explicit.map.mapGaps().find(g=>g.stepId==='route'&&g.kind.startsWith('knowledge_'))
+ const id=explicit.asks.askUser('Tell me about a recent case.',undefined,true,gap.resolves_gap)
+ explicit.asks.answerAsk(id,'Skip this question',{declinedByUser:true})
+ const declined=explicit.map.getMap().steps[0].elicitation
+ assert.equal(declined.answers[0].disposition,'declined')
+ assert.equal(declined.incident,undefined)
+})
 test('legacy saved playbooks remain confirmed without per-answer migration', () => {
  const {map}=fixture()
  map.loadSavedMap({title:'legacy',version:4,steps:[step('work',{detail:'Existing reviewed instructions.'}),step('approve',{type:'approval'})]})

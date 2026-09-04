@@ -32,12 +32,6 @@ const STAGE_TO_KIND = Object.fromEntries(
   Object.entries(KIND_TO_STAGE).map(([kind, stage]) => [stage, kind]),
 ) as Record<ElicitationStage, ElicitationGapKind>
 
-const DECLINE_PATTERNS = [
-  /\b(no such|none|cannot recall|can't recall|skip|not applicable)\b/i,
-  /(그런 적|사례|기억나는 게|떠오르는 게).{0,12}(없|않)/,
-  /(넘어가|건너뛰|해당 없)/,
-]
-
 const UNSPEAKABLE_PATTERNS = [
   /\b(just (know|feel)|gut feel|can't (be )?put .* words|cannot (be )?put .* words|only by watching|learned? by watching)\b/i,
   /(그냥|오직).{0,8}(감|느낌)/,
@@ -47,11 +41,6 @@ const UNSPEAKABLE_PATTERNS = [
 
 function clean(value: string, limit = 2000): string {
   return value.replace(/\s+/g, ' ').trim().slice(0, limit)
-}
-
-function isDecline(answer: string): boolean {
-  const text = clean(answer, 240)
-  return text.length > 0 && text.length < 180 && DECLINE_PATTERNS.some((pattern) => pattern.test(text))
 }
 
 function isUnspeakable(answer: string): boolean {
@@ -160,7 +149,7 @@ export function nextElicitationGap(step: Step): ElicitationGap | null {
 export function recordElicitationAnswer(
   step: Step,
   gapKey: string,
-  evidence: {questionId: string; question: string; answer: string; answeredAt: number},
+  evidence: {questionId: string; question: string; answer: string; answeredAt: number; declinedByUser?: boolean},
 ): {handled: boolean; resolved: boolean; disposition?: ElicitationAnswer['disposition']} {
   const [kind, stepId] = gapKey.split(':') as [ElicitationGapKind, string | undefined]
   const stage = KIND_TO_STAGE[kind]
@@ -168,7 +157,7 @@ export function recordElicitationAnswer(
   const answer = clean(evidence.answer)
   if (!answer) return {handled: true, resolved: false}
   const record = (step.elicitation ??= {answers: []})
-  const decline = isDecline(answer)
+  const decline = evidence.declinedByUser === true
   const firstUnspeakableCue = stage === 'cues' && isUnspeakable(answer) && cueProbeCount(record) === 0
   const disposition: ElicitationAnswer['disposition'] = decline
     ? 'declined'

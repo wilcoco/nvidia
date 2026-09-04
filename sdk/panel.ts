@@ -1006,7 +1006,7 @@ function render() {
         later.onclick = () => { collapsed = true; render() }
         const skip = el('button', undefined, 'Skip this question')
         skip.title = 'Record that you chose not to answer this interview question'
-        skip.onclick = () => asksStore.answerAsk(ask.id, 'Skip this question')
+        skip.onclick = () => asksStore.answerAsk(ask.id, 'Skip this question', {declinedByUser: true})
         controls.appendChild(later)
         controls.appendChild(skip)
         card.appendChild(controls)

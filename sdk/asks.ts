@@ -53,6 +53,9 @@ export interface GapAnswerEvidence {
   question: string
   answer: string
   answeredAt: number
+  /** Set only by the panel's explicit Skip control. Human prose must never be
+   * classified as a refusal from words such as "skip" or "not applicable". */
+  declinedByUser?: boolean
 }
 
 const gapResolvers = new Set<(gapKey: string, evidence: GapAnswerEvidence) => void>()
@@ -88,8 +91,9 @@ export function askUser(
   return id
 }
 
-/** Panel calls this when the human answers (option label, run outcome, or free text). */
-export function answerAsk(id: string, answer: string): void {
+/** Panel calls this when the human answers (option label, run outcome, or free
+ * text). Declining is an explicit UI gesture, never inferred from the text. */
+export function answerAsk(id: string, answer: string, options?: {declinedByUser?: boolean}): void {
   const idx = asks.findIndex((a) => a.id === id)
   if (idx < 0) return
   const ask = asks[idx]
@@ -98,7 +102,8 @@ export function answerAsk(id: string, answer: string): void {
   questionResults.set(id, { status: 'answered', question: ask.question, answer })
   record('user', 'answer', answer, { question: ask.question, questionId: id })
   if (ask.resolvesGap) {
-    const evidence = {questionId: id, question: ask.question, answer, answeredAt}
+    const evidence = {questionId: id, question: ask.question, answer, answeredAt,
+      ...(options?.declinedByUser ? {declinedByUser: true} : {})}
     gapResolvers.forEach((fn) => fn(ask.resolvesGap!, evidence))
   }
   notify()
