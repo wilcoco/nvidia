@@ -7,7 +7,7 @@
 
 ## Elevator pitch (short)
 
-Understudy is a drop-in WebMCP layer that lets an AI agent learn how your
+Understudy is a WebMCP layer that lets an AI agent learn how your
 experts actually work — by watching them do it. The human works; the agent
 maps the process beside them; the human corrects the map and teaches it the
 organization's judgment; the playbook then guides the next worker, catches
@@ -15,7 +15,9 @@ skipped steps before they happen, and executes fixes with human approval.
 The point is bigger than logging the event: around every work event,
 Understudy captures what must be prepared and prevented *before* it and what
 must be verified and signed off *after* it — and makes that surrounding
-process enforceable.
+process executable in the integrated workspace. The portable SDK supplies
+observation, interview and map tools; shared enforcement additionally requires
+the included action, process-store and server integration.
 
 **At a glance — what makes it stand out**
 
@@ -33,16 +35,17 @@ process enforceable.
   anti-parrot by design.
 - Playbooks are versioned assets with lineage, a data contract that becomes
   real form fields, and explained suggestions (confidence + reasons).
-- Everything the next worker needs — suggestions, NEXT/SKIPPED guidance,
+- In the integrated demo, the next worker's suggestions, NEXT/SKIPPED guidance,
   task cards, approvals, server gates — also works with **no agent at all**;
   only resolving a decision branch goes through the agent, deliberately,
   because that call is the evidence-checking gate itself. This is also the
   mobile scope: processes are created and decisions handled with the agent
   on desktop — while assignees' input,
   handoffs and reviews still work on a phone's plain browser.
-- Explicit review controls: persona-scoped approval UI, role-gated actions,
-  UI-confirmed saves, and an auto-approve option. See the demo trust model below.
-- It is a layer: one script tag attaches it to a second, framework-free page.
+- Explicit review controls: persona-scoped approval UI, role-gated actions and
+  UI-confirmed saves. Agent calls have no force or auto-approve parameter.
+- It is a tiered layer: one script attaches observation, interview and tools to
+  a second framework-free page; shared governed runs use a server adapter.
 
 (Full list with proof points: `docs/KEY_STRENGTHS.md`.)
 
@@ -78,7 +81,7 @@ finds the matching playbook (with confidence and reasons), and joins the run:
 - **Protect** — `run_action` refuses to jump past required steps: *"Process
   violation prevented"*, before anything runs. The agent explains, offers
   one-click fixes (executable ask-cards), and proceeds only with human
-  approval — or an explicit human override.
+  approval. The tool has no agent-controlled order override.
 - **Remember** — every execution persists as a run record (who, when, which
   steps, deviations). Improvement stays human-verified: the agent proposes a
   revision from what the runs show, and confirming it saves a new version.
@@ -102,8 +105,9 @@ WebMCP supports this product's shared-page interaction directly:
 - Execution means operating *the same page the human sees*, behind per-action
   approval cards.
 
-Human and agent share one surface and one login. Understudy computes the
-process state (steps, branches, deviations); WebMCP is the channel through
+Human and agent share one surface. The page computes immediate guidance and
+the server revalidates persisted transitions (actor, role, order, branch
+evidence and approval ownership); WebMCP is the channel through
 which the agent understands it and acts. The page provides explicit review
 controls; these controls do not authenticate human presence.
 
@@ -121,7 +125,8 @@ through the declarative attribute API.
 - **Demo workspace** (React + Vite): a generic work-log workspace with
   reviews and a shared playbook library (incidents are one scenario).
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,
-  playbook library with versioning, and persistent run records.
+  playbook library with versioning, persistent run records, and a reusable
+  transaction-time transition guard.
 
 ## Try it (reviewers)
 
@@ -149,7 +154,8 @@ Understudy differs on both ends of the pipeline:
   surfacing the tacit parts (early-warning signs, pass thresholds, rework
   loops, who signs off) that experts never think to write down. A prompt box
   can't start there.
-- **Output**: the map is not documentation but an *enforced runtime*: it is
+- **Output**: in the integrated workspace the map is not documentation but a
+  governed runtime: it is
   suggested to the next worker automatically, renders NEXT/SKIPPED live,
   blocks skipped prerequisites server-side, refuses pass decisions that
   contradict measured evidence, and routes the final sign-off to a human.
@@ -171,22 +177,22 @@ reassignment, and runs that travel across the org's other business apps. That is
 phase — and the reason WebMCP is the right foundation for it: every app
 that adopts WebMCP exposes its actions as standard tools, so a playbook
 step can bind to *another app's* tool the same way it binds to this one's
-(`runs: <tool>` is already how steps replay here, and the one-script-tag
-attach on plain.html shows the layer traveling to a second app). The
-connector problem that makes classic BPM integrations expensive dissolves
-into tool bindings. The interview already captures the seed data — owners
+(`runs: <tool>` is already how steps replay here, and the one-script attach on
+plain.html shows the observation/tool tier traveling to a second app).
+WebMCP standardizes the tool surface, while cross-app identity, reliability
+and data mapping still require adapters. The interview already captures the seed data — owners
 ("who signs off"), required evidence, criteria — so the operations layer is
 an extension of the same playbook format, not a rewrite.
 
-**Trust model (stated, not discovered):** personas are a demo device — one
-signed-in reviewer account acts as Kim/Park/Lee, so persona identity is a UI
-assertion, not authentication. The server still fail-closes on what it can
-know: unknown personas cannot write, approvers must be existing Reviewers
-and never the author, runs are updated only by their owner, and run/step
-payloads are shape-validated. Production hardening (real per-user sessions,
-server-side progress recomputation) is the first item of the operations
-roadmap above. UI approval is an interaction safeguard, not an unforgeable
-human-presence check: browser automation can click the same controls.
+**Trust model (stated, not discovered):** normal demo accounts are bound to
+their authenticated session; only the disclosed `judge` account may delegate
+to Kim/Park/Lee for a one-screen demo. The server derives attribution from
+that authenticated authority and revalidates run order, assigned roles,
+branch evidence and server-owned approval completion before persistence.
+This is stronger than trusting a browser snapshot, but it is still a shared
+demo workspace rather than production SSO, tenant isolation or cryptographic
+human-presence proof. UI approval is an interaction safeguard; browser
+automation can operate the same controls.
 
 ## What's new vs. prior work
 

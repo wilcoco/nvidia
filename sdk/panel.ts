@@ -4,7 +4,6 @@ import * as asksStore from './asks'
 import * as host from './host'
 import { runAsHuman, preconditionFor } from './runner'
 import { isRunComplete } from './runsync'
-import { isAutoApprove, setAutoApprove } from './settings'
 import type { Step } from './types'
 import { discoveryPreview } from './discovery-preview'
 import type { PlaybookRequest } from './discovery'
@@ -1138,20 +1137,6 @@ function render() {
   body.appendChild(jSection)
 
   panel.appendChild(body)
-
-  // Footer
-  const footer = el('footer')
-  const check = el('input') as HTMLInputElement
-  check.type = 'checkbox'
-  check.checked = isAutoApprove()
-  check.onchange = () => {
-    setAutoApprove(check.checked)
-  }
-  const lbl = el('label')
-  lbl.appendChild(check)
-  lbl.appendChild(document.createTextNode(' Auto-approve agent actions'))
-  footer.appendChild(lbl)
-  panel.appendChild(footer)
 
   root.appendChild(panel)
   const flowEl = panel.querySelector('.flow') as HTMLElement | null

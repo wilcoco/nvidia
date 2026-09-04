@@ -20,14 +20,16 @@ questions and judgments change because of them.
 Proof: rename a step / restructure by chat, then ask the agent what changed.
 
 ## 3. Enforcement — the map is a runtime, not a picture
-Not decoration: in the page engine (outside the agent's control), decisions
-out of order are refused
+Not decoration: the page engine gives immediate guidance and the integrated
+workspace's transaction-time server guard independently revalidates persisted
+transitions. Decisions out of order are refused
 (`out_of_sequence` names the live gate and unfinished steps), review requests
 and approvals on unfinished runs are refused (`process_incomplete`), pass
 choices that contradict measurements are refused (`evidence_conflict`), and
-skipping ahead in the UI demands an explicit, recorded confirmation — and
-the server independently refuses reviews/approvals of unfinished runs,
-non-approver decisions, and edits to approved records.
+skipping ahead in the UI demands an explicit, recorded confirmation. The
+server refuses wrong-role/out-of-order completions, branch choices that
+conflict with submitted evidence, reviews/approvals of unfinished runs,
+non-approver decisions, and edits to signed records.
 > *A diagram can't refuse a bad pass decision. This playbook does.*
 Evidence: automated regression tests and the documented browser E2E scenarios exercise these refusals.
 
@@ -53,9 +55,10 @@ their successors in suggestions), a per-playbook **data contract** that
 renders as real form fields, and applies-when matching that explains every
 suggestion (confidence + reasons).
 
-## 7. Works without an agent, too (one honest boundary)
-Suggestions, NEXT/SKIPPED guidance, task cards, approvals and every server
-gate run page/server-side — in any plain browser. The one thing that
+## 7. Assigned work and review work without an agent
+In the integrated demo workspace, suggestions, NEXT/SKIPPED guidance, task
+cards, approvals and server gates run through the page and server in a plain
+browser. The one thing that
 requires an agent is resolving a DECISION branch: that goes through
 `resolve_decision` on purpose, through the implementation’s evidence-checking interface.
 > *The agent is the door; the page is the house — and the branch points are
@@ -68,21 +71,21 @@ branches stay agent-lane even on mobile — by design, not omission.
 
 ## 8. Explicit review and consent controls
 The WebMCP toolset exposes proposals and pending approval cards; confirming
-a map or approving an action happens in the page UI. Auto-approve is an
-explicit UI option. These are interaction boundaries, not proof of human
+a map or approving an action happens in the page UI. Host mutations cannot be
+auto-approved or forced by a tool parameter. These are interaction boundaries, not proof of human
 identity: browser automation can operate the same controls, and the demo
 persona switcher is not production authorization.
 
-## 9. A drop-in layer, not an app
-One script tag + `Understudy.init()` gives any web app the journal, the
-panel, and 20 WebMCP tools (imperative `registerTool` plus a declarative
-form). The second demo page (`plain.html` — no framework, no build step)
-proves the layer travels.
+## 9. A portable SDK with explicit integration tiers
+One script tag + `Understudy.init()` gives a web app the journal, panel and
+20 WebMCP tools. Registered host actions add operation; a process-store and
+authenticated enforcement backend add shared, governed execution. The plain
+page proves the first tier travels. The richer demo proves all three together.
 
 ## 10. Versus AI diagram generators (Eraser, Whimsical, Miro AI)
 They draw the process you can already describe, and the picture is the end.
-We capture the process from observed work, and the map is an enforced
-runtime.
+We capture the process from observed work, and the map becomes a governed
+runtime in the integrated workspace.
 > *A picture of the process vs. an operating system for the process.*
 
 ## 11. Honest scope, seeded roadmap
@@ -92,8 +95,9 @@ personas, and auto-created sign-off reviews. Deliberately roadmap:
 deadlines, notifications, reassignment — and cross-app runs, which is where
 WebMCP shines next: every adopting app exposes standard tools, so a playbook
 step can bind to *another app's* tool the same
-way `runs:` binds to this one's — the classic BPM connector problem
-dissolves into tool bindings.
+way `runs:` binds to this one's. Cross-app identity, reliability and data
+mapping still require integration work; WebMCP standardizes the tool surface
+rather than eliminating that work.
 
 ## 12. Legible process UI
 Overview mini-flowchart (true 2D: branches fan right, loop-backs curve left,

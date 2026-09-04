@@ -2,8 +2,11 @@
 
 > **Turn everyday work into a process your team can reuse.**
 
-Understudy is a **drop-in WebMCP layer** that turns any web work-app into an
-agent-readable, agent-operable workspace. Add one script tag, and:
+Understudy is a WebMCP layer for turning everyday work into a process that
+people can review and reuse. Adding the SDK script gives a web app an action
+journal, an in-page process panel and an agent tool surface. Host actions,
+shared persistence and governed execution are explicit integration tiers;
+the demo workspace includes those adapters and its server enforcement module.
 
 1. **The human just works.** Every meaningful action — clicks, form submissions,
    app-level events — lands in an action journal.
@@ -15,15 +18,16 @@ agent-readable, agent-operable workspace. Add one script tag, and:
    follow-up questions ("You skipped approval this time — is it optional?").
 4. **The agent runs the process.** Once confirmed, the agent replays the
    process using the same page's actions, through assigned task forms, evidence checks, and review steps defined in
-   the playbook. Agent actions request UI approval unless auto-approve is enabled.
+   the playbook. Every host-app mutation requested by the agent waits for an
+   explicit on-page approval.
 
-5. **Processes become shared assets.** A confirmed process is saved to a
-   team-wide library — anyone (or their agent) can pull up a process a
-   colleague refined and work along it.
+5. **Processes become shared assets when a store is connected.** A confirmed
+   process can be saved to a shared library so another worker can choose and
+   follow a reviewed version.
 
 Company processes live in people's habits, not in documents. Understudy turns
-**doing** into **documentation** into **automation** — without anyone ever
-writing a process down.
+**doing** into **documentation** into guided execution, without requiring the
+expert to begin by authoring an SOP from a blank page.
 
 The point is not "AI automates your work" — recorders, task miners, and
 computer-use agents already chase that, all of them turn-taking: the human
@@ -61,7 +65,9 @@ Two host apps are included to prove the layer is app-agnostic:
   process). Integrated the "rich" way:
   semantic logs + registered actions + a process-store adapter.
 - `/plain.html` — a deliberately plain, framework-free purchase-request page.
-  Integrated with **one script tag** and `autoCapture: 'full'`.
+  One script tag and `autoCapture: 'full'` demonstrate observation, the panel
+  and the WebMCP surface. It does not by itself provide the demo workspace's
+  shared database, account model or server enforcement.
 
 All demo data is fictional. The demo workspace uses a small Express + Postgres backend
 so worklogs, approvals, and the process library are shared across users.
@@ -122,7 +128,7 @@ process. Browser viewport tests are separate from physical-device testing.
 | `find_relevant_processes` | Playbooks matching what the human is entering right now, with confidence and reasons. |
 | `list_saved_processes` | Shared process library — including processes other people confirmed. |
 | `load_process` | Start a saved playbook as a fresh run with no imported results. Resume specific earlier work with the on-page run picker. |
-| `run_action` | Execute a host action behind an in-page approval card. Refuses to jump past required undone steps ("Process violation prevented") unless the human explicitly overrides. |
+| `run_action` | Execute a host action behind an in-page approval card. Refuses to jump past required undone steps; there is no agent-controlled override. |
 
 ## Attach Understudy to your own app
 
@@ -146,6 +152,19 @@ process. Browser viewport tests are separate from physical-device testing.
 
 No framework requirements. The panel renders in shadow DOM, so host styles and
 panel styles cannot collide.
+
+### Integration tiers and trust boundary
+
+| Tier | Host integration | What it provides |
+| --- | --- | --- |
+| Observe and teach | Script + `Understudy.init()` | Journal, interview cards, local map and WebMCP tools. |
+| Operate | Registered actions + state provider | Human-approved host actions and task forms in that page. |
+| Govern and share | Process-store adapter + authenticated server enforcement | Shared versions/runs, session-bound attribution, server revalidation of order, roles, evidence and approvals. |
+
+The one-script example proves the first tier. A production claim about shared
+workflow enforcement requires the third tier or an equivalent host backend;
+the reference contract is documented in
+[`docs/ENFORCEMENT_INTEGRATION.md`](docs/ENFORCEMENT_INTEGRATION.md).
 
 ## Run locally
 
@@ -227,7 +246,7 @@ sdk/        Understudy itself (TypeScript → bundled to a single understudy.js)
   tools.ts    WebMCP tool definitions & registration
 src/        demo workspace (React)
 server/     Express API + Postgres/in-memory storage (auth, worklogs, approvals, process library)
-public/plain.html   second host app (vanilla, one-script-tag attach)
+public/plain.html   second host app (vanilla, one-script observation/tool tier)
 ```
 
 ## Prior work

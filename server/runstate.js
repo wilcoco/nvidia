@@ -7,10 +7,12 @@ export function applySignoff(run, approval) {
   if (!step) return null
   Object.assign(step, {
     status: 'done', resultId: String(approval.id), completedBy: approval.approver,
-    completedAt: Date.now(),
+    authenticatedBy: approval.decidedBySession ?? approval.approver, completedAt: Date.now(),
   })
   const events = mergeRunEvents(run.events, [{ id: `approval:${approval.id}`, ts: Date.now(), kind: 'approval',
-    stepId: step.id, label: step.label, actor: approval.approver, note: approval.comment ?? 'Approved', resultId: String(approval.id) }])
+    stepId: step.id, label: step.label, actor: approval.approver,
+    authenticatedBy: approval.decidedBySession ?? approval.approver,
+    note: approval.comment ?? 'Approved', resultId: String(approval.id) }])
   return { steps, events, status: finished(steps) ? 'completed' : 'active' }
 }
 

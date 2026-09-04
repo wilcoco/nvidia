@@ -8,7 +8,6 @@ import * as host from './host'
 import * as journal from './journal'
 import * as mapstore from './mapstore'
 import { requestApproval } from './asks'
-import { isAutoApprove } from './settings'
 import type { HostAction } from './types'
 
 export interface RunOutcome {
@@ -71,6 +70,11 @@ const BUILTIN_ACTIONS: Record<string, HostAction> = {
     },
   },
 }
+
+// Branch selection is the product's evidence-checked agent lane. A deviation
+// bypasses ordinary task execution, so an agent request for it must still wait
+// for a human approval card (run-bound question buttons remain the human lane).
+const DIRECT_AGENT_STATE_ACTIONS = new Set(['resolve_decision'])
 
 function resolveAction(name: string): HostAction | undefined {
   return host.getAction(name) ?? BUILTIN_ACTIONS[name]
@@ -158,7 +162,6 @@ async function executeCore(
 export function startHostAction(
   name: string,
   raw: Record<string, unknown>,
-  opts: { force?: boolean } = {},
 ): RunStart | Promise<RunStart> {
   const action = resolveAction(name)
   if (!action) {
@@ -180,21 +183,18 @@ export function startHostAction(
     }
   }
 
-  const force = opts.force === true || raw.force === true
-  if (!force) {
-    const gap = mapstore.prerequisiteGap(name)
-    if (gap) {
-      return {
-        ok: false,
-        error: `Process violation prevented: running ${name} now would reach "${gap.target}" while earlier required steps are not done: ${gap.missing.join('; ')}.`,
-        note: 'Warn the human. Offer run-bound ask_user options to complete or excuse (resolve_deviation) the missing steps — or, only after the human explicitly agrees to proceed anyway, retry with force: true.',
-      }
+  const gap = mapstore.prerequisiteGap(name)
+  if (gap) {
+    return {
+      ok: false,
+      error: `Process violation prevented: running ${name} now would reach "${gap.target}" while earlier required steps are not done: ${gap.missing.join('; ')}.`,
+      note: 'Warn the human. Complete the missing work or use the explicit on-page deviation flow with a recorded reason. The agent cannot override ordering.',
     }
   }
 
-  // State-only builtins and auto-approve skip the card; everything else waits
-  // for the human — WITHOUT blocking this call.
-  if (isAutoApprove() || name in BUILTIN_ACTIONS) {
+  // Locally validated process-state builtins do not invoke a host-app mutation.
+  // Every host action waits for a human approval card.
+  if (DIRECT_AGENT_STATE_ACTIONS.has(name)) {
     return executeCore(action, params, 'agent')
   }
   const requestedMap = mapstore.getMap()
@@ -206,7 +206,7 @@ export function startHostAction(
     if (mapstore.getMap() !== requestedMap || requestedMap?.confirmed !== requestedConfirmed || host.actorRole() !== requestedRole) {
       return Promise.resolve({ ok: false, error: 'Stale approval: the process or acting role changed; request the action again.' })
     }
-    const gapNow = force ? null : mapstore.prerequisiteGap(action.name)
+    const gapNow = mapstore.prerequisiteGap(action.name)
     if (gapNow) {
       return Promise.resolve({
         ok: false,

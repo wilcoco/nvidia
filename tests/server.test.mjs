@@ -8,13 +8,14 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
  let errors='';server.stderr.on('data',b=>errors+=b)
  try {
   await new Promise((resolve,reject)=>{server.stdout.on('data',b=>{const match=String(b).match(/listening on :(\d+)/);if(match){base=`http://127.0.0.1:${match[1]}`;resolve()}});server.once('exit',c=>reject(Error(errors||String(c))))})
-  const call=async(path,token,body)=>{
-   const response=await fetch(`${base}/api${path}`,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(4000)})
+  const call=async(path,token,body,method=body?'POST':'GET')=>{
+   const response=await fetch(`${base}/api${path}`,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{})},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(4000)})
    return {status:response.status,body:await response.json()}
   }
   const owner=(await call('/auth/login',null,{username:'judge',password:'webmcp2026'})).body.token
-  const reviewer=(await call('/auth/login',null,{username:'park',password:'linepulse'})).body.token
-  assert.ok(owner);assert.ok(reviewer)
+  const reviewer=(await call('/auth/login',null,{username:'lee',password:'linepulse'})).body.token
+  const operator=(await call('/auth/login',null,{username:'park',password:'linepulse'})).body.token
+  assert.ok(owner);assert.ok(reviewer);assert.ok(operator)
   const resetBefore=(await call('/state',owner)).body
   assert.equal((await call('/admin/reset',owner,{scope:'all'})).status,403)
   const resetAfter=(await call('/state',owner)).body
@@ -24,7 +25,15 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal((await call('/processes',owner,{title:formMap.title,map:noOwner})).status,400)
   const formProcess=await call('/processes',owner,{title:formMap.title,map:formMap,actingAs:'kim'})
   assert.equal(formProcess.status,200)
+  const disposable=await call('/processes',owner,{title:'TEST owner-only deletion',map:formMap,actingAs:'kim'})
+  assert.equal(disposable.status,200)
+  assert.equal((await call(`/processes/${disposable.body.id}`,operator,{actingAs:'kim'},'DELETE')).status,403)
+  assert.equal((await call(`/processes/${disposable.body.id}`,operator,undefined,'DELETE')).status,403)
+  assert.equal((await call(`/processes/${disposable.body.id}`,owner,{actingAs:'lee'},'DELETE')).status,403)
+  assert.equal((await call(`/processes/${disposable.body.id}`,owner,{actingAs:'kim'},'DELETE')).status,200)
+  assert.equal((await call(`/processes/${disposable.body.id}`,owner)).status,404)
   const formRun=(await call('/runs',owner,{processId:formProcess.body.id,title:formMap.title})).body
+  assert.equal((await call('/runs',operator,{processId:formProcess.body.id,title:'TEST spoofed run',actingAs:'kim'})).status,403)
   for(const resultData of [{},{quantity:'12',method:'Pickup'},{quantity:12,method:'Other'}])
     assert.equal((await call(`/runs/${formRun.id}`,owner,{steps:[{id:'input',type:'task',status:'done',resultData}]})).status,400)
   assert.equal((await call(`/runs/${formRun.id}`,owner,{status:'completed',steps:[{id:'input',type:'task',status:'done',resultData:{quantity:12.5,method:'Pickup'}}]})).status,200)
@@ -33,6 +42,7 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal(otherViewer.status,200)
   assert.deepEqual(otherViewer.body.steps[0].resultData,{quantity:12.5,method:'Pickup'})
   const startingWork=(await call('/worklogs',owner,{date:'2026-09-03',line:'A',task:'TEST delivery discovery',actingAs:'kim',data:{example:true}})).body
+  assert.equal((await call('/worklogs',operator,{date:'2026-09-03',line:'A',task:'TEST impersonation',actingAs:'kim'})).status,403)
   const discoveryPath=`/worklogs/${startingWork.id}/discovery`
   assert.equal((await call(discoveryPath,null,{actingAs:'kim',answer:'Sales confirms the order.'})).status,401)
   for(const answer of ['',{},'x'.repeat(4001)])assert.equal((await call(discoveryPath,owner,{actingAs:'kim',answer})).status,400)
@@ -42,6 +52,11 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal(discovered.body.data.discovery.before.answer,'Sales confirms the quantity and delivery date.')
   assert.equal(discovered.body.data.discovery.before.answeredBy,'kim')
   assert.equal((await call('/state',reviewer)).body.worklogs.find(w=>w.id===startingWork.id).data.discovery.before.answer,discovered.body.data.discovery.before.answer)
+  assert.equal((await call(`/worklogs/${startingWork.id}/verification`,operator,{measurements:{ok:true}})).status,403)
+  assert.equal((await call(`/worklogs/${startingWork.id}/verification`,operator,{actingAs:'kim',measurements:{ok:true}})).status,403)
+  assert.equal((await call(`/worklogs/${startingWork.id}/corrective`,operator,{actionTaken:'Spoofed correction'})).status,403)
+  assert.equal((await call(`/worklogs/${startingWork.id}/verification`,owner,{actingAs:'kim',measurements:{ok:true}})).status,200)
+  assert.equal((await call(`/worklogs/${startingWork.id}/corrective`,owner,{actingAs:'kim',actionTaken:'Owner correction'})).status,200)
   await call(`/worklogs/${startingWork.id}/submit`,owner,{actingAs:'kim',approver:'lee'})
   assert.equal((await call(discoveryPath,owner,{actingAs:'kim',answer:'Changed while under review'})).status,409)
   for(const id of ['bad','999999999999999999999','0'])assert.equal((await call(`/worklogs/${id}/verification`,owner,{measurements:{ok:true}})).status,400)
@@ -70,6 +85,7 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   const subs=await Promise.all(Array.from({length:6},()=>call(`/worklogs/${subject.id}/submit`,owner,{actingAs:'kim',approver:'lee'})))
   assert.equal(subs.filter(x=>x.status===200).length,1)
   const old=subs.find(x=>x.status===200).body
+  assert.equal((await call(`/approvals/${old.id}/decide`,operator,{actingAs:'lee',decision:'APPROVED'})).status,403)
   assert.equal((await call(`/runs/${run.id}`,owner,{steps:[{...steps[0],status:'ready'},steps[1]]})).status,200)
   assert.notEqual((await call(`/approvals/${old.id}/decide`,reviewer,{actingAs:'lee',decision:'APPROVED'})).status,200)
   await call(`/runs/${run.id}`,owner,{steps})

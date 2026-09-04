@@ -22,8 +22,10 @@ That's why it's called Understudy.
 
 ## What it does
 
-Understudy is a drop-in WebMCP layer — one script tag — that turns any web
-work-app into an agent-observable workspace, and closes a full loop:
+Understudy is a WebMCP layer that turns a web work-app into an
+agent-observable workspace. One SDK script supplies observation, the process
+panel and tools; registered actions and a store/enforcement adapter close the
+full operational loop:
 
 - **Capture.** You save an ordinary work log. The agent reads the action
   journal, drafts the process *around* the event, and interviews you with
@@ -63,12 +65,13 @@ visitor already uses.
   is requested through on-page confirmation controls. Server role and
   evidence gates separately protect review operations; a UI click is not
   cryptographic proof of human identity.
-- **Two host apps** prove it's a layer: a React work-log workspace with the
-  full operations experience, and a deliberately plain, framework-free
-  `plain.html` attached with a single script tag.
+- **Two host apps** show the integration tiers: a React work-log workspace
+  with actions, persistence and enforcement, and a deliberately plain,
+  framework-free `plain.html` showing the one-script observation/tool tier.
 - **Server** (Express + Postgres on Railway): auth, worklogs, reviews, a
-  versioned playbook library with lineage, and persistent runs that restore
-  on reload.
+  versioned playbook library with lineage, persistent runs, and a reusable
+  transition guard that rechecks actor role, order, branch evidence and
+  server-owned approvals inside the storage transaction.
 
 ```js
 document.modelContext.registerTool({
@@ -111,8 +114,9 @@ document.modelContext.registerTool({
 - **Self-onboarding**: agents compose correct workflows from tool
   descriptions alone — Google's Inspector generated a usable prompt for our
   app without any instruction from us.
-- The host needs **no LLM API key** and attaches to a second app with
-  one script tag.
+- The host needs no site-owned LLM API key for these WebMCP interactions. The
+  visitor's agent still has its own account, limits and cost. A second app
+  demonstrates the one-script observation/tool tier.
 
 ## What we learned
 
@@ -123,18 +127,19 @@ document.modelContext.registerTool({
   Anything that matters to the next person has to land in page/server
   state, not in a private conversation.
 - Trust is an architecture, not a promise: submitted values as the record,
-  server-enforced review roles and evidence gates, immutable versions, and
-  honest scope statements. Personas are a demo device. Process design and
+  server-revalidated run transitions, review roles and evidence gates,
+  immutable versions, and honest scope statements. Personas are a demo
+  device: normal accounts are session-bound, while the disclosed `judge`
+  account alone may switch demo roles. Process design and
   branch decisions use a desktop WebMCP agent; small-screen testing covered
   assigned inputs and reviews at 375px, not physical-device or mobile-agent
   compatibility.
 
 ## What's next for Understudy
 
-- **Cross-app runs** — the reason WebMCP is the right foundation: every
-  adopting app exposes standard tools, so a playbook step can bind to
-  *another app's* tool the same way it binds to ours. The classic BPM
-  connector problem dissolves into tool bindings.
+- **Cross-app runs** — WebMCP can standardize the tool surface a playbook binds
+  to. Production identity, reliability and data mapping still need adapters;
+  the goal is to reduce custom connector surface, not claim it disappears.
 - **Operations depth**: deadlines, notifications, reassignment, per-attempt
   audit timelines, and real multi-account authorization (today's personas
   are a declared demo device).

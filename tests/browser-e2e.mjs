@@ -68,6 +68,7 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     }, title)
 
     const panel = page.locator('#understudy-panel-host')
+    assert.equal(await panel.getByText(/auto-approve/i).count(), 0, 'the panel must not expose a global mutation bypass')
     const focusedPanelControl = () => panel.evaluate((host) => {
       const active = host.shadowRoot?.activeElement
       return active instanceof HTMLElement

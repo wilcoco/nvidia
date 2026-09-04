@@ -1,13 +1,13 @@
 /**
- * Understudy — drop-in WebMCP layer that turns any web work-app into an
- * agent-readable, agent-operable workspace.
+ * Understudy — WebMCP observation, teaching and operation SDK. Shared,
+ * governed execution additionally requires a host store/enforcement adapter.
  *
  * Add <script src="/understudy.js"></script> to a page and call
  * Understudy.init(). The page gains:
  *  - an action journal of what the human does,
  *  - a side panel where the agent drafts a process map the human can edit,
  *  - a WebMCP toolset so an agent (ChatGPT, Chrome) can read the work,
- *    structure it into a process, ask questions, and replay the process.
+ *    structure it into a process, ask questions, and request host actions.
  */
 import { record } from './journal'
 import { startCapture } from './capture'

@@ -643,17 +643,19 @@ function PlaybookList({ state }: { state: store.AppState }) {
               </button>
               {armCancel && <button className="ghost" onClick={() => setArmCancel(false)}>Keep current work</button>}
               <VersionDiffView key={selected.id} proc={selected} />{' '}
-              <button
-                className="ghost"
-                data-flow-ignore
-                onClick={() => {
-                  if (!deleteArmed) { setDeleteArmed(true); return }
-                  void action.run(async () => { await store.deleteProcess(selected.id); setSelected(null); setDeleteArmed(false) })
-                }}
-              >
-                {deleteArmed ? 'Confirm delete of this revision' : 'Delete revision…'}
-              </button>
-              {deleteArmed && <button className="ghost" onClick={() => setDeleteArmed(false)}>Keep revision</button>}
+              {selected.createdBy === state.actingAs && <>
+                <button
+                  className="ghost"
+                  data-flow-ignore
+                  onClick={() => {
+                    if (!deleteArmed) { setDeleteArmed(true); return }
+                    void action.run(async () => { await store.deleteProcess(selected.id); setSelected(null); setDeleteArmed(false) })
+                  }}
+                >
+                  {deleteArmed ? 'Confirm delete of this revision' : 'Delete revision…'}
+                </button>
+                {deleteArmed && <button className="ghost" onClick={() => setDeleteArmed(false)}>Keep revision</button>}
+              </>}
             </span>
           </div>
           <label className="version-picker">Version and execution history

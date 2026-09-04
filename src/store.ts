@@ -53,6 +53,7 @@ export interface Approval {
   worklogId: string
   requestedBy: string
   approver: string
+  decidedBySession?: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED'
   comment?: string
   ts: number
@@ -383,7 +384,7 @@ export async function saveVerification(
   measurements: Record<string, unknown>,
   route?: { label?: string; pass?: boolean; checked?: boolean },
 ): Promise<void> {
-  await api(`/api/worklogs/${worklogId}/verification`, { measurements, route })
+  await api(`/api/worklogs/${worklogId}/verification`, { measurements, route, actingAs: state.actingAs })
   window.Understudy.log(
     `verified measurements saved on incident #${worklogId}: ${Object.entries(measurements)
       .map(([k, v]) => `${k}=${v}`)
@@ -913,7 +914,7 @@ export async function updateRun(
   runId: string,
   payload: { steps: unknown[]; status?: string; deviations?: number },
 ): Promise<void> {
-  await api(`/api/runs/${runId}`, payload)
+  await api(`/api/runs/${runId}`, { ...payload, actingAs: state.actingAs })
 }
 
 export async function listRuns(processId?: string, page?: {before?: string; limit?: number}): Promise<ProcessRun[]> {
@@ -1034,7 +1035,8 @@ export async function diffWithPrevious(p: {
 export async function deleteProcess(id: string): Promise<void> {
   const response = await fetch(`/api/processes/${id}`, {
     method: 'DELETE',
-    headers: { Authorization: `Bearer ${getToken()}` },
+    headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actingAs: state.actingAs }),
     signal: AbortSignal.timeout(15000),
   })
   if (!response.ok) {

@@ -66,11 +66,29 @@ const auth = asyncHandler(async (req, res, next) => {
 })
 
 /* ---------------- api ----------------
- * `actingAs` lets a logged-in session act as another demo persona (kim/lee)
- * so a single reviewer can play both sides of the flow. Demo-grade by design.
+ * `actingAs` is a disclosed demo convenience. Only the judge account may
+ * delegate to another seeded persona. Normal accounts are always bound to
+ * their authenticated session, even if a request body claims otherwise.
  */
 
-const actor = (req) => String(req.body?.actingAs || req.user.username)
+async function authorizedActor(req, requested = req.body?.actingAs) {
+  const username = String(requested || req.user.username)
+  if (username !== req.user.username && req.user.username !== 'judge') {
+    throw Object.assign(new Error('actor_impersonation'), {
+      status: 403,
+      detail: `${req.user.username} cannot act as ${username}.`,
+    })
+  }
+  const user = await db.getUser(username)
+  if (!user) throw Object.assign(new Error('unknown_actor'), { status: 403 })
+  return {
+    actor: user.username,
+    role: user.role,
+    authenticatedAs: req.user.username,
+    canAdmin: req.user.username === 'judge',
+    delegated: user.username !== req.user.username,
+  }
+}
 
 // PostgreSQL throws on non-integer ids; an unhandled async throw kills the
 // process. Validate up front and answer 400 instead.
@@ -102,11 +120,11 @@ async function roleOfUser(username) {
 app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
   const b = req.body ?? {}
   if (!b.date || !b.line || !b.task) return res.status(400).json({ error: 'date, line, task are required' })
-  const role = await roleOfUser(b.actingAs)
-  if (role !== 'Contributor')
+  const authority = await authorizedActor(req)
+  if (authority.role !== 'Contributor')
     return res.status(403).json({
       error: 'role_mismatch',
-      detail: `Work logs are written by a known Contributor persona; got ${b.actingAs ?? 'none'} (${role ?? 'unknown role'}).`,
+      detail: `Work logs are written by a Contributor; got ${authority.actor} (${authority.role}).`,
     })
   if (b.data?.systemGenerated === true) {
     const run = await db.getRun(String(b.data.runId ?? ''))
@@ -126,7 +144,7 @@ app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
     urgent: Boolean(b.urgent),
     kind: String(b.kind ?? 'routine'),
     data: b.data && typeof b.data === 'object' ? b.data : {},
-    createdBy: actor(req),
+    createdBy: authority.actor,
   })
   res.json(row)
 }))
@@ -138,8 +156,9 @@ app.post('/api/worklogs/:id/discovery', auth, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Write an answer of 1–4,000 characters.' })
   const wl = await db.getWorklog(req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
-  const who = actor(req)
-  if (who !== wl.createdBy || await roleOfUser(who) !== 'Contributor')
+  const authority = await authorizedActor(req)
+  const who = authority.actor
+  if (who !== wl.createdBy || authority.role !== 'Contributor')
     return res.status(403).json({ error: 'Answer as the contributor who recorded this work.' })
   const row = await db.saveDiscoveryAnswer(wl.id, {answer: answer.trim(), answeredBy: who, answeredAt: Date.now()}, who)
   if (!row) return res.status(409).json({ error: 'Discovery answers belong to draft work, before execution or review.' })
@@ -173,6 +192,9 @@ app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const wl = await db.getWorklog(req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
+  const authority = await authorizedActor(req)
+  if (authority.actor !== wl.createdBy)
+    return res.status(403).json({ error: 'role_mismatch', detail: 'Only the author may request review of this entry.' })
   if (wl.status !== 'draft' && wl.status !== 'rejected')
     return res.status(400).json({ error: `worklog is already ${wl.status}` })
   const linked = await openRunStepsFor(wl.id, wl.data?.runId, req.body?.stepId ?? wl.data?.approvalStepId, true)
@@ -195,7 +217,7 @@ app.post('/api/worklogs/:id/submit', auth, asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'invalid_approver', detail: 'An entry cannot be reviewed by its own author.' })
   const approval = await db.createApproval({
     worklogId: wl.id,
-    requestedBy: actor(req),
+    requestedBy: authority.actor,
     approver,
     stepId: linked?.stepId,
     scope: linked?.scope,
@@ -209,8 +231,12 @@ app.post('/api/worklogs/:id/verification', auth, asyncHandler(async (req, res) =
   if (intParam(req, res) === null) return
   const m = req.body?.measurements
   if (!m || typeof m !== 'object') return res.status(400).json({ error: 'measurements object is required' })
+  const authority = await authorizedActor(req)
   {
     const row = await db.getWorklog(req.params.id)
+    if (!row) return res.status(404).json({ error: 'worklog not found' })
+    if (authority.actor !== row.createdBy || authority.role !== 'Contributor')
+      return res.status(403).json({ error: 'not_worklog_owner', detail: 'Only the contributor who recorded this work may verify its measurements.' })
     if (row?.status === 'approved')
       return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
   }
@@ -235,8 +261,12 @@ app.post('/api/worklogs/:id/corrective', auth, asyncHandler(async (req, res) => 
   if (intParam(req, res) === null) return
   const b = req.body ?? {}
   if (!b.actionTaken) return res.status(400).json({ error: 'actionTaken is required' })
+  const authority = await authorizedActor(req)
   {
     const row = await db.getWorklog(req.params.id)
+    if (!row) return res.status(404).json({ error: 'worklog not found' })
+    if (authority.actor !== row.createdBy || authority.role !== 'Contributor')
+      return res.status(403).json({ error: 'not_worklog_owner', detail: 'Only the contributor who recorded this work may add its corrective action.' })
     if (row?.status === 'approved')
       return res.status(409).json({ error: 'approved_immutable', detail: 'This entry is approved; changes require a new review cycle.' })
   }
@@ -263,18 +293,15 @@ app.post('/api/approvals/:id/decide', auth, asyncHandler(async (req, res) => {
   const existing = await db.getApproval(req.params.id)
   if (!existing) return res.status(404).json({ error: 'approval not found' })
   if (existing.status !== 'PENDING') return res.status(400).json({ error: `approval is already ${existing.status}` })
+  const authority = await authorizedActor(req)
   {
-    const actingAs = typeof req.body?.actingAs === 'string' ? req.body.actingAs : undefined
-    if (!actingAs)
-      return res.status(400).json({ error: 'actingAs_required', detail: 'Decisions must state the acting persona.' })
-    if (actingAs !== existing.approver)
+    if (authority.actor !== existing.approver)
       return res.status(403).json({
         error: 'role_mismatch',
-        detail: `This review is assigned to ${existing.approver}; the active persona is ${actingAs}.`,
+        detail: `This review is assigned to ${existing.approver}; the authenticated actor is ${authority.actor}.`,
       })
-    const r = await roleOfUser(actingAs)
-    if (r !== 'Reviewer')
-      return res.status(403).json({ error: 'role_mismatch', detail: `Only a Reviewer may decide; ${actingAs} is ${r ?? 'unknown'}.` })
+    if (authority.role !== 'Reviewer')
+      return res.status(403).json({ error: 'role_mismatch', detail: `Only a Reviewer may decide; ${authority.actor} is ${authority.role}.` })
   }
   if (decision === 'APPROVED') {
     const wlRow = await db.getWorklog(existing.worklogId)
@@ -286,7 +313,7 @@ app.post('/api/approvals/:id/decide', auth, asyncHandler(async (req, res) => {
       })
     }
   }
-  const decided = await db.decideApproval(existing.id, decision, req.body?.comment)
+  const decided = await db.decideApproval(existing.id, decision, req.body?.comment, authority)
   if (!decided || decided.status !== decision)
     return res.status(409).json({ error: 'review_conflict', detail: 'This review was already decided or its evidence changed. Refresh and request a new review if needed.' })
   res.json(decided)
@@ -303,7 +330,8 @@ app.post('/api/processes', auth, asyncHandler(async (req, res) => {
       new Set(map.steps.map((s) => s.id)).size !== map.steps.length) return res.status(400).json({ error: 'title and map.steps are required' })
   const invalid = validateFieldBindings(map)
   if (invalid) return res.status(400).json({error: 'invalid_fields', detail: invalid})
-  res.json(await db.saveProcess({ title: String(title), map, createdBy: actor(req) }))
+  const authority = await authorizedActor(req)
+  res.json(await db.saveProcess({ title: String(title), map, createdBy: authority.actor }))
 }))
 
 app.get('/api/processes/:id', auth, asyncHandler(async (req, res) => {
@@ -315,8 +343,13 @@ app.get('/api/processes/:id', auth, asyncHandler(async (req, res) => {
 
 app.delete('/api/processes/:id', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
+  const row = await db.getProcess(req.params.id)
+  if (!row) return res.status(404).json({ error: 'process not found' })
+  const authority = await authorizedActor(req)
+  if (authority.actor !== row.createdBy)
+    return res.status(403).json({ error: 'not_process_owner', detail: 'Only the creator may delete this playbook revision.' })
   const ok = await db.deleteProcess(req.params.id)
-  if (!ok) return res.status(404).json({ error: 'process not found' })
+  if (!ok) return res.status(409).json({ error: 'delete_conflict', detail: 'The playbook revision changed before it could be deleted.' })
   res.json({ ok: true })
 }))
 
@@ -325,6 +358,9 @@ app.delete('/api/processes/:id', auth, asyncHandler(async (req, res) => {
 app.post('/api/runs', auth, asyncHandler(async (req, res) => {
   const { processId, title } = req.body ?? {}
   if (!processId || !title) return res.status(400).json({ error: 'processId and title are required' })
+  // Validate a requested demo persona even though run ownership remains bound
+  // to the authenticated session. This closes actingAs as a hidden spoof lane.
+  await authorizedActor(req)
   const process = await db.getProcess(String(processId).match(/^[1-9]\d{0,8}$/) ? String(processId) : '0')
   if (!process) return res.status(404).json({ error: 'process not found' })
   const steps = process.map.steps.filter((s) => s.type !== 'decision')
@@ -367,11 +403,10 @@ app.post('/api/runs', auth, asyncHandler(async (req, res) => {
 app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const b = req.body ?? {}
+  const authority = await authorizedActor(req)
   {
     const row = await db.getRun(req.params.id)
     if (!row) return res.status(404).json({ error: 'run not found' })
-    if (row.startedBy && row.startedBy !== req.user.username)
-      return res.status(403).json({ error: 'not_run_owner', detail: `Run ${row.id} is synced by ${row.startedBy}.` })
     if (b.decisions !== undefined && (!Array.isArray(b.decisions) || b.decisions.some((d) =>
       !d || typeof d.stepId !== 'string' || typeof d.to !== 'string')))
       return res.status(400).json({error: 'invalid_decisions'})
@@ -427,6 +462,7 @@ app.post('/api/runs/:id', auth, asyncHandler(async (req, res) => {
     status: typeof b.status === 'string' ? b.status : undefined,
     deviations: typeof b.deviations === 'number' ? b.deviations : undefined,
     events: b.events,
+    _authority: authority,
   })
   if (!run) return res.status(404).json({ error: 'run not found' })
   if (b.status === 'abandoned') await cancelPendingApprovalsForRun(run.id)
@@ -483,7 +519,10 @@ app.use((err, _req, res, _next) => {
   console.error('request error:', err?.message ?? err)
   if (res.headersSent) return _next(err)
   const status = Number.isInteger(err.status) && err.status >= 400 && err.status < 600 ? err.status : 500
-  res.status(status).json({ error: status === 500 ? 'internal_error' : err.message })
+  res.status(status).json({
+    error: status === 500 ? 'internal_error' : (err.code || err.message),
+    ...(status !== 500 && err.detail ? { detail: err.detail } : {}),
+  })
 })
 
 const server = app.listen(PORT, () => {

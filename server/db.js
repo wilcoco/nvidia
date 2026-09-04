@@ -1,6 +1,7 @@
 // Storage layer: Postgres when DATABASE_URL is set (Railway), in-memory otherwise (local dev).
 import crypto from 'node:crypto'
 import { applySignoff, preserveSignoffs, reviewFingerprint, matchesReviewFingerprint, evidencePatch, reviewEvidence, approvalGate, mergeRunEvents, guardRunUpdate } from './runstate.js'
+import { enforceRunUpdate } from './enforcement.js'
 
 function requestScope(run, map, stepId) {
   const gate = approvalGate(run, map, stepId, true)
@@ -112,7 +113,7 @@ function memoryBackend() {
     async getApproval(id) {
       return approvals.find((a) => a.id === id) ?? null
     },
-    async decideApproval(id, status, comment) {
+    async decideApproval(id, status, comment, authority) {
       const a = approvals.find((x) => x.id === id)
       if (!a) return null
       if (a.status !== 'PENDING') return null
@@ -123,6 +124,7 @@ function memoryBackend() {
             approvalGate(linked, processes.find(p => p.id === linked?.processId)?.map, a.stepId).open.length)) return null
       a.status = status
       a.comment = comment
+      if (['APPROVED', 'REJECTED'].includes(status)) a.decidedBySession = authority?.authenticatedAs
       const w = worklogs.find((x) => x.id === a.worklogId)
       if (w && ['APPROVED', 'REJECTED'].includes(status)) {
         w.status = status === 'APPROVED' ? 'approved' : 'rejected'
@@ -176,8 +178,11 @@ function memoryBackend() {
     async updateRun(id, patch) {
       const run = runs.find((x) => x.id === id)
       if (!run) return null
+      const process = processes.find(p => p.id === run.processId)
+      patch = enforceRunUpdate(run, patch, process?.map, patch._authority)
+      delete patch._authority
       patch = preserveSignoffs(run, patch)
-      if (!guardRunUpdate(run, patch, processes.find(p => p.id === run.processId)?.map)) return run
+      if (!guardRunUpdate(run, patch, process?.map)) return run
       if (patch.steps) run.steps = patch.steps
       if (patch.decisions) run.decisions = patch.decisions
       if (patch.events) run.events = mergeRunEvents(run.events, patch.events)
@@ -274,6 +279,7 @@ async function pgBackend(databaseUrl) {
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS step_id TEXT;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_scope JSONB;
     ALTER TABLE approvals ADD COLUMN IF NOT EXISTS review_evidence JSONB;
+    ALTER TABLE approvals ADD COLUMN IF NOT EXISTS decided_by_session TEXT;
     ALTER TABLE process_runs ADD COLUMN IF NOT EXISTS events JSONB NOT NULL DEFAULT '[]';
   `)
 
@@ -303,6 +309,7 @@ async function pgBackend(databaseUrl) {
     approver: r.approver, status: r.status, comment: r.comment ?? undefined,
     stepId: r.step_id ?? undefined, scope: r.review_scope ?? undefined,
     evidence: r.review_evidence ?? undefined,
+    decidedBySession: r.decided_by_session ?? undefined,
     ts: new Date(r.ts).getTime(),
   })
 
@@ -410,7 +417,7 @@ async function pgBackend(databaseUrl) {
       const { rows } = await pool.query('SELECT * FROM approvals WHERE id=$1', [id])
       return rows[0] ? ap(rows[0]) : null
     },
-    async decideApproval(id, status, comment) {
+    async decideApproval(id, status, comment, authority) {
       return transaction(async (client) => {
         const before = await client.query('SELECT a.review_fingerprint,a.review_scope,a.review_evidence,a.step_id,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
         const linkedId = before.rows[0]?.data?.runId
@@ -424,8 +431,8 @@ async function pgBackend(databaseUrl) {
               approvalGate(run, process.rows[0]?.map, before.rows[0].step_id).open.length) return null
         }
         const { rows } = await client.query(
-          "UPDATE approvals SET status=$2, comment=$3 WHERE id=$1 AND status='PENDING' RETURNING *",
-          [id, status, comment ?? null],
+          "UPDATE approvals SET status=$2, comment=$3, decided_by_session=$4 WHERE id=$1 AND status='PENDING' RETURNING *",
+          [id, status, comment ?? null, ['APPROVED', 'REJECTED'].includes(status) ? authority?.authenticatedAs ?? null : null],
         )
         if (!rows[0]) return null
         const approval = ap(rows[0])
@@ -494,8 +501,10 @@ async function pgBackend(databaseUrl) {
         const current = await client.query('SELECT * FROM process_runs WHERE id=$1 FOR UPDATE', [id])
         if (!current.rows[0]) return null
         const run = runRow(current.rows[0])
-        patch = preserveSignoffs(run, patch)
         const process = await client.query('SELECT map FROM processes WHERE id=$1', [run.processId])
+        patch = enforceRunUpdate(run, patch, process.rows[0]?.map, patch._authority)
+        delete patch._authority
+        patch = preserveSignoffs(run, patch)
         if (!guardRunUpdate(run, patch, process.rows[0]?.map)) return run
         const { rows } = await client.query(
           `UPDATE process_runs SET
