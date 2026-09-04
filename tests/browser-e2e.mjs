@@ -51,13 +51,28 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByRole('button', {name: 'Start with the first question'}).click()
     await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim confirms the order and the packed quantity.')
     await page.getByRole('button', {name: 'Save answer & continue'}).click()
-    await page.getByRole('button', {name: 'Continue on this page'}).click()
+    await page.getByRole('button', {name: 'Continue interview on this page'}).click()
     const panel = page.locator('#understudy-panel-host')
-    await panel.getByText(/Process draft from work log/).waitFor()
+    await panel.getByText(/Evidence-only starter · work log/).waitFor()
     const starterDraft = await page.evaluate(() => window.Understudy.getLoadedProcess())
     assert.equal(starterDraft.sourceProcessId, undefined, 'a fallback draft is not a revision of a saved playbook')
     assert.ok(starterDraft.sourceWorklogId, 'the worker-supplied source remains attributable')
+    assert.equal(starterDraft.draftMode, 'evidence-only')
+    assert.equal(await panel.getByRole('button', {name: 'Structure this evidence before saving'}).isDisabled(), true)
     await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
+    await page.getByText(`Continue draft from work log #${starterDraft.sourceWorklogId}`).waitFor()
+    const newEntry = page.getByRole('textbox', {name: 'Describe your work'})
+    await newEntry.fill('I verify a separate customer return before restocking.')
+    await page.getByRole('button', {name: 'Start with the first question'}).click()
+    await page.getByText('What must happen first?').waitFor()
+    await page.getByText('I inspect one outgoing parcel before handoff.').last().waitFor()
+    await page.getByRole('button', {name: 'Continue editing'}).click()
+    await page.waitForFunction((sourceWorklogId) => window.Understudy.getLoadedProcess()?.sourceWorklogId === sourceWorklogId,
+      starterDraft.sourceWorklogId)
+    assert.equal((await page.evaluate(() => window.Understudy.getLoadedProcess())).draftMode, 'evidence-only')
+    await page.getByText('I verify a separate customer return before restocking.').last().waitFor()
+    assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).isVisible(), true,
+      'Start here keeps the one-line entry visible while a draft is open')
 
     await page.evaluate((mapTitle) => {
       window.Understudy.draftRevision({
@@ -91,6 +106,8 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
       question: 'Tell me about one recent parcel where experience changed the route decision.',
       resolves_gap: resolvesGap,
     }), incidentGap.resolves_gap)
+    await panel.getByRole('button', {name: 'Continue later'}).waitFor()
+    await panel.getByRole('button', {name: 'Skip this question'}).waitFor()
     const sourceAnswer = panel.locator('input.freetext')
     await sourceAnswer.fill('A normal package count hid a crushed corner, so I stopped standard handoff.')
     await sourceAnswer.press('Enter')

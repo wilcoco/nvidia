@@ -164,6 +164,9 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .interview-scope strong { color: #f1f5f9; }
 .interview-scope .scope-note { color: #94a3b8; margin-top: 4px; }
 .interview-scope button { margin-top: 9px; width: 100%; border: 1px solid #6ee7b7; border-radius: 6px; padding: 7px 9px; background: #173e36; color: #d1fae5; cursor: pointer; }
+.evidence-only { background: #332b18; border: 1px solid #8c6d2b; border-radius: 9px; padding: 10px 11px; color: #fde9a9; font-size: 12px; line-height: 1.5; }
+.evidence-only strong { display: block; color: #fff4c7; margin-bottom: 4px; }
+.evidence-only ul { margin: 7px 0 0; padding-left: 18px; }
 .step .knowledge-row b { color: #ddd6fe; }
 .step .knowledge-source { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(167,139,250,.18); color: #7f8a9c; }
 .step .knowledge-status { color: #a78bfa; }
@@ -216,6 +219,7 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .arrow { text-align: center; color: #475569; font-size: 11px; line-height: 1; margin: 1px 0; }
 .confirm-bar { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 .confirm-bar button { background: #059669; color: #fff; border: none; border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 12px; }
+.confirm-bar button:disabled { background: #334155; color: #94a3b8; cursor: not-allowed; }
 .confirm-bar button.revise { background: #334155; color: #cbd5e1; }
 .step .label.ro { cursor: default; }
 .branch .cond-ro { color: #fbbf24; }
@@ -995,6 +999,18 @@ function render() {
         }
         card.appendChild(input)
       }
+      if (ask.resolvesGap?.startsWith('knowledge_')) {
+        const controls = el('div', 'opts interview-controls')
+        const later = el('button', undefined, 'Continue later')
+        later.title = 'Keep this question open and return when you are ready'
+        later.onclick = () => { collapsed = true; render() }
+        const skip = el('button', undefined, 'Skip this question')
+        skip.title = 'Record that you chose not to answer this interview question'
+        skip.onclick = () => asksStore.answerAsk(ask.id, 'Skip this question')
+        controls.appendChild(later)
+        controls.appendChild(skip)
+        card.appendChild(controls)
+      }
       section.appendChild(card)
     }
     body.appendChild(section)
@@ -1047,6 +1063,15 @@ function render() {
     mapSection.appendChild(discoveryPreview(state?.playbookRequest ?? null, render))
   } else {
     mapSection.appendChild(el('div', 'map-title', map.title))
+    if (map.draftMode === 'evidence-only') {
+      const warning = el('div', 'evidence-only')
+      warning.appendChild(el('strong', undefined, 'Evidence-only starter · not runnable yet'))
+      warning.appendChild(el('div', undefined, 'Your work and answers are preserved as source material. No step, owner, input, branch or approval rule has been inferred from free text.'))
+      const checklist = el('ul')
+      for (const item of ['Replace placeholder steps with the real sequence', 'Assign owners and required inputs', 'Encode any branch and recovery rules', 'Add the human sign-off point']) checklist.appendChild(el('li', undefined, item))
+      warning.appendChild(checklist)
+      mapSection.appendChild(warning)
+    }
     if (map.editError) {
       const error = el('div', 'blocked-reason', map.editError)
       error.setAttribute('role', 'alert')
@@ -1085,8 +1110,14 @@ function render() {
         scope.appendChild(el('strong', undefined,
           `Focused expert interview · ${interview.active.step} · ${interview.active.covered}/${interview.active.total}`))
         scope.appendChild(el('div', 'scope-note', interview.active.complete
-          ? 'This judgment point is complete. Save now, or deliberately explore one more point.'
-          : 'One question at a time. This interview is optional: you can save now and continue in a later revision.'))
+          ? map.draftMode === 'evidence-only'
+            ? 'This focused interview is complete. The source evidence must be structured and reviewed before it can be saved as a playbook.'
+            : interview.canExploreAnother
+              ? 'This judgment point is complete. Save now, or deliberately explore one more point.'
+              : 'This focused interview is complete. Review the process and save when it reflects the work.'
+          : map.draftMode === 'evidence-only'
+            ? 'One question at a time. Continue later whenever you need; this remains source evidence until an agent structures it for review.'
+            : 'One question at a time. This interview is optional: you can save now and continue in a later revision.'))
         const nextGap = mapstore.mapGaps().find(gap => gap.kind.startsWith('knowledge_'))
         const alreadyAsked = nextGap && asksStore.asks.some(ask => ask.resolvesGap === nextGap.resolves_gap)
         if (!interview.active.complete && nextGap?.fallback_question && nextGap.resolves_gap && !alreadyAsked) {
@@ -1175,9 +1206,10 @@ function render() {
       const btn = el(
         'button',
         undefined,
-        map.saving ? 'Saving playbook…' : store ? (map.version ? `Save as v${nextV} to library` : 'Confirm & save to library') : 'Confirm process',
+        map.draftMode === 'evidence-only' ? 'Structure this evidence before saving'
+          : map.saving ? 'Saving playbook…' : store ? (map.version ? `Save as v${nextV} to library` : 'Confirm & save to library') : 'Confirm process',
       )
-      btn.disabled = !!map.saving
+      btn.disabled = !!map.saving || map.draftMode === 'evidence-only'
       btn.onclick = () =>
         mapstore.humanConfirmMap(store ? (m) => store.save(m) : undefined)
       bar.appendChild(btn)

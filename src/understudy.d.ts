@@ -73,6 +73,7 @@ interface UnderstudyProcessMap {
   sourceProcessId?: string
   elicitationVersion?: 1
   elicitationExpandedSteps?: string[]
+  draftMode?: 'evidence-only'
 }
 
 interface UnderstudyProcessSummary {

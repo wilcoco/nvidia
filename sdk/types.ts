@@ -132,6 +132,9 @@ export interface ProcessMap {
   /** Additional judgment points the human explicitly chose to explore. The
    * highest-value point is included by default and is not repeated here. */
   elicitationExpandedSteps?: string[]
+  /** A page-only capture of source evidence. It is deliberately not saveable
+   * until an agent replaces the placeholders with a reviewed process map. */
+  draftMode?: 'evidence-only'
   /** Explicit outcomes of branching steps in this run: which edge was taken and why. */
   decisions?: Array<{
     stepId: string

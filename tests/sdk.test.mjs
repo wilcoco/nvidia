@@ -100,6 +100,13 @@ test('expert interview focuses on one judgment point until the human expands it'
  state=map.elicitationInterviewState()
  assert.equal(state.activePoints,2)
 })
+test('an evidence-only fallback preserves answers but cannot be saved as a runnable playbook', () => {
+ const {map}=fixture()
+ map.proposeMap({title:'evidence only',draftMode:'evidence-only',steps:[step('placeholder')]})
+ map.humanConfirmMap()
+ assert.equal(map.getMap().confirmed,false)
+ assert.match(map.getMap().saveError,/source evidence, not a runnable playbook/i)
+})
 test('dropdown submissions control both routes and cannot be replaced by agent claims', () => {
  for(const method of ['Courier','Pickup']){
   const {map}=fixture()

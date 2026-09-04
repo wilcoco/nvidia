@@ -8,6 +8,28 @@ import RunPicker from './RunPicker'
 
 export type WorkspaceTab = 'overview' | 'incidents' | 'tasks' | 'approvals' | 'playbooks'
 
+function PausedDrafts({state}: {state: store.AppState}) {
+  const loaded = window.Understudy.getLoadedProcess?.()
+  const loadedKey = loaded?.sourceWorklogId ? `worklog:${loaded.sourceWorklogId}` : loaded ? `draft:${loaded.title}` : ''
+  const activeCaptureKey = state.captureContext?.id ? `worklog:${state.captureContext.id}` : ''
+  const drafts = state.pausedDrafts.filter(draft => draft.key !== loadedKey && draft.key !== activeCaptureKey)
+  if (!drafts.length) return null
+  return <section className="card paused-drafts">
+    <div className="eyebrow">CONTINUE WHERE YOU LEFT OFF</div>
+    <h2>Paused process drafts</h2>
+    <p>These drafts and their interview answers are kept in this browser tab. They are not saved team playbooks yet.</p>
+    <div className="paused-draft-list">{drafts.map(draft => {
+      const answers = draft.map?.steps.reduce((total, step) => total + (step.elicitation?.answers.length ?? 0), 0) ?? 0
+      return <div className="paused-draft" key={draft.key}>
+        <div><b>{draft.map?.sourceWorklogId ?? draft.captureContext?.id ? `Work log #${draft.map?.sourceWorklogId ?? draft.captureContext?.id}` : 'Unsaved draft'} · {draft.title}</b>
+          <blockquote>{draft.task}</blockquote>
+          <span>{answers ? `${answers} expert answer${answers === 1 ? '' : 's'} captured` : 'Draft started'} · paused {new Date(draft.pausedAt).toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'})}</span></div>
+        <button className="secondary" onClick={() => { if (store.resumePausedDraft(draft.key)) window.Understudy.openPanel?.() }}>Continue editing →</button>
+      </div>
+    })}</div>
+  </section>
+}
+
 export default function Overview({ state, navigate }: { state: store.AppState; navigate: (tab: WorkspaceTab) => void }) {
   const [editing, setEditing] = useState(true)
   const {task: note, sample} = state.captureDraft
@@ -15,6 +37,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const captured = state.captureContext
   const action = useAction()
   const proc = window.Understudy.getLoadedProcess()
+  const evidenceOnly = proc?.draftMode === 'evidence-only'
   const runId = window.Understudy.currentRunId?.()
   const runNotice = window.Understudy.getRunStartError?.() || ''
   const retired = runNotice.startsWith('This run was retired by a newer execution.')
@@ -27,29 +50,50 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const contributor = state.users.find((u) => u.role === 'Contributor')
   const acting = state.users.find((u) => u.username === state.actingAs)
   const captureKind = state.worklogs.find((work) => work.id === captured?.id)?.kind ?? (sample ? 'operations' : 'routine work')
+  const sourceWork = state.worklogs.find(work => work.id === proc?.sourceWorklogId)
+  const sourceAnswers = proc?.steps.reduce((total, step) => total + (step.elicitation?.answers.length ?? 0), 0) ?? 0
+  const activeRunBlocksCapture = Boolean(runId && !done)
   useEffect(() => {
     if (editing && !proc) store.setDraftContext({kind: captureKind, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
   }, [editing, captureKind, note, proc, captured])
 
   const capture = () => action.run(async () => {
     if (!note.trim()) return
-    if (window.Understudy.currentRunId?.() && !window.Understudy.isRunComplete?.()) {
+    if (activeRunBlocksCapture) {
       throw new Error('An execution is in progress. Finish it before starting a new teaching session.')
     }
+    store.pauseCurrentDraft()
     const work = await store.createWorklog({
       date: new Date().toISOString().slice(0, 10), line: 'A', kind: sample ? 'operations' : 'routine work',
       task: note.trim(), hours: 0, note: '', urgent: false, data: sample ? { example: true } : {},
     })
+    if (proc) window.Understudy.unloadProcess?.()
     store.requestPlaybookCreation(work)
-    setEditing(false)
+    store.resetCaptureDraft()
+    setEditing(true)
     window.Understudy.openPanel?.()
   })
 
+  const newWorkEntry = <section className="card capture-card start-primary">
+    <div className="eyebrow">START A NEW WORK ENTRY</div>
+    <h2>What are you working on?</h2>
+    <p>One sentence is enough. A new entry starts separately. Any unfinished draft below is paused with its captured answers, not deleted.</p>
+    <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
+      <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
+        <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
+      <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: I am preparing a customer order for delivery." required />
+      {acting?.role !== 'Contributor' ? <button type="button" className="primary" disabled={!contributor} onClick={() => contributor && store.switchActingAs(contributor.username)}>Continue as {contributor?.name ?? 'Contributor'}</button>
+        : <button className="primary" disabled={action.busy || !note.trim() || activeRunBlocksCapture}>{action.busy ? 'Saving your starting point…' : activeRunBlocksCapture ? 'Finish the active run before teaching new work' : 'Start with the first question →'}</button>}
+      <p className="meta">Answer a starter question here, then continue with your browser’s AI agent.</p>
+      <ErrorNotice message={action.error} />
+    </form>
+  </section>
+
   return (
     <div className="overview">
-      <section className={`hero${proc || captured ? ' compact' : ''}`}>
+      <section className="hero">
         <div className="eyebrow">FROM YOUR WORK TO A TEAM PROCESS · WEBMCP</div>
-        <h1>{proc ? done ? 'Good work. Ready to reuse.' : 'One step at a time.' : captured ? 'Build the process around your work.' : <>Your work, <span>turned into a team process.</span></>}</h1>
+        <h1>Your work, <span>turned into a team process.</span></h1>
         <p className="hero-description">Your AI agent asks what comes before and after, and who does each part. You correct the process, your team follows it, and the next person can reuse it.</p>
         {!proc && !captured ? <div className="chat-entry">
           <div><span>NEW HERE? ASK IN THE AI CHAT THAT OPENED THIS TAB</span>
@@ -65,11 +109,17 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         </button>
       )}
 
+      {newWorkEntry}
+
       {proc ? (
         <section className="card current-work">
-          <div className="eyebrow">{retired ? 'ARCHIVED RUN' : done ? 'COMPLETED RUN' : !proc.confirmed ? 'TEACH & REFINE' : !runId ? 'READY TO PUT TO WORK' : decision ? 'CHECK THE EVIDENCE' : ready?.type === 'approval' ? 'REVIEW & SIGN OFF' : 'WORK IN PROGRESS'}</div>
+          {!proc.confirmed && <div className="continue-context"><b>{sourceWork ? `Continue draft from work log #${sourceWork.id}` : 'Continue this unfinished draft'}</b>
+            {sourceWork && <blockquote>{sourceWork.task}</blockquote>}
+            <span>{sourceAnswers ? `${sourceAnswers} expert answer${sourceAnswers === 1 ? '' : 's'} captured` : 'Draft in progress'} · Continue editing below, or start a separate entry above.</span></div>}
+          <div className="eyebrow">{evidenceOnly ? 'EVIDENCE-ONLY STARTER · NOT RUNNABLE' : retired ? 'ARCHIVED RUN' : done ? 'COMPLETED RUN' : !proc.confirmed ? 'TEACH & REFINE' : !runId ? 'READY TO PUT TO WORK' : decision ? 'CHECK THE EVIDENCE' : ready?.type === 'approval' ? 'REVIEW & SIGN OFF' : 'WORK IN PROGRESS'}</div>
           <h2>{proc.title}</h2>
-          <p>{retired ? 'A newer execution replaced this unfinished run. Its history is preserved; start a fresh run or open an active run below.'
+          <p>{evidenceOnly ? 'A starter draft was created only from your work and answers. It preserves evidence but does not infer runnable steps, owners, fields, branches or approvals.'
+            : retired ? 'A newer execution replaced this unfinished run. Its history is preserved; start a fresh run or open an active run below.'
             : done ? 'The required work is complete. Your submitted evidence and approval are saved with this run.'
             : !proc.confirmed ? 'Your agent has drafted the process. Open the playbook, correct a step, and confirm it when it reflects how you work.'
               : !runId ? 'Your playbook is confirmed. Start an execution to collect evidence and put its rules into practice.'
@@ -77,13 +127,14 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
                   : ready ? `Next: ${ready.label}${ready.role ? ` · ${ready.role}` : ''}. Open your tasks to see the required inputs and who acts next.`
                     : 'Open your tasks to see what this execution is waiting for.'}</p>
           <div className="button-row">
-            {!proc.confirmed ? <button className="primary" onClick={() => window.Understudy.openPanel?.()}>Review the draft →</button>
+            {!proc.confirmed ? <button className="primary" onClick={() => window.Understudy.openPanel?.()}>{evidenceOnly ? 'Review captured evidence →' : 'Review the draft →'}</button>
               : !runId && saved ? <button className="primary" disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(saved.id))}>{action.busy ? 'Starting…' : retired ? 'Start a new run →' : 'Run this playbook →'}</button>
                 : runId ? <button className="primary" onClick={() => navigate('tasks')}>{done ? 'View the completed run' : 'Continue to my tasks →'}</button>
                   : <span className="meta">Saving the playbook…</span>}
             <button className="secondary" onClick={() => window.Understudy.openPanel?.()}>Open playbook</button>
             {done && <button className="ghost" onClick={() => { window.Understudy.unloadProcess?.(); store.clearCaptureContext(); setEditing(true) }}>Teach another process</button>}
           </div>
+          {evidenceOnly && <AgentInvite label="Copy request to structure this evidence" hint="Connect a WebMCP agent to turn the captured source into a concrete process. You will still review and save the result." prompt="Use Understudy on this page. Read get_process_map and get_map_gaps. This is an evidence-only starter: preserve its source answers, then replace the placeholder map with specific steps, owners, required inputs, decisions, recovery routes and human sign-off supported by those answers. Keep any existing step id that carries elicitation evidence on the corresponding replacement step so its provenance remains attached. Ask one question at a time for anything missing. Do not invent rules or start execution. Leave the runnable draft for my review and one Save." />}
           {decision && <AgentInvite hint="Ask your agent: “Do these results meet the rules? What should we do next?” It can check the evidence and explain the next step." label="Copy evidence-check request" prompt={`Use Understudy on this page. Read get_process_progress and the submitted evidence for “${decision.label}”. Check the recorded criteria with resolve_decision. If the evidence fails, take the rework branch and explain the next task. Do not replace submitted measurements with an assumed passing value.`} />}
           <ErrorNotice message={action.error || (retired ? '' : runNotice)} />
           {retired && <p className="hint">Archived executions are read-only. Choose an active run below to continue existing work.</p>}
@@ -99,28 +150,14 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           <button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Make a new playbook · start with a question →</button>
         </section>
       ) : (
-        <section className="start-grid">
-          <div className="card capture-card">
-            <div className="eyebrow">MAKE A NEW PLAYBOOK</div>
-            <h2>What are you working on?</h2>
-            <p>One sentence is enough. We’ll start with what needs to happen before it.</p>
-            {editing ? <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
-              <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
-                <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
-              <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: I am preparing a customer order for delivery." required />
-              {acting?.role !== 'Contributor' ? <button type="button" className="primary" disabled={!contributor} onClick={() => contributor && store.switchActingAs(contributor.username)}>Continue as {contributor?.name ?? 'Contributor'}</button>
-                : <button className="primary" disabled={action.busy || !note.trim()}>{action.busy ? 'Saving your starting point…' : 'Start with the first question →'}</button>}
-              <p className="meta">Answer a starter question here, then continue with your browser’s AI agent.</p>
-              <ErrorNotice message={action.error} />
-            </form> : <div className="button-row"><button className="primary" onClick={() => { setEditing(true); store.setCaptureDraft(note, false) }}>Teach from my work →</button></div>}
-            {editing && note.trim() && <SuggestionCard includeCandidates />}
-          </div>
-          <div className="reuse-entry">
-            <div><b>Doing work your team has done before?</b><p>Describe it above to find related playbooks, or choose one from the library.</p></div>
-            <button className="secondary" onClick={() => navigate('playbooks')}>Use an existing playbook →</button>
-          </div>
-        </section>
+        <div className="reuse-entry">
+          <div><b>Doing work your team has done before?</b><p>Describe it above to find related playbooks, or choose one from the library.</p></div>
+          <button className="secondary" onClick={() => navigate('playbooks')}>Use an existing playbook →</button>
+        </div>
       )}
+
+      {note.trim() && <SuggestionCard includeCandidates />}
+      <PausedDrafts state={state} />
 
       {!captured?.creationRequested && <RunPicker onOpened={() => navigate('tasks')} />}
       {(proc || (captured && !captured.creationRequested)) && <section className="overview-bottom">

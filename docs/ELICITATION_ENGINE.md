@@ -34,11 +34,16 @@ TypeScript state machine for Understudy's WebMCP tool and process-map model.
   panel stops. Only a human click on **Explore another judgment point** adds
   the next point to the agenda. The playbook can be saved earlier and refined
   in a later revision, so the interview never becomes a mandatory long form.
+- Every expert question also offers **Continue later** (keep it pending) and
+  **Skip this question** (record the decline and move on). The panel shows why
+  the current question matters and progress within the focused five-part arc.
 - The header distinguishes browser registration (**Tools registered**) from an
   observed agent invocation (**Agent connected**). When no chat is attached,
-  a worker can open a conservative starter draft from their own work and first
-  answer, then use the same one-question cards directly on the page. This
-  fallback never turns an answer into an executable rule automatically.
+  a worker can open a conservative **evidence-only starter** from their own
+  work and first answer, then use the same one-question cards directly on the
+  page. It cannot be saved or run until an agent replaces its placeholders
+  with reviewed steps, owners, inputs, branches and sign-off. This fallback
+  never turns an answer into an executable rule automatically.
 - Raw prose never becomes a numeric field, branch criterion, route or approval
   rule automatically. The agent must show its interpretation in the draft and
   the human must review it.

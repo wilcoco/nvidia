@@ -19,8 +19,9 @@ the demo workspace includes those adapters and its server enforcement module.
    It focuses on one high-value judgment point by default; the human explicitly
    chooses whether to explore another point.
    The panel distinguishes registered browser tools from an agent that has
-   actually invoked them, and offers an on-page starter interview when a chat
-   is not attached.
+   actually invoked them, and offers an on-page evidence-only interview when a
+   chat is not attached. That source capture cannot be saved as a runnable
+   playbook until its placeholders are structured and reviewed.
 4. **The agent runs the process.** Once confirmed, the agent replays the
    process using the same page's actions, through assigned task forms, evidence checks, and review steps defined in
    the playbook. Every host-app mutation requested by the agent waits for an

@@ -13,9 +13,10 @@ export default function DiscoveryStart({state}: {state: store.AppState}) {
   const prompt = discoveryInvite({worklogId: captured.id, task: captured.task, discovery: work?.data.discovery}, window.location.href)
   const askStarter = !before && !captured.starterSkipped && !questions && !interviewStarted
   const openStarterDraft = () => window.Understudy.draftProcess?.({
-    title: `Process draft from work log #${captured.id}`,
+    title: `Evidence-only starter · work log #${captured.id}`,
     sourceWorklogId: captured.id,
     elicitationVersion: 1,
+    draftMode: 'evidence-only',
     steps: [
       {id: 'prepare', label: 'Prepare the work', type: 'task', humanOnly: true,
         detail: before?.answer || 'Preparation still needs to be described.', next: [{to: 'work'}]},
@@ -48,7 +49,7 @@ export default function DiscoveryStart({state}: {state: store.AppState}) {
         : interviewStarted ? <><p role="status">Your agent can read your answer and continue drafting. Watch your AI chat for its response; the draft will appear on the right.</p>
           <details className="intro-help"><summary>Need to resume in your AI chat?</summary><AgentInvite prompt={prompt} /></details></>
           : <><AgentInvite prompt={prompt} label="Copy request for my agent" hint="Your work is saved. Send this request in your browser agent’s chat to continue with questions about the next steps and owners." />
-            {!interaction?.active && <div className="manual-fallback"><b>No connected agent?</b><p>Open a starter draft from only the work and answer you supplied. Continue with one question at a time in the page, then review every step before saving.</p><button className="secondary" onClick={openStarterDraft}>Continue on this page →</button></div>}</>}
+            {!interaction?.active && <div className="manual-fallback"><b>No connected agent?</b><p>Capture source evidence one question at a time on this page. It stays an evidence-only starter and cannot be saved as a runnable playbook until an agent structures it for your review.</p><button className="secondary" onClick={openStarterDraft}>Continue interview on this page →</button></div>}</>}
     </>}
   </section>
 }

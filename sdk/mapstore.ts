@@ -263,6 +263,11 @@ export function humanRemoveStep(stepId: string): void {
 
 export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string; version?: number }>): void {
   if (!map || map.confirmed || map.saving) return
+  if (map.draftMode === 'evidence-only') {
+    map.saveError = 'This is source evidence, not a runnable playbook yet. Connect an agent and have it replace the placeholders with reviewed steps, owners, inputs, branches and sign-off before saving.'
+    notify()
+    return
+  }
   const invalid = validateFieldBindings(map)
   if (invalid) { map.saveError = invalid; notify(); return }
   const confirmationActor = actingPersona()

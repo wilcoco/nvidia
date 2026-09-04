@@ -108,6 +108,14 @@ export interface AppState {
   dismissedSuggestions: string[]
   runStarted: { title: string; version?: number; next?: string; resumed?: boolean } | null
   captureContext: { id: string; task: string; creationRequested?: boolean; answerDraft?: string; starterSkipped?: boolean } | null
+  pausedDrafts: Array<{
+    key: string
+    task: string
+    title: string
+    map?: UnderstudyProcessMap
+    captureContext: AppState['captureContext']
+    pausedAt: number
+  }>
 }
 
 let state: AppState = {
@@ -126,15 +134,17 @@ let state: AppState = {
   dismissedSuggestions: [],
   runStarted: null,
   captureContext: null,
+  pausedDrafts: [],
 }
 
 const listeners = new Set<() => void>()
 
 function commit(patch: Partial<AppState>) {
   state = { ...state, ...patch }
-  if ('captureDraft' in patch || 'captureContext' in patch || 'draft' in patch) {
+  if ('captureDraft' in patch || 'captureContext' in patch || 'draft' in patch || 'pausedDrafts' in patch) {
     try { sessionStorage.setItem('understudy.workspace', JSON.stringify({username: state.me?.username,
-      captureDraft: state.captureDraft, captureContext: state.captureContext, draft: state.draft})) } catch { /* memory remains usable */ }
+      captureDraft: state.captureDraft, captureContext: state.captureContext, draft: state.draft,
+      pausedDrafts: state.pausedDrafts})) } catch { /* memory remains usable */ }
   }
   try {
     window.dispatchEvent(new CustomEvent('understudy:host-state'))
@@ -192,7 +202,8 @@ export async function refresh(): Promise<void> {
       try {
         const saved = JSON.parse(sessionStorage.getItem('understudy.workspace') ?? 'null')
         if (saved?.username === s.me.username && typeof saved.captureDraft?.task === 'string')
-          commit({captureDraft: saved.captureDraft, captureContext: saved.captureContext ?? null, draft: saved.draft ?? {}})
+          commit({captureDraft: saved.captureDraft, captureContext: saved.captureContext ?? null, draft: saved.draft ?? {},
+            pausedDrafts: Array.isArray(saved.pausedDrafts) ? saved.pausedDrafts : []})
       } catch { /* Ignore stale or unavailable browser storage. */ }
     }
     resumeLastPlaybook()
@@ -241,7 +252,7 @@ export function logout(): void {
   window.Understudy.closePanel?.()
   resumeAttempted = false
   workspaceRestored = false
-  commit({ restoration: 'pending', me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, recentRuns: [], reviewSync: null })
+  commit({ restoration: 'pending', me: null, actingAs: '', worklogs: [], approvals: [], processes: [], runStarted: null, captureContext: null, captureDraft: {task:'',sample:false}, draft: {}, pausedDrafts: [], recentRuns: [], reviewSync: null })
 }
 
 export function switchActingAs(username: string): void {
@@ -761,6 +772,10 @@ export function setCaptureDraft(task: string, sample = false): void {
   commit({captureDraft: {task, sample}, draft: {task, hasInput: Boolean(task.trim()), kind: sample ? 'operations' : 'routine work'}})
 }
 
+export function resetCaptureDraft(): void {
+  commit({captureDraft: {task: '', sample: false}})
+}
+
 export function dismissRunStarted(): void {
   commit({ runStarted: null })
 }
@@ -768,6 +783,46 @@ export function dismissRunStarted(): void {
 export function clearCaptureContext(): void {
   commit({ captureContext: null, draft: {}, captureDraft: {task:'',sample:false} })
   try { localStorage.removeItem('understudy.lastPlaybook') } catch { /* optional */ }
+}
+
+/** Preserve an unfinished page draft before the visitor starts a different
+ * work entry. This is tab-scoped working state, not a saved team playbook. */
+export function pauseCurrentDraft(): boolean {
+  const current = window.Understudy.getLoadedProcess?.()
+  if (current?.confirmed || (!current && !state.captureContext)) return false
+  const sourceId = current?.sourceWorklogId ?? state.captureContext?.id
+  const task = state.worklogs.find(work => work.id === sourceId)?.task
+    ?? state.captureContext?.task
+    ?? current?.title
+    ?? 'Unfinished work entry'
+  const title = current?.title ?? (sourceId ? `Process draft from work log #${sourceId}` : 'Unfinished process draft')
+  const key = sourceId ? `worklog:${sourceId}` : `draft:${title}`
+  const paused = {
+    key,
+    task,
+    title,
+    ...(current ? {map: structuredClone(current)} : {}),
+    captureContext: state.captureContext ? structuredClone(state.captureContext) : null,
+    pausedAt: Date.now(),
+  }
+  commit({pausedDrafts: [paused, ...state.pausedDrafts.filter(draft => draft.key !== key)]})
+  window.Understudy.log(`paused unfinished draft "${title}" before starting or continuing a separate work entry`,
+    {sourceWorklogId: sourceId})
+  return true
+}
+
+export function resumePausedDraft(key: string): boolean {
+  const target = state.pausedDrafts.find(draft => draft.key === key)
+  if (!target) return false
+  pauseCurrentDraft()
+  const remaining = state.pausedDrafts.filter(draft => draft.key !== key)
+  if (target.map) window.Understudy.draftProcess?.(structuredClone(target.map))
+  else window.Understudy.unloadProcess?.()
+  commit({captureContext: target.captureContext, captureDraft: {task: '', sample: false},
+    draft: {task: target.task, hasInput: true}, pausedDrafts: remaining})
+  window.Understudy.log(`continued paused draft "${target.title}"`,
+    {sourceWorklogId: target.map?.sourceWorklogId ?? target.captureContext?.id})
+  return true
 }
 
 /** Explicit page intent for the visitor's WebMCP agent to pick up. */
@@ -1049,7 +1104,7 @@ export async function deleteProcess(id: string): Promise<void> {
 
 export async function startFreshWorkspace(): Promise<void> {
   await window.Understudy.flushRun?.()
-  commit({captureContext: null, captureDraft: {task: '', sample: false}, draft: {}, reviewSync: null, runStarted: null, dismissedSuggestions: []})
+  commit({captureContext: null, captureDraft: {task: '', sample: false}, draft: {}, pausedDrafts: [], reviewSync: null, runStarted: null, dismissedSuggestions: []})
   try {
     localStorage.removeItem('understudy.lastPlaybook')
   } catch {
