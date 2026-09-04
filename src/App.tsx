@@ -1184,7 +1184,7 @@ export default function App() {
         {tabs.map(([id, label]) => <button key={id} aria-current={tab === id ? 'page' : undefined} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}{id === 'approvals' && pendingForMe > 0 && <span className="pill">{pendingForMe}</span>}</button>)}
       </nav>
       <p className="mobile-tab-hint">Swipe the tabs to see all workspace views →</p>
-      <p className="mobile-scope">On mobile: enter your assigned task results and review requests. Use your desktop WebMCP agent to build processes and resolve decision branches.</p>
+      {tab !== 'overview' && <p className="mobile-scope">On mobile: enter your assigned task results and review requests. Use your desktop WebMCP agent to build processes and resolve decision branches.</p>}
       {state.runStarted && <RunStartedNotice info={state.runStarted} />}
       {demoMode && <DemoStrip state={state} />}
       {tab !== 'overview' && interaction && (interaction.questions > 0 || interaction.approvals > 0) && <button className="attention-banner" onClick={() => window.Understudy.openPanel?.()}>Your agent needs your input <span>Open conversation →</span></button>}

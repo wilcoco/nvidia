@@ -69,7 +69,8 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
     store.clearCaptureContext()
     window.Understudy.unloadProcess?.()
     setEditing(true)
-    window.Understudy.openPanel?.()
+    if (window.innerWidth >= 560) window.Understudy.openPanel?.()
+    else window.Understudy.closePanel?.()
   }
 
   const capture = () => action.run(async () => {
@@ -86,13 +87,14 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
     store.requestPlaybookCreation(work)
     store.resetCaptureDraft()
     setEditing(false)
-    window.Understudy.openPanel?.()
+    if (window.innerWidth >= 560) window.Understudy.openPanel?.()
+    else window.Understudy.closePanel?.()
   })
 
   const newWorkEntry = <section className="card capture-card start-primary">
-    <div className="eyebrow">START A NEW WORK ENTRY</div>
+    <div className="eyebrow">START HERE · OR DESCRIBE THIS WORK IN YOUR AI CHAT</div>
     <h2>What are you working on?</h2>
-    <p>One sentence is enough. It is also saved in Work records as the source for this process. Any unfinished draft below is paused with its captured answers, not deleted.</p>
+    <p>One sentence is enough. Understudy saves it as the source, asks what belongs before and after, and grows the process beside your work.</p>
     <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
       <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
         <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
@@ -106,20 +108,14 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
 
   return (
     <div className="overview">
-      <section className="hero">
+      <section className={`hero ${proc || captured ? 'compact' : ''}`}>
         <div className="eyebrow">FROM YOUR WORK TO A TEAM PROCESS · WEBMCP</div>
         <h1>Your work, <span>turned into a team process.</span></h1>
         <p className="hero-description">Your AI agent asks what comes before and after, and who does each part. You correct the process, your team follows it, and the next person can reuse it.</p>
-        {!proc && !captured ? <div className="chat-entry">
-          <div><span>WELCOME · START HERE OR ASK IN YOUR AI CHAT</span>
-            <b>Hi — what would you like to do?</b><p>Start from one task, run a saved playbook, or ask “What is this?” in the AI chat that opened this tab.</p></div>
-          <div className="first-actions">
-            <button className="primary" onClick={() => document.getElementById('capture-note')?.focus()}>Describe a task</button>
-            <button className="secondary" onClick={() => navigate('playbooks')}>Use a playbook</button>
-            <button className="ghost" onClick={() => window.Understudy.openUsageGuide?.()}>Show me around</button>
-          </div>
-        </div> : <button className="ghost" onClick={() => window.Understudy.openUsageGuide?.()}>How to use Understudy</button>}
+        <button className="ghost hero-help" onClick={() => window.Understudy.openUsageGuide?.()}>{!proc && !captured ? 'What is this? Show me around' : 'How to use Understudy'}</button>
       </section>
+
+      {!proc && !captured && newWorkEntry}
 
       {interaction && (interaction.questions > 0 || interaction.approvals > 0) && (
         <button className="attention-banner" onClick={() => window.Understudy.openPanel?.()}>
@@ -127,8 +123,6 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           <span>Open conversation →</span>
         </button>
       )}
-
-      {!proc && !captured && newWorkEntry}
       <PausedDrafts state={state} />
 
       {proc ? (

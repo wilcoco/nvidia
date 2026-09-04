@@ -51,11 +51,72 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     const panel = page.locator('#understudy-panel-host')
     await panel.getByText('Your process will grow here').waitFor()
     assert.equal(await panel.locator('.preview-node').count(), 0, 'the empty start canvas must not look like a preloaded process')
-    await page.getByRole('button', {name: 'Describe a task'}).waitFor()
+    const firstInput = page.getByRole('textbox', {name: 'Describe your work'})
+    await firstInput.waitFor()
+    assert.equal(await page.getByText('Hi — what would you like to do?').count(), 0,
+      'the empty workspace must not duplicate the real starting form with a second welcome card')
+    assert.ok((await firstInput.boundingBox()).y < 900, 'the real starting input belongs in the first viewport')
     await page.evaluate(() => window.__understudy.call('navigate_workspace', {destination: 'records'}))
     await page.getByRole('heading', {name: 'Work records'}).waitFor()
     await page.evaluate(() => window.__understudy.call('navigate_workspace', {destination: 'create'}))
-    await page.getByRole('button', {name: 'Describe a task'}).waitFor()
+    await firstInput.waitFor()
+    await page.setViewportSize({width: 375, height: 812})
+    await page.evaluate(() => window.Understudy.closePanel?.())
+    assert.equal(await page.locator('.mobile-scope').count(), 0,
+      'the task-operation mobile note must not push down the Create process input')
+    assert.ok((await page.getByRole('button', {name: 'Start with the first question'}).boundingBox()).y < 812,
+      'the first input and its submit action must fit in the initial mobile viewport')
+    await page.setViewportSize({width: 1280, height: 900})
+    await page.evaluate(() => window.Understudy.openPanel?.())
+
+    // The chat-first path keeps one human confirmation but presents the
+    // business meaning, not a raw tool/JSON prompt. Approval opens the same
+    // first question as the page form without asking the person to retype.
+    const chatPage = await context.newPage()
+    await chatPage.goto(base)
+    await chatPage.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    const chatPanel = chatPage.locator('#understudy-panel-host')
+    const chatTask = 'I am preparing a customer order for delivery.'
+    const pendingCapture = await chatPage.evaluate(async task => {
+      const tool = window.__understudy.tools.find(candidate => candidate.name === 'run_action')
+      const response = await tool.execute({name: 'log_work_item', params: {
+        date: new Date().toISOString().slice(0, 10), area: 'A', kind: 'routine work', task,
+      }})
+      return JSON.parse(response.content[0].text)
+    }, chatTask)
+    assert.equal(pendingCapture.status, 'pending_approval')
+    await chatPanel.getByText('Use this as the starting point?').waitFor()
+    await chatPanel.getByText(chatTask, {exact: true}).waitFor()
+    assert.equal(await chatPanel.getByText('Run action: log_work_item').count(), 0,
+      'raw action names must not lead the first-use confirmation')
+    assert.equal(await chatPanel.getByText('Action: log_work_item').isVisible(), false,
+      'technical action details stay collapsed by default')
+    const chatInput = chatPage.getByRole('textbox', {name: 'Describe your work'})
+    const inputBox = await chatInput.boundingBox()
+    const attentionBox = await chatPage.getByRole('button', {name: /Your input is needed/}).boundingBox()
+    assert.ok(inputBox.y < attentionBox.y && inputBox.y < 900,
+      'a pending chat confirmation must not push the real starting input below the first viewport')
+    await chatPanel.getByRole('button', {name: 'Save & ask the first question'}).click()
+    const chatStarter = chatPage.getByRole('textbox', {name: 'What must happen first?'})
+    await chatStarter.waitFor()
+    await chatPage.waitForFunction(() => document.activeElement?.id === 'starter-answer')
+    await chatPage.locator('main').getByText(chatTask, {exact: true}).waitFor()
+    await chatPage.close()
+
+    const mobilePage = await context.newPage()
+    await mobilePage.setViewportSize({width: 375, height: 812})
+    await mobilePage.goto(base)
+    await mobilePage.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await mobilePage.evaluate(() => window.Understudy.closePanel?.())
+    await mobilePage.getByRole('textbox', {name: 'Describe your work'}).fill('I inspect a mobile handoff before delivery.')
+    await mobilePage.getByRole('button', {name: 'Start with the first question'}).click()
+    const mobileStarter = mobilePage.getByRole('textbox', {name: 'What must happen first?'})
+    await mobileStarter.waitFor()
+    assert.ok((await mobileStarter.boundingBox()).y < 812, 'the first question input must remain in the mobile viewport')
+    assert.equal(await mobilePage.locator('#understudy-panel-host').locator('.panel').count(), 0,
+      'starting on mobile must not cover the first question with the process panel')
+    await mobilePage.locator('#understudy-panel-host').getByRole('button', {name: 'Open playbook & conversation'}).waitFor()
+    await mobilePage.close()
 
     // A page-only path remains usable when the current AI chat is not bound to
     // the browser's registered WebMCP tools.

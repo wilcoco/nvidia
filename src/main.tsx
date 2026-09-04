@@ -113,12 +113,15 @@ window.Understudy.init({
         urgent: { type: 'boolean', description: 'Blocked / needs the reviewer immediately' },
         hours: { type: 'number', description: 'Time spent (default 0.5)' },
       },
-      handler: (p) => {
+      handler: async (p) => {
+        const beginsDiscovery = !window.Understudy.getLoadedProcess?.()
+          && !window.Understudy.currentRunId?.()
+          && !store.getState().captureContext
         // Domain-specific values (a loaded playbook's fields contract, or any
         // structured readings) arrive as extra params and are stored on the entry.
         const known = new Set(['date', 'area', 'line', 'kind', 'task', 'urgent', 'hours'])
         const extras = Object.fromEntries(Object.entries(p).filter(([k]) => !known.has(k)))
-        return store.createWorklog({
+        const work = await store.createWorklog({
           date: String(p.date),
           line: String(p.area ?? p.line ?? 'A'),
           task: String(p.task),
@@ -128,6 +131,16 @@ window.Understudy.init({
           kind: String(p.kind),
           data: extras as store.IncidentData,
         })
+        // A work sentence entered in the visiting agent's chat is the same
+        // starting point as the page form. Keep the human approval gate, then
+        // open the focused starter question without making them retype it.
+        if (beginsDiscovery) {
+          store.requestPlaybookCreation(work)
+          window.dispatchEvent(new CustomEvent('understudy:navigate', {detail: {destination: 'create'}}))
+          if (window.innerWidth >= 560) window.Understudy.openPanel?.()
+          else window.Understudy.closePanel?.()
+        }
+        return work
       },
     },
     {

@@ -242,6 +242,10 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .card input.freetext { width: 100%; margin-top: 6px; background: #0f172a; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 5px 8px; font-size: 12px; }
 .card.approval-card { border-color: #f59e0b; }
 .card .params { font-size: 11px; color: #94a3b8; white-space: pre-wrap; word-break: break-all; margin: 6px 0; max-height: 120px; overflow-y: auto; }
+.card .approval-summary { margin: 8px 0 10px; padding: 10px 11px; border-left: 3px solid #6ee7b7; border-radius: 5px; background: #14231f; color: #ecfdf5; font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.card .approval-meta { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-bottom: 10px; color: #a7b4c6; font-size: 10px; }
+.card .approval-details { margin: 8px 0 10px; color: #94a3b8; font-size: 10px; }
+.card .approval-details summary { cursor: pointer; color: #94a3b8; }
 .card .yn { display: flex; gap: 8px; }
 .card .yn .yes { background: #059669; } .card .yn .no { background: #475569; }
 .card .yn button { color: #fff; border: none; border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12px; }
@@ -1041,13 +1045,27 @@ function render() {
   // Agent action approvals
   if (asksStore.approvals.length > 0) {
     const section = el('section')
-    section.appendChild(el('h2', undefined, 'Agent wants to act'))
+    section.appendChild(el('h2', undefined, 'Your confirmation'))
     for (const req of asksStore.approvals) {
       const card = el('div', 'card approval-card')
-      card.appendChild(el('div', 'q', `Run action: ${req.actionName}`))
-      card.appendChild(el('div', 'params', JSON.stringify(req.params, null, 1)))
+      const startsProcess = req.actionName === 'log_work_item' && !mapstore.getMap()
+      if (req.actionName === 'log_work_item') {
+        card.appendChild(el('div', 'q', startsProcess ? 'Use this as the starting point?' : 'Record this work?'))
+        card.appendChild(el('div', 'approval-summary', String(req.params.task ?? 'Untitled work')))
+        const meta = el('div', 'approval-meta')
+        meta.appendChild(el('span', undefined, `Date · ${String(req.params.date ?? 'today')}`))
+        meta.appendChild(el('span', undefined, `Type · ${String(req.params.kind ?? 'routine work')}`))
+        card.appendChild(meta)
+        const details = el('details', 'approval-details') as HTMLDetailsElement
+        details.appendChild(el('summary', undefined, 'Technical details'))
+        details.appendChild(el('div', 'params', `Action: ${req.actionName}\n${JSON.stringify(req.params, null, 1)}`))
+        card.appendChild(details)
+      } else {
+        card.appendChild(el('div', 'q', `Run action: ${req.actionName}`))
+        card.appendChild(el('div', 'params', JSON.stringify(req.params, null, 1)))
+      }
       const yn = el('div', 'yn')
-      const yes = el('button', 'yes', 'Approve')
+      const yes = el('button', 'yes', startsProcess ? 'Save & ask the first question' : req.actionName === 'log_work_item' ? 'Save work record' : 'Approve')
       const nowPersona = (() => {
         try {
           const st = host.getState() as { actingAs?: unknown } | null
@@ -1065,7 +1083,7 @@ function render() {
         )
       }
       yes.onclick = () => void asksStore.decideApprovalCard(req.id, true)
-      const no = el('button', 'no', 'Deny')
+      const no = el('button', 'no', req.actionName === 'log_work_item' ? 'Not now' : 'Deny')
       if (wrongPersona) no.disabled = true
       no.onclick = () => void asksStore.decideApprovalCard(req.id, false)
       yn.appendChild(yes)

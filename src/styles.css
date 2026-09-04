@@ -241,14 +241,7 @@ button.library-link { display: flex; align-items: center; justify-content: space
 .capture-label-row label { margin-bottom: 0; }
 .capture-label-row .example-link { padding: 0; font-size: 12px; }
 .overview .hero:not(.compact) h1 { font-size: clamp(30px, 2.4vw, 36px); }
-.chat-entry { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 12px 16px; margin-top: 18px; border: 1px solid #c6dace; border-radius: 10px; background: #eaf2eb; }
-.chat-entry span { display: block; color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .06em; margin-bottom: 6px; }
-.chat-entry b { font-size: 15px; }
-.chat-entry p { color: var(--muted); font-size: 12px; margin: 5px 0 0; }
-.chat-entry button { flex-shrink: 0; }
-.chat-entry .first-actions { display: flex; align-items: center; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
-.chat-entry .first-actions button { padding: 8px 10px; font-size: 11px; }
-@media (max-width: 700px) { .chat-entry { flex-direction: column; align-items: start; } }
+.hero-help { padding-left: 0; margin-top: 2px; font-size: 12px; }
 @media (max-width: 700px) { .paused-draft { align-items: stretch; flex-direction: column; } }
 .discovery-start label { display: block; font-size: 13px; font-weight: 650; margin-bottom: 8px; }
 .discovery-start textarea { display: block; width: 100%; min-height: 100px; padding: 12px; margin-bottom: 16px; border: 1px solid #b9cdc1; border-radius: 8px; resize: vertical; line-height: 1.6; }
@@ -342,9 +335,15 @@ button.library-link { display: flex; align-items: center; justify-content: space
   .persona-label select { max-width: 145px; padding: 7px; }
   .tabs { gap: 22px; }
   .tabs button { font-size: 13px; }
-  .hero { padding-top: 12px; }
-  .hero h1 { font-size: 36px; letter-spacing: -1.4px; }
-  .hero-description { font-size: 14px; }
+  .overview .hero { padding: 6px 0 10px; }
+  .overview .hero h1 { font-size: 28px; letter-spacing: -1px; }
+  .overview .hero-description { display: none; }
+  .overview .hero-help { margin-top: 7px; }
+  .overview .hero.compact { display: none; }
+  .overview .start-primary { padding: 18px; }
+  .overview .start-primary h2 { font-size: 22px; margin-bottom: 8px; }
+  .overview .start-primary > p { margin: 6px 0; }
+  .overview .capture-card textarea { min-height: 72px; }
   .journey { gap: 12px 8px; grid-template-columns: 1fr 1fr; }
   .capture-card, .example-card, .current-work { padding: 22px; }
   .overview-bottom { grid-template-columns: 1fr; gap: 18px; }
