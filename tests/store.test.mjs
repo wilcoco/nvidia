@@ -277,6 +277,24 @@ test('reload restores the exact run selected in this tab, even when a newer run 
  assert.equal(restored.steps[0].resultData.delta,12)
 })
 
+test('reload leaves a completed run in history instead of restoring its graph onto Start here',async()=>{
+ const completed={id:'done',processId:'p',status:'completed',steps:[{id:'w',status:'done'}]}
+ let loaded=0
+ const store=fixture(async(path)=>{
+  if(path==='/api/state')return response({me:{username:'kim'},users:[],worklogs:[],approvals:[],processes:[]})
+  if(path==='/api/runs')return response([completed])
+  if(path==='/api/runs/done')return response(completed)
+  throw Error(path)
+ },{
+  sessionStorage:{getItem:k=>k==='understudy.selectedRun'?JSON.stringify({username:'kim',runId:'done',processId:'p'}):null},
+  window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>null,loadProcess:()=>loaded++,log(){}}},
+ })
+ await store.refresh();await new Promise(r=>setTimeout(r,10))
+ assert.equal(loaded,0)
+ assert.equal(store.getState().restoration,'ready')
+ assert.equal(store.getState().recentRuns[0].id,'done')
+})
+
 test('restoration exposes loading and recoverable errors without creating a replacement execution',async()=>{
  let release, fail=true, loaded=0, requests=[]
  const run={id:'selected',processId:'p',status:'active',steps:[{id:'w',status:'done',resultData:{delta:12}}]}

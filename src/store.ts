@@ -737,7 +737,9 @@ let resumeAttempted = false
 let workspaceRestored = false
 export function rememberActiveRun(): void {
   if (!state.me) return
-  const runId = window.Understudy.currentRunId?.() ?? null
+  // Completed work is history. Keep it available in the run picker, but do
+  // not make a finished graph the next visit's default starting point.
+  const runId = window.Understudy.isRunComplete?.() ? null : window.Understudy.currentRunId?.() ?? null
   const processId = window.Understudy.getLoadedProcess?.()?.sourceProcessId
   try {
     // A null selection records an explicit unload. It must not fall back to
@@ -761,7 +763,7 @@ export function resumeLastPlaybook(): void {
       if (selected) {
         if (selected.username === state.me?.username && selected.runId && !window.Understudy.getLoadedProcess?.()) {
           const run = await getRun(selected.runId)
-          if (gen === sessionGen && run.status !== 'abandoned' && !window.Understudy.getLoadedProcess?.())
+          if (gen === sessionGen && run.status === 'active' && !window.Understudy.getLoadedProcess?.())
             await followPlaybook(run.processId, {silent: true, run})
         }
         return
@@ -769,7 +771,7 @@ export function resumeLastPlaybook(): void {
       // Compatibility for browsers that predate the exact, tab-scoped selection.
       let id: string | null = null
       try { id = localStorage.getItem('understudy.lastPlaybook') } catch { /* optional */ }
-      if (id && runs.some((r) => r.processId === id && r.status !== 'abandoned') && !window.Understudy.getLoadedProcess?.())
+      if (id && runs.some((r) => r.processId === id && r.status === 'active') && !window.Understudy.getLoadedProcess?.())
         await followPlaybook(id, {silent: true, resume: true})
     } catch {
       if (gen === sessionGen) commit({restoration: 'error'})

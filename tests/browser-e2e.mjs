@@ -48,15 +48,19 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     assert.match(plainHtml, /<script src="\/understudy\.js\?v=dev"><\/script>/)
     await page.getByRole('button', {name: /Enter demo workspace/}).click()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    const panel = page.locator('#understudy-panel-host')
+    await panel.getByText('Your process will grow here').waitFor()
+    assert.equal(await panel.locator('.preview-node').count(), 0, 'the empty start canvas must not look like a preloaded process')
 
     // A page-only path remains usable when the current AI chat is not bound to
     // the browser's registered WebMCP tools.
     await page.getByRole('textbox', {name: 'Describe your work'}).fill('I inspect one outgoing parcel before handoff.')
     await page.getByRole('button', {name: 'Start with the first question'}).click()
     await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim confirms the order and the packed quantity.')
+    assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).count(), 0,
+      'the saved starting point replaces the blank new-entry form')
     await page.getByRole('button', {name: 'Save answer & continue'}).click()
     await page.getByRole('button', {name: 'Continue interview on this page'}).click()
-    const panel = page.locator('#understudy-panel-host')
     await panel.getByText(/Evidence-only starter · work log/).waitFor()
     const starterDraft = await page.evaluate(() => window.Understudy.getLoadedProcess())
     assert.equal(starterDraft.sourceProcessId, undefined, 'a fallback draft is not a revision of a saved playbook')
@@ -65,6 +69,8 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     assert.equal(await panel.getByRole('button', {name: 'Structure this evidence before saving'}).isDisabled(), true)
     await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
     await page.getByText(`Continue draft from work log #${starterDraft.sourceWorklogId}`).waitFor()
+    await page.getByRole('button', {name: 'Start a separate work entry'}).click()
+    await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
     const newEntry = page.getByRole('textbox', {name: 'Describe your work'})
     await newEntry.fill('I verify a separate customer return before restocking.')
     await page.getByRole('button', {name: 'Start with the first question'}).click()
@@ -75,8 +81,8 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
       starterDraft.sourceWorklogId)
     assert.equal((await page.evaluate(() => window.Understudy.getLoadedProcess())).draftMode, 'evidence-only')
     await page.getByText('I verify a separate customer return before restocking.').last().waitFor()
-    assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).isVisible(), true,
-      'Start here keeps the one-line entry visible while a draft is open')
+    assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).count(), 0,
+      'an open draft is visually separate from starting another work entry')
 
     await page.evaluate((mapTitle) => {
       window.Understudy.draftRevision({
@@ -263,6 +269,11 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
 
     await page.reload()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.() && !window.Understudy.currentRunId?.())
+    assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).isVisible(), true,
+      'a completed run stays in history instead of occupying the new-work start screen')
+    await page.getByText('Choose an existing run').click()
+    await page.locator('details.recent-runs button.secondary').filter({hasText: title}).filter({hasText: `#${runId}`}).click()
     await page.waitForFunction((expected) => window.Understudy.currentRunId?.() === expected && window.Understudy.isRunComplete?.() === true, runId)
     assert.equal(await page.evaluate(() => window.Understudy.getLoadedProcess()?.version), 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true)
@@ -316,6 +327,8 @@ test('all unfinished interview drafts survive saved-process transitions and relo
       const map = window.Understudy.getLoadedProcess?.()
       return map?.title === title && map.confirmed === true && Boolean(map.sourceProcessId)
     }, savedTitle)
+    await page.getByRole('button', {name: 'Start a separate work entry'}).click()
+    await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
 
     const taskA = 'I inspect one outgoing parcel before handoff.'
     const taskB = 'I inspect a separate customer return before restocking.'
@@ -347,6 +360,8 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     await panel.getByText(/Focused expert interview .* 5\/5/).waitFor()
 
     // A -> B -> resume A establishes two independent unfinished sessions.
+    await page.getByRole('button', {name: 'Start a separate work entry'}).click()
+    await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
     await page.getByRole('textbox', {name: 'Describe your work'}).fill(taskB)
     await page.getByRole('button', {name: 'Start with the first question'}).click()
     await page.getByText(taskA).last().waitFor()
@@ -386,6 +401,8 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     await resumeAAndCheckEvidence()
 
     // 2) Contextual suggestion card.
+    await page.getByRole('button', {name: 'Start a separate work entry'}).click()
+    await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
     await page.getByRole('textbox', {name: 'Describe your work'}).fill('Another parcel handoff needs the saved route.')
     await page.getByRole('button', {name: 'Follow this playbook'}).click()
     await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)

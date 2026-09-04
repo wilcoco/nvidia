@@ -100,20 +100,15 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .invite-copy { background: #3b82f6; color: #fff; border: none; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
 .discovery-preview h3 { color: #f1f5f9; font-size: 20px; line-height: 1.3; margin: 6px 0 10px; }
 .preview-note { color: #a2b0c2; font-size: 12px; line-height: 1.6; margin: 10px 0; }
-.preview-stages { display: flex; gap: 6px; margin: 18px 0; }
-.preview-stages button { flex: 1; padding: 8px 2px; border: 1px solid #475569; border-radius: 6px; background: transparent; color: #cbd5e1; cursor: pointer; font-size: 11px; }
-.preview-stages button[aria-pressed="true"] { background: #1e4c40; color: #a7f3d0; border-color: #4c9e82; }
-.preview-work { color: #f1f5f9; background: #1e293b; border-left: 3px solid #6ee7b7; padding: 12px; margin: 0; line-height: 1.6; }
-.preview-story { color: #d5dfeb; font-size: 13px; line-height: 1.7; white-space: pre-line; min-height: 65px; }
+.preview-empty { min-height: 260px; border: 1px dashed #405064; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 28px; color: #cbd5e1; background: linear-gradient(180deg, rgba(30,41,59,.28), rgba(15,23,42,.08)); }
+.preview-empty strong { color: #ecfdf5; font-size: 15px; }
+.preview-empty p { color: #93a4b8; font-size: 12px; line-height: 1.7; max-width: 270px; }
 .preview-flow { list-style: none; margin: 20px 0; padding: 0 0 0 16px; border-left: 2px solid #476b64; }
 .preview-node { position: relative; background: #182636; padding: 11px 13px; border: 1px solid #456157; border-radius: 8px; margin: 0 0 14px; overflow-wrap: anywhere; }
 .preview-node::before { content: ''; position: absolute; left: -22px; top: 23px; width: 8px; height: 8px; border-radius: 50%; background: #80bda6; }
 .preview-node p { margin: 5px 0 0; color: #ecf4f1; line-height: 1.5; }
 .preview-role { color: #b0c7bf; font-size: 10px; letter-spacing: .05em; }
 .preview-node.unknown { border-style: dashed; background: transparent; }
-.preview-node.current { border-color: #fbbf24; background: #302c22; }
-.preview-node.complete { border-color: #34d399; }
-.preview-next { border: 1px solid #7bb49f; background: #214b40; color: #dcfce7; border-radius: 7px; padding: 9px 12px; cursor: pointer; width: 100%; }
 .usage-guide { padding: 16px; background: #18392f; border: 1px solid #4c8b73; border-radius: 10px; color: #e5f4ec; }
 .usage-guide h2 { color: #e5f4ec; font-size: 18px; text-transform: none; letter-spacing: 0; margin-bottom: 12px; }
 .usage-guide p, .usage-guide li { font-size: 13px; line-height: 1.7; }

@@ -31,7 +31,7 @@ function PausedDrafts({state}: {state: store.AppState}) {
 }
 
 export default function Overview({ state, navigate }: { state: store.AppState; navigate: (tab: WorkspaceTab) => void }) {
-  const [editing, setEditing] = useState(true)
+  const [editing, setEditing] = useState(() => !window.Understudy.getLoadedProcess?.() && !state.captureContext)
   const {task: note, sample} = state.captureDraft
   const setNote = (task: string) => store.setCaptureDraft(task, sample)
   const captured = state.captureContext
@@ -54,8 +54,23 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const sourceAnswers = proc?.steps.reduce((total, step) => total + (step.elicitation?.answers.length ?? 0), 0) ?? 0
   const activeRunBlocksCapture = Boolean(runId && !done)
   useEffect(() => {
+    // Restored, selected and newly drafted processes own the workspace until
+    // the visitor explicitly chooses to teach separate work.
+    if (proc || captured) setEditing(false)
+  }, [proc, captured])
+  useEffect(() => {
     if (editing && !proc) store.setDraftContext({kind: captureKind, task: captured?.task ?? note, hasInput: Boolean((captured?.task ?? note).trim())})
   }, [editing, captureKind, note, proc, captured])
+
+  const beginNewWork = () => {
+    store.pauseCurrentDraft()
+    // Detach the work-log context before clearMap emits its synchronous event;
+    // otherwise that event can overwrite the just-paused map with an empty one.
+    store.clearCaptureContext()
+    window.Understudy.unloadProcess?.()
+    setEditing(true)
+    window.Understudy.openPanel?.()
+  }
 
   const capture = () => action.run(async () => {
     if (!note.trim()) return
@@ -70,7 +85,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
     if (proc) window.Understudy.unloadProcess?.()
     store.requestPlaybookCreation(work)
     store.resetCaptureDraft()
-    setEditing(true)
+    setEditing(false)
     window.Understudy.openPanel?.()
   })
 
@@ -109,7 +124,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         </button>
       )}
 
-      {newWorkEntry}
+      {!proc && !captured && newWorkEntry}
 
       {proc ? (
         <section className="card current-work">
@@ -132,7 +147,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
                 : runId ? <button className="primary" onClick={() => navigate('tasks')}>{done ? 'View the completed run' : 'Continue to my tasks →'}</button>
                   : <span className="meta">Saving the playbook…</span>}
             <button className="secondary" onClick={() => window.Understudy.openPanel?.()}>Open playbook</button>
-            {done && <button className="ghost" onClick={() => { window.Understudy.unloadProcess?.(); store.clearCaptureContext(); setEditing(true) }}>Teach another process</button>}
+            {!activeRunBlocksCapture && <button className="ghost" onClick={beginNewWork}>{done ? 'Teach another process' : 'Start a separate work entry'}</button>}
           </div>
           {evidenceOnly && <AgentInvite label="Copy request to structure this evidence" hint="Connect a WebMCP agent to turn the captured source into a concrete process. You will still review and save the result." prompt="Use Understudy on this page. Read get_process_map and get_map_gaps. This is an evidence-only starter: preserve its source answers, then replace the placeholder map with specific steps, owners, required inputs, decisions, recovery routes and human sign-off supported by those answers. Keep any existing step id that carries elicitation evidence on the corresponding replacement step so its provenance remains attached. Ask one question at a time for anything missing. Do not invent rules or start execution. Leave the runnable draft for my review and one Save." />}
           {decision && <AgentInvite hint="Ask your agent: “Do these results meet the rules? What should we do next?” It can check the evidence and explain the next step." label="Copy evidence-check request" prompt={`Use Understudy on this page. Read get_process_progress and the submitted evidence for “${decision.label}”. Check the recorded criteria with resolve_decision. If the evidence fails, take the rework branch and explain the next task. Do not replace submitted measurements with an assumed passing value.`} />}
