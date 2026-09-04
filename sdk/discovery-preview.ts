@@ -11,15 +11,15 @@ function el(tag: string, className: string, text?: string): HTMLElement {
 export function discoveryPreview(request: PlaybookRequest | null, _refresh: () => void): HTMLElement {
   const section = el('div', 'discovery-preview')
   if (request) {
-    section.appendChild(el('h3', '', 'Your process starts here'))
-    section.appendChild(el('p', 'preview-note', 'Saved notes · your agent will turn these into steps for you to review.'))
+    section.appendChild(el('h3', '', 'Your chat grows the process here'))
+    section.appendChild(el('p', 'preview-note', 'Starting point saved · keep working in chat. Optional page context appears only as a drafting aid.'))
     const flow = el('ol', 'preview-flow')
     const before = request.discovery?.before?.answer
     const after = request.discovery?.after?.answer
     for (const [label, text, known] of [
-      ['BEFORE', before ?? 'What needs to happen first?', !!before],
+      [before ? 'BEFORE' : 'BEFORE · OPTIONAL', before ?? 'Add preparation context only if it helps.', !!before],
       ['YOUR WORK', request.task, true],
-      ['AFTER', after ?? 'What happens next, and who takes over?', !!after],
+      [after ? 'AFTER' : 'AFTER · OPTIONAL', after ?? 'Add handoff context only if it helps.', !!after],
     ] as const) {
       const item = el('li', `preview-node${known ? ' known' : ' unknown'}`)
       item.appendChild(el('span', 'preview-role', label))
@@ -27,7 +27,7 @@ export function discoveryPreview(request: PlaybookRequest | null, _refresh: () =
       flow.appendChild(item)
     }
     section.appendChild(flow)
-    section.appendChild(el('p', 'preview-note', 'Next, agree on the owners and rules. Your confirmed playbook will guide each person’s tasks.'))
+    section.appendChild(el('p', 'preview-note', 'Tell your agent about owners, rules or branches in chat. Review the growing draft before you save it.'))
     return section
   }
 

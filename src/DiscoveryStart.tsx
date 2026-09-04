@@ -1,4 +1,3 @@
-import { useEffect } from 'react'
 import * as store from './store'
 import { FOLLOWUP_QUESTION, STARTER_QUESTION, discoveryInvite } from '../sdk/discovery'
 import { AgentInvite, ErrorNotice, useAction } from './ui'
@@ -13,17 +12,8 @@ export default function DiscoveryStart({state, onStartSeparate}: {state: store.A
   const questions = interaction?.questions ?? 0
   const interviewStarted = (interaction?.interview?.asked ?? 0) > 0
   const prompt = discoveryInvite({worklogId: captured.id, task: captured.task, discovery: work?.data.discovery}, window.location.href)
-  const askStarter = !before && !captured.starterSkipped && !questions && !interviewStarted
-  const askFollowup = Boolean(before && !after && !captured.afterSkipped)
-  useEffect(() => {
-    if (!askFollowup) return
-    const frame = requestAnimationFrame(() => {
-      const input = document.getElementById('followup-answer')
-      input?.focus()
-      input?.scrollIntoView({block: 'center', behavior: 'smooth'})
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [askFollowup, captured.id])
+  const offerBeforeHelp = !before && !captured.starterSkipped && !questions && !interviewStarted
+  const offerAfterHelp = Boolean(before && !after && !captured.afterSkipped && !questions && !interviewStarted)
   const openStarterDraft = () => window.Understudy.draftProcess?.({
     title: `Evidence-only starter · work log #${captured.id}`,
     sourceWorklogId: captured.id,
@@ -39,44 +29,57 @@ export default function DiscoveryStart({state, onStartSeparate}: {state: store.A
   })
 
   return <section className="card current-work discovery-start">
-    <div className="eyebrow">{askStarter ? 'WORK SAVED · QUESTION 1 OF 2' : askFollowup ? '1 OF 2 ANSWERED · QUESTION 2' : questions ? 'YOUR AGENT HAS A QUESTION' : interaction?.active ? 'AGENT CONNECTED · WAITING FOR THE NEXT QUESTION' : interviewStarted ? 'ANSWER RECEIVED' : 'STARTING CONTEXT SAVED'}</div>
-    <h2>{askStarter ? STARTER_QUESTION : askFollowup ? FOLLOWUP_QUESTION : questions ? 'Answer your agent beside the process.' : interaction?.active ? 'Your agent is reading the saved context.' : interviewStarted ? 'Your answers are ready for the next step.' : before ? 'Continue discovering the process.' : 'Build the process with your agent.'}</h2>
+    <div className="eyebrow">{questions ? 'YOUR AGENT HAS A QUESTION' : interaction?.active ? 'CONTINUE IN YOUR AI CHAT' : interviewStarted ? 'DRAFT EVIDENCE SAVED' : 'WORK SAVED · CHAT IS THE MAIN PATH'}</div>
+    <h2>{questions ? 'Your agent needs one answer.' : 'Keep building this process in your AI chat.'}</h2>
     <blockquote>{captured.task}</blockquote>
-    <p className="discovery-progress" role="status" aria-live="polite">{askStarter ? 'Question 1 of 2 · preparation' : askFollowup ? '1 of 2 answered · next: handoff' : after ? '2 of 2 starting questions answered' : 'Starting context saved'}</p>
-    {before && <details className="saved-answer"><summary>✓ 1. What must happen first? · SAVED</summary><p>{before.answer}</p></details>}
-    {after && <details className="saved-answer"><summary>✓ 2. What happens next? · SAVED</summary><p>{after.answer}</p></details>}
-    {askStarter ? <>
-      <p>This starter question helps uncover the work around your task. Name a preparation step and who does it, if you know.</p>
+    <p className="chat-primary-status" role="status" aria-live="polite">{questions
+      ? 'This question came from your agent. Use the page card to preserve the answer with the playbook, or tell your agent to skip it.'
+      : 'Your starting point is saved. Continue normally in the AI chat that opened this page; the process will grow on the right. The page prompts below are optional helpers.'}</p>
+
+    {questions ? <button className="primary" onClick={() => window.Understudy.openPanel?.()}>Open your agent’s question →</button>
+      : interaction?.active ? <><p className="waiting-agent">Connected. Keep talking in your AI chat. Understudy will show the agent’s next question or draft beside the page.</p>
+        <button type="button" className="ghost" onClick={onStartSeparate}>Start a separate work entry</button></>
+        : interviewStarted ? <details className="intro-help"><summary>Resume this process in your AI chat</summary><AgentInvite prompt={prompt} /></details>
+          : <AgentInvite prompt={prompt} label="Copy request for my AI chat" hint="Continue in the AI chat that opened this page. Ask your agent to read this saved work, fill in only what is missing, and grow the process for your review." />}
+
+    {(before || after) && <div className="optional-saved-context">
+      <p className="optional-label">OPTIONAL PAGE CONTEXT</p>
+      {before && <details className="saved-answer"><summary>✓ What happens before · SAVED</summary><p>{before.answer}</p></details>}
+      {after && <details className="saved-answer"><summary>✓ What happens after · SAVED</summary><p>{after.answer}</p></details>}
+    </div>}
+
+    {offerBeforeHelp && <details className="optional-page-help">
+      <summary>Optional page help · add what happens before</summary>
+      <p>You can ignore this and keep going in chat. Use it only if answering a structured prompt on this page would help.</p>
       <form onSubmit={e => { e.preventDefault(); void action.run(() => store.saveStarterAnswer(captured.id, captured.answerDraft ?? '', 'before')) }}>
-        <label htmlFor="starter-answer">What must happen first?</label>
-        <textarea id="starter-answer" autoFocus rows={3} maxLength={4000} disabled={action.busy}
+        <label htmlFor="starter-answer">Add preparation context (optional)</label>
+        <p className="prompt-question">{STARTER_QUESTION}</p>
+        <textarea id="starter-answer" rows={3} maxLength={4000} disabled={action.busy}
           value={captured.answerDraft ?? ''} onChange={e => store.setStarterDraft(e.target.value)}
           placeholder="For example: Sales confirms the order quantity and delivery date." required />
-        <button className="primary" disabled={action.busy || !captured.answerDraft?.trim()}>{action.busy ? 'Saving answer…' : 'Save answer & continue →'}</button>
-        <button type="button" className="ghost" disabled={action.busy} onClick={() => store.skipStarterQuestion('before')}>Discuss this with my agent instead</button>
+        <button className="secondary" disabled={action.busy || !captured.answerDraft?.trim()}>{action.busy ? 'Saving note…' : 'Save optional note'}</button>
         <ErrorNotice message={action.error} />
       </form>
-    </> : askFollowup ? <>
-      <p>Name the next meaningful step and its owner. Your agent can ask about detailed rules and exceptions afterwards.</p>
+    </details>}
+
+    {offerAfterHelp && <details className="optional-page-help">
+      <summary>Optional page help · add what happens after</summary>
+      <p>You can ignore this and keep going in chat. Use it only if a structured handoff prompt would help.</p>
       <form onSubmit={e => { e.preventDefault(); void action.run(() => store.saveStarterAnswer(captured.id, captured.answerDraft ?? '', 'after')) }}>
-        <label htmlFor="followup-answer">What happens next, and who takes over?</label>
-        <textarea id="followup-answer" autoFocus rows={3} maxLength={4000} disabled={action.busy}
+        <label htmlFor="followup-answer">Add handoff context (optional)</label>
+        <p className="prompt-question">{FOLLOWUP_QUESTION}</p>
+        <textarea id="followup-answer" rows={3} maxLength={4000} disabled={action.busy}
           value={captured.answerDraft ?? ''} onChange={e => store.setStarterDraft(e.target.value)}
           placeholder="For example: Logistics books the courier, then Lee reviews the handoff evidence." required />
-        <button className="primary" disabled={action.busy || !captured.answerDraft?.trim()}>{action.busy ? 'Saving answer…' : 'Save answer & continue →'}</button>
-        <button type="button" className="ghost" disabled={action.busy} onClick={() => store.skipStarterQuestion('after')}>Continue this question with my agent instead</button>
+        <button className="secondary" disabled={action.busy || !captured.answerDraft?.trim()}>{action.busy ? 'Saving note…' : 'Save optional note'}</button>
         <ErrorNotice message={action.error} />
       </form>
-      <details className="intro-help"><summary>Continue in my AI chat instead</summary><AgentInvite prompt={prompt} /></details>
-    </> : <>
-      {questions ? <><p>Your agent’s question is in the right panel. Your saved answer is available for it to read.</p>
-        <button className="primary" onClick={() => window.Understudy.openPanel?.()}>Answer the question →</button></>
-        : interaction?.active ? <><p className="waiting-agent" role="status">Connected. Keep this page open; the next question will appear in the panel. You can continue in the chat while it works.</p>
-          <button type="button" className="ghost" onClick={onStartSeparate}>Start a separate work entry</button></>
-        : interviewStarted ? <><p role="status">Your agent can read your answer and continue drafting. Watch your AI chat for its response; the draft will appear on the right.</p>
-          <details className="intro-help"><summary>Need to resume in your AI chat?</summary><AgentInvite prompt={prompt} /></details></>
-          : <><AgentInvite prompt={prompt} label="Copy request for my agent" hint="Your work is saved. Send this request in your browser agent’s chat to continue with questions about the next steps and owners." />
-            {!interaction?.active && <div className="manual-fallback"><b>No connected agent?</b><p>Capture source evidence one question at a time on this page. It stays an evidence-only starter and cannot be saved as a runnable playbook until an agent structures it for your review.</p><button className="secondary" onClick={openStarterDraft}>Continue interview on this page →</button></div>}</>}
-    </>}
+    </details>}
+
+    {!interaction?.active && !questions && !interviewStarted && <details className="manual-fallback optional-page-help">
+      <summary>No connected AI chat? Use the page-only fallback</summary>
+      <p>This preserves source evidence one question at a time. It cannot become a runnable playbook until an agent structures it for your review.</p>
+      <button className="secondary" onClick={openStarterDraft}>Continue interview on this page →</button>
+    </details>}
   </section>
 }

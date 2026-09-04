@@ -245,15 +245,24 @@ button.library-link { display: flex; align-items: center; justify-content: space
 @media (max-width: 700px) { .paused-draft { align-items: stretch; flex-direction: column; } }
 .discovery-start label { display: block; font-size: 13px; font-weight: 650; margin-bottom: 8px; }
 .discovery-start textarea { display: block; width: 100%; min-height: 100px; padding: 12px; margin-bottom: 16px; border: 1px solid #b9cdc1; border-radius: 8px; resize: vertical; line-height: 1.6; }
-.discovery-start .ghost { margin-left: 10px; }
+.discovery-start .ghost { margin-top: 12px; }
 .saved-answer { background: #edf6ef; padding: 15px 18px; border-radius: 8px; overflow-wrap: anywhere; }
 .saved-answer + .saved-answer { margin-top: 8px; }
 .saved-answer summary { cursor: pointer; font-size: 11px; font-weight: 750; color: #28624c; letter-spacing: .04em; }
 .saved-answer p { margin: 8px 0 0; color: var(--ink); white-space: pre-wrap; }
-.discovery-progress { display: inline-block; margin: 0 0 12px; padding: 5px 9px; border-radius: 999px; background: #e9f2ec; color: #28624c !important; font-size: 11px !important; font-weight: 700; }
+.chat-primary-status { margin: 0 0 12px !important; color: var(--ink) !important; max-width: 680px; }
+.optional-page-help { margin-top: 16px; border: 1px dashed #b8c9bf; border-radius: 9px; background: #fafcf9; color: var(--muted); }
+.optional-page-help > summary { cursor: pointer; padding: 12px 14px; color: #53665e; font-size: 12px; font-weight: 650; }
+.optional-page-help[open] { padding: 0 14px 14px; }
+.optional-page-help[open] > summary { margin: 0 -14px 8px; }
+.optional-page-help > p { margin: 4px 0 12px; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.optional-page-help .prompt-question { margin: -2px 0 8px; color: var(--ink); font-size: 13px; font-weight: 600; }
+.optional-page-help textarea { background: #fff; min-height: 82px; margin-bottom: 10px; }
+.optional-saved-context { margin-top: 18px; }
+.optional-label { margin: 0 0 7px; color: #718079; font-size: 10px; font-weight: 700; letter-spacing: .08em; }
 .agent-invite p.chat-location { font-size: 12px; line-height: 1.7; }
 .agent-invite p.copy-next { color: #195b40; background: #edf6ef; border-radius: 6px; padding: 10px; }
-.manual-fallback { margin-top: 14px; padding: 14px; border: 1px solid #bfd3c7; border-radius: 8px; background: #f6faf7; }
+.manual-fallback { margin-top: 10px; }
 .manual-fallback p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 5px 0 10px; }
 .waiting-agent { padding: 13px 14px; border-radius: 8px; background: #edf6ef; color: #195b40; }
 @media (max-width: 700px) { .reuse-entry { flex-direction: column; align-items: start; } }

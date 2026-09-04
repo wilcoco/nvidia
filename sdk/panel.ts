@@ -159,10 +159,10 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step .knowledge summary { cursor: pointer; padding: 5px 7px; color: #c4b5fd; font-weight: 650; list-style-position: inside; }
 .step .knowledge-body { padding: 0 8px 7px; line-height: 1.45; }
 .step .knowledge-row { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.interview-scope { background: #172337; border: 1px solid #35506f; border-radius: 9px; padding: 10px 11px; color: #cbd5e1; font-size: 12px; line-height: 1.5; }
+.interview-scope { background: #111b2b; border: 1px dashed #435168; border-radius: 9px; padding: 10px 11px; color: #aeb8c8; font-size: 12px; line-height: 1.5; }
 .interview-scope strong { color: #f1f5f9; }
 .interview-scope .scope-note { color: #94a3b8; margin-top: 4px; }
-.interview-scope button { margin-top: 9px; width: 100%; border: 1px solid #6ee7b7; border-radius: 6px; padding: 7px 9px; background: #173e36; color: #d1fae5; cursor: pointer; }
+.interview-scope button { margin-top: 9px; width: 100%; border: 1px solid #526077; border-radius: 6px; padding: 7px 9px; background: transparent; color: #cbd5e1; cursor: pointer; }
 .evidence-only { background: #332b18; border: 1px solid #8c6d2b; border-radius: 9px; padding: 10px 11px; color: #fde9a9; font-size: 12px; line-height: 1.5; }
 .evidence-only strong { display: block; color: #fff4c7; margin-bottom: 4px; }
 .evidence-only ul { margin: 7px 0 0; padding-left: 18px; }
@@ -1090,7 +1090,7 @@ function render() {
         card.appendChild(el('div', 'params', JSON.stringify(req.params, null, 1)))
       }
       const yn = el('div', 'yn')
-      const yes = el('button', 'yes', startsProcess ? 'Save & ask the first question' : req.actionName === 'log_work_item' ? 'Save work record' : 'Approve')
+      const yes = el('button', 'yes', startsProcess ? 'Save & continue in chat' : req.actionName === 'log_work_item' ? 'Save work record' : 'Approve')
       const nowPersona = (() => {
         try {
           const st = host.getState() as { actingAs?: unknown } | null
@@ -1173,7 +1173,7 @@ function render() {
       if (interview?.active) {
         const scope = el('div', 'interview-scope')
         scope.appendChild(el('strong', undefined,
-          `Focused expert interview · ${interview.active.step} · ${interview.active.covered}/${interview.active.total}`))
+          `Optional expert interview · ${interview.active.step} · ${interview.active.covered}/${interview.active.total}`))
         scope.appendChild(el('div', 'scope-note', interview.active.complete
           ? map.draftMode === 'evidence-only'
             ? 'This focused interview is complete. The source evidence must be structured and reviewed before it can be saved as a playbook.'
@@ -1182,18 +1182,18 @@ function render() {
               : 'This focused interview is complete. Review the process and save when it reflects the work.'
           : map.draftMode === 'evidence-only'
             ? 'One question at a time. Continue later whenever you need; this remains source evidence until an agent structures it for review.'
-            : 'One question at a time. This interview is optional: you can save now and continue in a later revision.'))
+            : 'Keep working normally in chat. Use this optional helper only when you want a structured expert question shown on the page.'))
         const nextGap = mapstore.mapGaps().find(gap => gap.kind.startsWith('knowledge_'))
         const alreadyAsked = nextGap && asksStore.asks.some(ask => ask.resolvesGap === nextGap.resolves_gap)
         if (!interview.active.complete && nextGap?.fallback_question && nextGap.resolves_gap && !alreadyAsked) {
           scope.appendChild(el('div', 'scope-note', `Why this question: ${nextGap.question_goal}`))
-          const manual = el('button', undefined, 'Ask the next question on this page')
+          const manual = el('button', undefined, 'Optional: show one question here')
           manual.title = 'Manual fallback when this browser tab is not attached to an agent chat'
           manual.onclick = () => asksStore.askUser(nextGap.fallback_question!, undefined, true, nextGap.resolves_gap)
           scope.appendChild(manual)
         }
         if (interview.canExploreAnother && interview.next) {
-          const more = el('button', undefined, 'Explore another judgment point')
+          const more = el('button', undefined, 'Optional: explore another judgment point')
           more.title = `Add “${interview.next.step}” to this interview`
           more.onclick = () => mapstore.exploreAnotherJudgmentPoint()
           scope.appendChild(more)

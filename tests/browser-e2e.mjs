@@ -65,14 +65,14 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.evaluate(() => window.Understudy.closePanel?.())
     assert.equal(await page.locator('.mobile-scope').count(), 0,
       'the task-operation mobile note must not push down the Create process input')
-    assert.ok((await page.getByRole('button', {name: 'Start with the first question'}).boundingBox()).y < 812,
+    assert.ok((await page.getByRole('button', {name: 'Save starting point'}).boundingBox()).y < 812,
       'the first input and its submit action must fit in the initial mobile viewport')
     await page.setViewportSize({width: 1280, height: 900})
     await page.evaluate(() => window.Understudy.openPanel?.())
 
     // The chat-first path keeps one human confirmation but presents the
     // business meaning, not a raw tool/JSON prompt. Approval opens the same
-    // first question as the page form without asking the person to retype.
+    // chat-first continuation state without forcing focus into a second page form.
     const chatPage = await context.newPage()
     await chatPage.goto(base)
     await chatPage.getByRole('navigation', {name: 'Workspace'}).waitFor()
@@ -97,10 +97,13 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     const attentionBox = await chatPage.getByRole('button', {name: /Your input is needed/}).boundingBox()
     assert.ok(inputBox.y < attentionBox.y && inputBox.y < 900,
       'a pending chat confirmation must not push the real starting input below the first viewport')
-    await chatPanel.getByRole('button', {name: 'Save & ask the first question'}).click()
-    const chatStarter = chatPage.getByRole('textbox', {name: 'What must happen first?'})
-    await chatStarter.waitFor()
-    await chatPage.waitForFunction(() => document.activeElement?.id === 'starter-answer')
+    await chatPanel.getByRole('button', {name: 'Save & continue in chat'}).click()
+    await chatPage.getByRole('heading', {name: 'Keep building this process in your AI chat.'}).waitFor()
+    await chatPage.getByText('Optional page help · add what happens before').waitFor()
+    const chatStarter = chatPage.getByRole('textbox', {name: 'Add preparation context (optional)'})
+    assert.equal(await chatStarter.isVisible(), false, 'the optional page helper stays collapsed on the chat-first path')
+    assert.notEqual(await chatPage.evaluate(() => document.activeElement?.id), 'starter-answer',
+      'saving a chat starting point must not move focus into an optional page field')
     await chatPage.locator('main').getByText(chatTask, {exact: true}).waitFor()
     await chatPage.close()
 
@@ -110,10 +113,11 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await mobilePage.getByRole('navigation', {name: 'Workspace'}).waitFor()
     await mobilePage.evaluate(() => window.Understudy.closePanel?.())
     await mobilePage.getByRole('textbox', {name: 'Describe your work'}).fill('I inspect a mobile handoff before delivery.')
-    await mobilePage.getByRole('button', {name: 'Start with the first question'}).click()
-    const mobileStarter = mobilePage.getByRole('textbox', {name: 'What must happen first?'})
-    await mobileStarter.waitFor()
-    assert.ok((await mobileStarter.boundingBox()).y < 812, 'the first question input must remain in the mobile viewport')
+    await mobilePage.getByRole('button', {name: 'Save starting point'}).click()
+    await mobilePage.getByRole('heading', {name: 'Keep building this process in your AI chat.'}).waitFor()
+    const mobileOptional = mobilePage.getByText('Optional page help · add what happens before')
+    await mobileOptional.waitFor()
+    assert.ok((await mobileOptional.boundingBox()).y < 812, 'chat continuation and optional help must remain in the mobile viewport')
     assert.equal(await mobilePage.locator('#understudy-panel-host').locator('.panel').count(), 0,
       'starting on mobile must not cover the first question with the process panel')
     await mobilePage.locator('#understudy-panel-host').getByRole('button', {name: 'Open playbook & conversation'}).waitFor()
@@ -122,24 +126,27 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     // A page-only path remains usable when the current AI chat is not bound to
     // the browser's registered WebMCP tools.
     await page.getByRole('textbox', {name: 'Describe your work'}).fill('I inspect one outgoing parcel before handoff.')
-    await page.getByRole('button', {name: 'Start with the first question'}).click()
-    await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim confirms the order and the packed quantity.')
+    await page.getByRole('button', {name: 'Save starting point'}).click()
+    await page.getByText('Optional page help · add what happens before').click()
+    await page.getByRole('textbox', {name: 'Add preparation context (optional)'}).fill('Kim confirms the order and the packed quantity.')
     assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).count(), 0,
       'the saved starting point replaces the blank new-entry form')
-    await page.getByRole('button', {name: 'Save answer & continue'}).click()
-    await page.getByRole('textbox', {name: 'What happens next, and who takes over?'}).waitFor()
-    await page.waitForFunction(() => document.activeElement?.id === 'followup-answer')
+    await page.getByRole('button', {name: 'Save optional note'}).click()
+    await page.getByText('Optional page help · add what happens after').click()
+    await page.getByRole('textbox', {name: 'Add handoff context (optional)'}).waitFor()
+    assert.notEqual(await page.evaluate(() => document.activeElement?.id), 'followup-answer')
     await page.reload()
-    const followup = page.getByRole('textbox', {name: 'What happens next, and who takes over?'})
+    await page.getByText('Optional page help · add what happens after').click()
+    const followup = page.getByRole('textbox', {name: 'Add handoff context (optional)'})
     await followup.waitFor()
-    await page.waitForFunction(() => document.activeElement?.id === 'followup-answer')
-    await page.getByText('✓ 1. What must happen first? · SAVED').waitFor()
+    await page.getByText('✓ What happens before · SAVED').waitFor()
     await followup.fill('Park records the handoff code, then Lee reviews the evidence.')
-    await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('button', {name: 'Save optional note'}).click()
     await page.evaluate(() => window.__understudy.tools.find(tool => tool.name === 'describe_workspace').execute({}))
     await page.getByRole('button', {name: 'Start a separate work entry'}).waitFor()
     await page.reload()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await page.getByText('No connected AI chat? Use the page-only fallback').click()
     await page.getByRole('button', {name: 'Continue interview on this page'}).click()
     await panel.getByText(/Evidence-only starter · work log/).waitFor()
     const starterDraft = await page.evaluate(() => window.Understudy.getLoadedProcess())
@@ -147,14 +154,14 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     assert.ok(starterDraft.sourceWorklogId, 'the worker-supplied source remains attributable')
     assert.equal(starterDraft.draftMode, 'evidence-only')
     assert.equal(await panel.getByRole('button', {name: 'Structure this evidence before saving'}).isDisabled(), true)
-    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
+    await panel.getByRole('button', {name: 'Optional: show one question here'}).waitFor()
     await page.getByText(`Continue draft from work log #${starterDraft.sourceWorklogId}`).waitFor()
     await page.getByRole('button', {name: 'Start a separate work entry'}).click()
     await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
     const newEntry = page.getByRole('textbox', {name: 'Describe your work'})
     await newEntry.fill('I verify a separate customer return before restocking.')
-    await page.getByRole('button', {name: 'Start with the first question'}).click()
-    await page.getByText('What must happen first?').waitFor()
+    await page.getByRole('button', {name: 'Save starting point'}).click()
+    await page.getByText('Optional page help · add what happens before').waitFor()
     await page.getByText('I inspect one outgoing parcel before handoff.').last().waitFor()
     await page.getByRole('button', {name: 'Continue editing'}).click()
     await page.waitForFunction((sourceWorklogId) => window.Understudy.getLoadedProcess()?.sourceWorklogId === sourceWorklogId,
@@ -211,7 +218,7 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     const agenda = await page.evaluate(() => window.__understudy.call('get_map_gaps'))
     const incidentGap = agenda.gaps.find(gap => gap.stepId === 'route' && gap.kind === 'knowledge_incident')
     assert.equal(incidentGap.resolves_gap, 'knowledge_incident:route')
-    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
+    await panel.getByRole('button', {name: 'Optional: show one question here'}).waitFor()
     await page.evaluate((resolvesGap) => window.__understudy.call('ask_user', {
       question: 'Tell me about one recent parcel where experience changed the route decision.',
       resolves_gap: resolvesGap,
@@ -441,14 +448,17 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     const taskA = 'I inspect one outgoing parcel before handoff.'
     const taskB = 'I inspect a separate customer return before restocking.'
     await page.getByRole('textbox', {name: 'Describe your work'}).fill(taskA)
-    await page.getByRole('button', {name: 'Start with the first question'}).click()
-    await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim checks the order and packed quantity first.')
-    await page.getByRole('button', {name: 'Save answer & continue'}).click()
-    await page.getByRole('textbox', {name: 'What happens next, and who takes over?'}).fill('Park records receipt, then Lee reviews the handoff evidence.')
-    await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('button', {name: 'Save starting point'}).click()
+    await page.getByText('Optional page help · add what happens before').click()
+    await page.getByRole('textbox', {name: 'Add preparation context (optional)'}).fill('Kim checks the order and packed quantity first.')
+    await page.getByRole('button', {name: 'Save optional note'}).click()
+    await page.getByText('Optional page help · add what happens after').click()
+    await page.getByRole('textbox', {name: 'Add handoff context (optional)'}).fill('Park records receipt, then Lee reviews the handoff evidence.')
+    await page.getByRole('button', {name: 'Save optional note'}).click()
+    await page.getByText('No connected AI chat? Use the page-only fallback').click()
     await page.getByRole('button', {name: 'Continue interview on this page'}).click()
     await panel.getByText(/Evidence-only starter · work log/).waitFor()
-    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
+    await panel.getByRole('button', {name: 'Optional: show one question here'}).waitFor()
     const sourceA = await page.evaluate(() => window.Understudy.getLoadedProcess()?.sourceWorklogId)
     assert.ok(sourceA)
 
@@ -458,7 +468,7 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     for (let index = 0; index < exactAnswers.length; index++) {
       const answer = panel.locator('input.freetext').last()
       if (await answer.count() === 0) {
-        await panel.getByRole('button', {name: 'Ask the next question on this page'}).click()
+        await panel.getByRole('button', {name: 'Optional: show one question here'}).click()
       }
       await answer.waitFor()
       await answer.fill(exactAnswers[index])
@@ -472,7 +482,7 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     await page.getByRole('button', {name: 'Start a separate work entry'}).click()
     await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
     await page.getByRole('textbox', {name: 'Describe your work'}).fill(taskB)
-    await page.getByRole('button', {name: 'Start with the first question'}).click()
+    await page.getByRole('button', {name: 'Save starting point'}).click()
     await page.getByText(taskA).last().waitFor()
     await page.locator('.paused-draft').filter({hasText: taskA}).getByRole('button', {name: 'Continue editing'}).click()
     await page.waitForFunction(id => window.Understudy.getLoadedProcess?.()?.sourceWorklogId === id, sourceA)

@@ -92,16 +92,16 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   })
 
   const newWorkEntry = <section className="card capture-card start-primary">
-    <div className="eyebrow">START HERE · OR DESCRIBE THIS WORK IN YOUR AI CHAT</div>
+    <div className="eyebrow">START HERE · YOUR AI CHAT WORKS TOO</div>
     <h2>What are you working on?</h2>
-    <p>One sentence is enough. Understudy saves it as the source, asks what belongs before and after, and grows the process beside your work.</p>
+    <p>Describe one real task here or in your AI chat. Once it is saved, keep talking in chat while the process grows beside your work.</p>
     <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
       <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
         <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
       <textarea id="capture-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)} placeholder="For example: I am preparing a customer order for delivery." required />
       {acting?.role !== 'Contributor' ? <button type="button" className="primary" disabled={!contributor} onClick={() => contributor && store.switchActingAs(contributor.username)}>Continue as {contributor?.name ?? 'Contributor'}</button>
-        : <button className="primary" disabled={action.busy || !note.trim() || activeRunBlocksCapture}>{action.busy ? 'Saving your starting point…' : activeRunBlocksCapture ? 'Finish the active run before teaching new work' : 'Start with the first question →'}</button>}
-      <p className="meta">Answer a starter question here, then continue with your browser’s AI agent.</p>
+        : <button className="primary" disabled={action.busy || !note.trim() || activeRunBlocksCapture}>{action.busy ? 'Saving your starting point…' : activeRunBlocksCapture ? 'Finish the active run before teaching new work' : 'Save starting point →'}</button>}
+      <p className="meta">Continue in your AI chat. Optional page prompts are available only when you want structured help.</p>
       <ErrorNotice message={action.error} />
     </form>
   </section>
@@ -161,7 +161,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           <blockquote>{captured.task}</blockquote>
           <p>Choose a related playbook to run, or build a new one from this work.</p>
           <SuggestionCard includeCandidates />
-          <button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Make a new playbook · start with a question →</button>
+          <button className="primary" onClick={() => store.requestPlaybookCreation(captured)}>Make a new playbook →</button>
         </section>
       ) : (
         <div className="reuse-entry">
