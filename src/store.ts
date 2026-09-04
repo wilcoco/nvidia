@@ -448,7 +448,7 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
   const matches: PlaybookMatch[] = []
   // Only the latest version of each playbook title competes.
   const latest = new Map<string, ProcessSummary>()
-  for (const p of state.processes) {
+  for (const p of state.processes.filter((process) => !isQualityAssuranceArtifact(process.title))) {
     const cur = latest.get(p.title)
     if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
   }
@@ -475,12 +475,17 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
     const kindMatched = matched.some(([k]) => k === 'kind')
     if (kindMatched) confidence += draft.kind === 'routine log' ? 0.3 : 0.55
     confidence += matched.filter(([k]) => k !== 'kind').length * 0.2
+    let keywordEvidenceIsSpecific = false
     if (keywords && keywords.length) {
       const text = (draft.task ?? '').toLowerCase()
       const hit = keywords.filter((w) => text.includes(String(w).toLowerCase()))
       if (hit.length > 0) {
         confidence += 0.35 * (hit.length / keywords.length)
         reasons.push(`mentions: ${hit.join(', ')}`)
+        // One broad token such as "order" must not turn a routine-work match
+        // into a visible recommendation. Two matching terms, or one phrase
+        // whose words occur together, supplies enough domain context.
+        keywordEvidenceIsSpecific = hit.length >= 2 || hit.some((word) => /[\s-]/.test(String(word).trim()))
       }
     }
     if (matched.length === 0 && !(keywords && (draft.task ?? '').length)) continue
@@ -493,12 +498,16 @@ export function computeMatches(includeDismissed = false): PlaybookMatch[] {
     if (confidence < 0.25) continue
     // A shared generic kind alone is a hint, never a page-level suggestion.
     const kindOnly = kindMatched && matched.length === 1 && !reasons.some((r) => r.startsWith('mentions:'))
+    const hasSpecificStructuredMatch = matched.some(([key]) => key !== 'kind')
+      || Object.entries(p.priorityWhen ?? {}).some(([key, value]) => key !== 'kind' && d[key] === value)
     matches.push({
       processId: p.id,
       title: p.title,
       createdBy: p.createdBy,
       confidence: Math.min(0.95, Number(confidence.toFixed(2))),
-      tier: confidence >= 0.5 && !kindOnly ? 'strong' : 'candidate',
+      tier: confidence >= 0.5 && !kindOnly && (keywordEvidenceIsSpecific || hasSpecificStructuredMatch)
+        ? 'strong'
+        : 'candidate',
       reasons,
       version: p.version || 1,
     })
@@ -948,7 +957,7 @@ export async function saveProcess(map: { title: string; steps: unknown[]; versio
 export async function listProcesses(): Promise<ProcessSummary[]> {
   // The agent (and the UI) only ever deal with the latest version per title —
   // older versions may carry outdated action bindings.
-  return latestPerTitle(await api<ProcessSummary[]>('/api/processes'))
+  return visibleSavedProcesses(await api<ProcessSummary[]>('/api/processes'))
 }
 
 const LEGACY_ACTION_NAMES: Record<string, string> = {
@@ -973,6 +982,17 @@ export function latestPerTitle(processes: ProcessSummary[]): ProcessSummary[] {
     if (!cur || (p.version || 1) > (cur.version || 1)) latest.set(p.title, p)
   }
   return [...latest.values()].sort((a, b) => Number(b.id) - Number(a.id))
+}
+
+/** Shared demo QA keeps its audit data, but test fixtures are not products a
+ *  visitor should browse or receive as recommendations. Keeping the rows also
+ *  preserves every linked execution instead of creating broken run history. */
+export function isQualityAssuranceArtifact(title: string): boolean {
+  return /^(?:qa(?:\d|$|[-\s·])|e2e(?:$|[-\s·]))/i.test(title.trim())
+}
+
+export function visibleSavedProcesses(processes: ProcessSummary[]): ProcessSummary[] {
+  return latestPerTitle(processes).filter((process) => !isQualityAssuranceArtifact(process.title))
 }
 
 export async function getProcess(id: string): Promise<{ id: string; title: string; map: unknown; createdBy: string }> {

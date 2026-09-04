@@ -355,6 +355,15 @@ test('agent-requested deviations wait for a human approval card',async()=>{
  await asks.decideApprovalCard(pending.actionId,true)
  assert.equal(map.getMap().steps[0].naReason,'not needed for this run')
 })
+test('a signed-off run refuses deviation before creating a human approval card',async()=>{
+ const {map,runner,asks}=fixture()
+ map.loadSavedMap({title:'signed',steps:[step('work')]})
+ assert.equal(map.humanToggleStepDone('work'),true)
+ const result=await runner.startHostAction('resolve_deviation',{stepId:'work',resolution:'not_applicable',reason:'late correction'})
+ assert.equal(result.ok,false)
+ assert.match(result.error,/complete and signed off/i)
+ assert.equal(asks.approvals.length,0)
+})
 test('retro-linking cannot bypass required evidence',()=>{
  const {map}=fixture()
  map.recordActionSuccess('log','1')

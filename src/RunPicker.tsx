@@ -18,7 +18,8 @@ export default function RunPicker({onOpened}: {onOpened?: () => void}) {
     try {
       const page = await store.listRuns(undefined, {before, limit: 10})
       if (seq !== request.current) return
-      setRuns(previous => before ? [...previous, ...page.filter(r => !previous.some(p => p.id === r.id))] : page)
+      const visiblePage = page.filter((run) => !store.isQualityAssuranceArtifact(run.title))
+      setRuns(previous => before ? [...previous, ...visiblePage.filter(r => !previous.some(p => p.id === r.id))] : visiblePage)
       setHasMore(page.length === 10)
     } catch (err) { if (seq === request.current) setError(err instanceof Error ? err.message : 'Could not load executions.') }
     finally { if (seq === request.current) setLoading(false) }

@@ -580,7 +580,8 @@ function PlaybookList({ state }: { state: store.AppState }) {
   const [cancelCount, setCancelCount] = useState(0)
   const [query, setQuery] = useState('')
   const action = useAction()
-  const visible = latestPerTitle(state.processes).filter((p) => p.title.toLowerCase().includes(query.toLowerCase()))
+  const saved = store.visibleSavedProcesses(state.processes)
+  const visible = saved.filter((p) => p.title.toLowerCase().includes(query.toLowerCase()))
   const historyCount = (title: string) => state.processes.filter((p) => p.title === title).length - 1
 
   const open = (id: string) => action.run(async () => {
@@ -599,7 +600,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
     await store.followPlaybook(p.id)
   })
 
-  if (state.processes.length === 0) {
+  if (saved.length === 0) {
     return (
       <div className="empty-card"><h1>Your team’s playbooks start here.</h1><p>Describe one task in Create process, then let your agent ask about its rules. The playbook appears here after you review and save the draft.</p><AgentInvite prompt="What is Understudy and how do I use it? Help me turn one of my tasks into a playbook, asking me one question at a time." /></div>
     )

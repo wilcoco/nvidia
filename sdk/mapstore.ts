@@ -777,6 +777,11 @@ function mapLooksComplete(): boolean {
   return open.length === 0 && !lastPendingDecision
 }
 
+/** Read-only preflight for agent-gated corrections. */
+export function isMapRunComplete(): boolean {
+  return mapLooksComplete()
+}
+
 let lastCompletionError: string | null = null
 export function getCompletionError(): string | null { return lastCompletionError }
 function refuseCompletion(reason: string): false {

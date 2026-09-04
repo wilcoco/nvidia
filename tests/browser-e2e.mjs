@@ -54,7 +54,7 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     assert.equal(await panel.locator('.preview-node').count(), 0, 'the empty start canvas must not look like a preloaded process')
     const firstInput = page.getByRole('textbox', {name: 'Describe your work'})
     await firstInput.waitFor()
-    await firstInput.fill('I reconcile one supplier invoice before payment.')
+    await firstInput.fill('QA-3D NEGATIVE — reconcile one supplier invoice against a purchase order.')
     assert.equal(await page.locator('.suggestion').count(), 0,
       'a generic work-category candidate must not be presented as a related playbook')
     await firstInput.fill('')

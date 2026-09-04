@@ -176,7 +176,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
       {(proc || (captured && !captured.creationRequested)) && <section className="overview-bottom">
         <div><b>Discover the work around the work.</b><p>Answer questions about preparation, next steps and who takes over. Correct the process together.</p></div>
         <div><b>Follow it. Find it again.</b><p>Each owner gets their next step. Related playbooks are suggested when similar work comes up — you choose what to use.</p></div>
-        <button className="library-link" onClick={() => navigate('playbooks')}>Browse {store.latestPerTitle(state.processes).length || ''} saved playbooks <span>→</span></button>
+        <button className="library-link" onClick={() => navigate('playbooks')}>Browse {store.visibleSavedProcesses(state.processes).length || ''} saved playbooks <span>→</span></button>
       </section>}
       <p className="workspace-footnote">Demo workspace · sample accounts and data · {interaction?.active ? 'WebMCP agent connected'
         : interaction?.registered ? 'WebMCP tools registered · awaiting an agent call'

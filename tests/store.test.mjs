@@ -140,6 +140,21 @@ test('starting-page work matches its saved playbook before submission', async ()
   assert.equal(store.computeMatches().length, 0)
   store.setCaptureDraft('I have another customer order to prepare for pickup.', true)
   assert.equal(store.computeMatches().length, 0, 'the operations example must not match a routine-work-only playbook')
+
+  store.setCaptureDraft('QA-3D NEGATIVE — reconcile one supplier invoice against a purchase order.')
+  assert.equal(store.computeMatches()[0]?.tier, 'candidate',
+    'one ambiguous keyword may remain agent context but cannot become a user-facing strong suggestion')
+})
+
+test('QA playbooks stay auditable but are hidden from the visitor library', () => {
+  const store = fixture(async () => response({}))
+  const processes = [
+    {id: 'qa1', title: 'QA-R3 · Archival parcel handoff', version: 1},
+    {id: 'qa2', title: 'QA98 dropdown branch', version: 1},
+    {id: 'qa3', title: 'E2E dropdown branch', version: 1},
+    {id: 'real', title: 'Customer order handoff', version: 2},
+  ]
+  assert.equal(store.visibleSavedProcesses(processes).map((process) => process.id).join(','), 'real')
 })
 
 

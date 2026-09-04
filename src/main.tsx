@@ -18,7 +18,7 @@ window.Understudy.init({
       users: s.users,
       incidents: s.worklogs,
       reviews: s.approvals,
-      savedPlaybooks: s.processes,
+      savedPlaybooks: store.visibleSavedProcesses(s.processes),
       playbookRequest: s.captureContext?.creationRequested ? {worklogId: s.captureContext.id, task: s.captureContext.task, intent: 'create_playbook',
         discovery: s.worklogs.find(w => w.id === s.captureContext?.id)?.data.discovery} : null,
     }

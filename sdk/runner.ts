@@ -56,6 +56,9 @@ const BUILTIN_ACTIONS: Record<string, HostAction> = {
       resolution: { type: 'string', description: '"completed" or "not_applicable"', required: true },
       reason: { type: 'string', description: 'Why — recorded in the journal' },
     },
+    precondition: () => mapstore.isMapRunComplete()
+      ? 'The run is complete and signed off; its record is frozen. Start a new execution to record a correction.'
+      : null,
     handler: (p) => {
       const resolution = String(p.resolution)
       if (resolution !== 'completed' && resolution !== 'not_applicable') {
@@ -191,6 +194,11 @@ export function startHostAction(
       note: 'Warn the human. Complete the missing work or use the explicit on-page deviation flow with a recorded reason. The agent cannot override ordering.',
     }
   }
+
+  // Refuse known-invalid requests before creating a human approval card. The
+  // same precondition is checked again after approval in case state changes.
+  const precondition = action.precondition?.()
+  if (precondition) return { ok: false, error: precondition }
 
   // Locally validated process-state builtins do not invoke a host-app mutation.
   // Every host action waits for a human approval card.
