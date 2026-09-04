@@ -422,14 +422,16 @@ async function pgBackend(databaseUrl) {
       return transaction(async (client) => {
         const before = await client.query('SELECT a.review_fingerprint,a.review_scope,a.review_evidence,a.step_id,w.data FROM approvals a JOIN worklogs w ON w.id=a.worklog_id WHERE a.id=$1', [id])
         const linkedId = before.rows[0]?.data?.runId
+        let linkedMap
         if (status === 'APPROVED' && linkedId != null) {
           // Legacy pending reviews have no evidence snapshot; require a fresh review.
           if (!before.rows[0].review_fingerprint || !before.rows[0].review_evidence) return null
           const linked = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId ?? '')])
           const run = linked.rows[0] && runRow(linked.rows[0])
-          const process = run ? await client.query('SELECT map FROM processes WHERE id=$1', [run.processId]) : {rows: []}
+          const processRow = run ? await client.query('SELECT map FROM processes WHERE id=$1', [run.processId]) : {rows: []}
+          linkedMap = processRow.rows[0]?.map
           if (!matchesReviewFingerprint(before.rows[0].review_fingerprint, run, before.rows[0].review_scope) ||
-              approvalGate(run, process.rows[0]?.map, before.rows[0].step_id).open.length) return null
+              approvalGate(run, linkedMap, before.rows[0].step_id).open.length) return null
         }
         const { rows } = await client.query(
           "UPDATE approvals SET status=$2, comment=$3, decided_by_session=$4 WHERE id=$1 AND status='PENDING' RETURNING *",
@@ -443,7 +445,7 @@ async function pgBackend(databaseUrl) {
           const linkedId = work[0]?.data?.runId
           if (status === 'APPROVED' && linkedId != null) {
             const { rows: linked } = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId)])
-            const patch = linked[0] && applySignoff(runRow(linked[0]), approval, process.rows[0]?.map)
+            const patch = linked[0] && applySignoff(runRow(linked[0]), approval, linkedMap)
             if (patch) await client.query('UPDATE process_runs SET steps=$2,status=$3,events=$4,updated_at=now() WHERE id=$1',
               [linked[0].id, JSON.stringify(patch.steps), patch.status, JSON.stringify(patch.events)])
           }
