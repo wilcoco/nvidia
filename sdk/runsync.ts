@@ -33,7 +33,7 @@ export async function refreshRunState(): Promise<boolean> {
       currentRunId() !== id || remote.id !== id || syncTimer || pendingWrites || syncError) return false
     if (remote.status === 'abandoned') {
       stopRunTracking()
-      startError = 'This run was retired by a newer execution. Open an active run from Start here.'
+      startError = 'This run was retired by a newer execution. Open an active run from the execution picker.'
       announceRunState()
       return false
     }

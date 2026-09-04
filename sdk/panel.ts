@@ -55,6 +55,7 @@ function announceInteraction() {
 export function openPanel(): void {
   collapsed = false
   render()
+  focusPendingQuestion()
 }
 
 export function closePanel(): void {
@@ -94,6 +95,9 @@ h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #
 h2.activity-toggle { cursor: pointer; user-select: none; }
 h2.activity-toggle:hover { color: #94a3b8; }
 .empty { color: #475569; font-style: italic; }
+.answered-question { background: #14231f; border: 1px solid #315348; border-radius: 8px; margin-bottom: 8px; padding: 9px 11px; color: #cbd5e1; }
+.answered-question summary { cursor: pointer; color: #8ed1b6; font-size: 11px; font-weight: 700; }
+.answered-question p { color: #dbe8e3; line-height: 1.6; white-space: pre-wrap; }
 .invite-box { margin-top: 10px; background: #1e293b; border: 1px dashed #334155; border-radius: 8px; padding: 10px; }
 .invite-hint { color: #94a3b8; font-size: 11px; margin-bottom: 6px; }
 .invite-text { color: #cbd5e1; font-size: 11px; font-style: italic; margin-bottom: 8px; user-select: text; }
@@ -318,6 +322,18 @@ function scheduleRender() {
     if (pointerDown) return
     render()
   }, 0)
+}
+
+/** Put the human directly into the current interview question. This is used
+ * both when a question first arrives and when the page CTA reopens the panel. */
+function focusPendingQuestion(): void {
+  const inputs = shadow?.querySelectorAll<HTMLInputElement>('.card input.freetext')
+  const next = inputs?.item((inputs?.length ?? 0) - 1)
+  if (!next) return
+  requestAnimationFrame(() => {
+    next.focus()
+    next.scrollIntoView({block: 'center', behavior: 'smooth'})
+  })
 }
 
 function setFocusKey<T extends HTMLElement>(node: T, key: string): T {
@@ -887,7 +903,8 @@ function render() {
   // right-hand margin when the panel is minimized on narrow screens).
   // A consent request must be seen: a newly arrived approval card reopens
   // a collapsed panel (the human can collapse it again).
-  if (asksStore.approvals.length > seenApprovalCount || asksStore.asks.length > seenQuestionCount) collapsed = false
+  const newQuestionArrived = asksStore.asks.length > seenQuestionCount
+  if (asksStore.approvals.length > seenApprovalCount || newQuestionArrived) collapsed = false
   seenApprovalCount = asksStore.approvals.length
   seenQuestionCount = asksStore.asks.length
   document.documentElement.setAttribute('data-understudy-panel', collapsed ? 'collapsed' : 'open')
@@ -949,9 +966,16 @@ function render() {
   if (guideLanguage) body.appendChild(usageGuide())
 
   // Agent questions
-  if (asksStore.asks.length > 0) {
+  const answeredQuestions = asksStore.recentAnsweredQuestions()
+  if (asksStore.asks.length > 0 || answeredQuestions.length > 0) {
     const section = el('section')
     section.appendChild(el('h2', undefined, 'Agent is asking you'))
+    for (const answered of answeredQuestions) {
+      const completed = el('details', 'answered-question') as HTMLDetailsElement
+      completed.appendChild(el('summary', undefined, `✓ Answer saved · ${answered.question}`))
+      completed.appendChild(el('p', undefined, answered.answer))
+      section.appendChild(completed)
+    }
     for (const ask of asksStore.asks) {
       const card = el('div', 'card')
       card.appendChild(el('div', 'q', ask.question))
@@ -987,9 +1011,12 @@ function render() {
         input.oninput = () => answerDrafts.set(ask.id, input.value)
         input.onkeydown = (e) => {
           if (e.key === 'Enter' && !e.isComposing && input.value.trim()) {
+            e.preventDefault()
+            e.stopPropagation()
+            const answer = input.value.trim()
             answerDrafts.delete(ask.id)
-            asksStore.answerAsk(ask.id, input.value.trim())
             input.blur()
+            asksStore.answerAsk(ask.id, answer)
           }
         }
         card.appendChild(input)
@@ -1254,4 +1281,7 @@ function render() {
   const flowEl = panel.querySelector('.flow') as HTMLElement | null
   if (flowEl) drawEdges(flowEl)
   restoreFocus(root, focusKey)
+  if (newQuestionArrived && !focusKey) {
+    focusPendingQuestion()
+  }
 }

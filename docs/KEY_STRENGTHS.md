@@ -78,7 +78,7 @@ persona switcher is not production authorization.
 
 ## 9. A portable SDK with explicit integration tiers
 One script tag + `Understudy.init()` gives a web app the journal, panel and
-20 WebMCP tools. Registered host actions add operation; a process-store and
+21 WebMCP tools. Registered host actions add operation; a process-store and
 authenticated enforcement backend add shared, governed execution. The plain
 page proves the first tier travels. The richer demo proves all three together.
 

@@ -15,10 +15,11 @@ export function discoveryPreview(request: PlaybookRequest | null, _refresh: () =
     section.appendChild(el('p', 'preview-note', 'Saved notes · your agent will turn these into steps for you to review.'))
     const flow = el('ol', 'preview-flow')
     const before = request.discovery?.before?.answer
+    const after = request.discovery?.after?.answer
     for (const [label, text, known] of [
       ['BEFORE', before ?? 'What needs to happen first?', !!before],
       ['YOUR WORK', request.task, true],
-      ['AFTER', 'What happens next, and who takes over?', false],
+      ['AFTER', after ?? 'What happens next, and who takes over?', !!after],
     ] as const) {
       const item = el('li', `preview-node${known ? ' known' : ' unknown'}`)
       item.appendChild(el('span', 'preview-role', label))

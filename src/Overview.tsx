@@ -16,7 +16,7 @@ function PausedDrafts({state}: {state: store.AppState}) {
   if (!drafts.length) return null
   return <section className="card paused-drafts">
     <div className="eyebrow">CONTINUE WHERE YOU LEFT OFF</div>
-    <h2>Paused process drafts</h2>
+    <h2>Paused process drafts · {drafts.length}</h2>
     <p>These drafts and their interview answers are kept in this browser tab. They are not saved team playbooks yet.</p>
     <div className="paused-draft-list">{drafts.map(draft => {
       const answers = draft.map?.steps.reduce((total, step) => total + (step.elicitation?.answers.length ?? 0), 0) ?? 0
@@ -92,7 +92,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const newWorkEntry = <section className="card capture-card start-primary">
     <div className="eyebrow">START A NEW WORK ENTRY</div>
     <h2>What are you working on?</h2>
-    <p>One sentence is enough. A new entry starts separately. Any unfinished draft below is paused with its captured answers, not deleted.</p>
+    <p>One sentence is enough. It is also saved in Work records as the source for this process. Any unfinished draft below is paused with its captured answers, not deleted.</p>
     <form onSubmit={(e) => { e.preventDefault(); void capture() }}>
       <div className="capture-label-row"><label htmlFor="capture-note">{sample ? 'Delivery example · fictional sample' : 'Describe your work'}</label>
         <button type="button" className="ghost example-link" onClick={() => { store.setCaptureDraft(EXAMPLE_WORK, true); setEditing(true) }}>Use the delivery example</button></div>
@@ -111,9 +111,13 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
         <h1>Your work, <span>turned into a team process.</span></h1>
         <p className="hero-description">Your AI agent asks what comes before and after, and who does each part. You correct the process, your team follows it, and the next person can reuse it.</p>
         {!proc && !captured ? <div className="chat-entry">
-          <div><span>NEW HERE? ASK IN THE AI CHAT THAT OPENED THIS TAB</span>
-            <b>“What is this, and how do I use it?”</b><p>Your agent explains and opens the guide on this page.</p></div>
-          <button className="secondary" onClick={() => window.Understudy.openUsageGuide?.()}>Open usage guide</button>
+          <div><span>WELCOME · START HERE OR ASK IN YOUR AI CHAT</span>
+            <b>Hi — what would you like to do?</b><p>Start from one task, run a saved playbook, or ask “What is this?” in the AI chat that opened this tab.</p></div>
+          <div className="first-actions">
+            <button className="primary" onClick={() => document.getElementById('capture-note')?.focus()}>Describe a task</button>
+            <button className="secondary" onClick={() => navigate('playbooks')}>Use a playbook</button>
+            <button className="ghost" onClick={() => window.Understudy.openUsageGuide?.()}>Show me around</button>
+          </div>
         </div> : <button className="ghost" onClick={() => window.Understudy.openUsageGuide?.()}>How to use Understudy</button>}
       </section>
 
@@ -125,6 +129,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
       )}
 
       {!proc && !captured && newWorkEntry}
+      <PausedDrafts state={state} />
 
       {proc ? (
         <section className="card current-work">
@@ -172,7 +177,6 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
       )}
 
       {note.trim() && <SuggestionCard includeCandidates />}
-      <PausedDrafts state={state} />
 
       {!captured?.creationRequested && <RunPicker onOpened={() => navigate('tasks')} />}
       {(proc || (captured && !captured.creationRequested)) && <section className="overview-bottom">

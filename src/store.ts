@@ -1,5 +1,5 @@
 import { api, ApiError, setToken, getToken } from './api'
-import { STARTER_QUESTION, type DiscoveryAnswer } from '../sdk/discovery'
+import { FOLLOWUP_QUESTION, STARTER_QUESTION, type DiscoveryAnswer } from '../sdk/discovery'
 
 export interface UserInfo {
   username: string
@@ -8,7 +8,7 @@ export interface UserInfo {
 }
 
 export interface IncidentData {
-  discovery?: { before?: DiscoveryAnswer }
+  discovery?: { before?: DiscoveryAnswer; after?: DiscoveryAnswer }
   viscosity?: number
   boothTemp?: number
   sprayPressure?: number
@@ -107,7 +107,7 @@ export interface AppState {
   draft: DraftContext
   dismissedSuggestions: string[]
   runStarted: { title: string; version?: number; next?: string; resumed?: boolean } | null
-  captureContext: { id: string; task: string; creationRequested?: boolean; answerDraft?: string; starterSkipped?: boolean } | null
+  captureContext: { id: string; task: string; creationRequested?: boolean; answerDraft?: string; starterSkipped?: boolean; afterSkipped?: boolean } | null
   pausedDrafts: Array<{
     key: string
     task: string
@@ -872,19 +872,20 @@ export function setStarterDraft(answerDraft: string): void {
   if (state.captureContext) commit({captureContext: {...state.captureContext, answerDraft}})
 }
 
-export function skipStarterQuestion(): void {
-  if (state.captureContext) commit({captureContext: {...state.captureContext, starterSkipped: true}})
+export function skipStarterQuestion(slot: 'before' | 'after' = 'before'): void {
+  if (state.captureContext) commit({captureContext: {...state.captureContext, answerDraft: '',
+    ...(slot === 'after' ? {afterSkipped: true} : {starterSkipped: true})}})
 }
 
-export async function saveStarterAnswer(worklogId: string, answer: string): Promise<void> {
+export async function saveStarterAnswer(worklogId: string, answer: string, slot: 'before' | 'after' = 'before'): Promise<void> {
   if (!answer.trim()) throw new Error('Write an answer, or choose to discuss it with your agent.')
   const gen = sessionGen
-  const wl = await api<Worklog>(`/api/worklogs/${worklogId}/discovery`, {answer: answer.trim(), actingAs: state.actingAs})
+  const wl = await api<Worklog>(`/api/worklogs/${worklogId}/discovery`, {slot, answer: answer.trim(), actingAs: state.actingAs})
   if (gen !== sessionGen) return
   commit({worklogs: state.worklogs.map(w => w.id === wl.id ? wl : w),
     ...(state.captureContext?.id === worklogId ? {captureContext: {...state.captureContext, answerDraft: ''}} : {})})
   window.Understudy.log(`answered the starter question for work log #${worklogId}: “${answer.trim()}”`,
-    {worklogId, question: STARTER_QUESTION, discovery: wl.data.discovery})
+    {worklogId, question: slot === 'after' ? FOLLOWUP_QUESTION : STARTER_QUESTION, discovery: wl.data.discovery})
 }
 
 /* Process library (shared across users via the server) */

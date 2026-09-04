@@ -30,7 +30,7 @@ reusable process. It can start from an
 undocumented work event or an existing procedure, look for the gaps around the
 current task, and capture them as required evidence, decision criteria,
 recovery loops, ownership, and approval rules. One SDK script supplies
-observation, interviews, the process panel, and 20 WebMCP tools. Registered
+observation, interviews, the process panel, and 21 WebMCP tools. Registered
 host actions add operation; the included process store and authenticated
 server guard add shared, governed execution.
 
@@ -143,7 +143,7 @@ document.modelContext.registerTool({
 - A process that starts from one ordinary work entry, grows through questions
   and human correction, becomes a versioned execution, and is suggested again
   for related work.
-- A reusable 20-tool WebMCP surface plus an explicit integration model: one
+- A reusable 21-tool WebMCP surface plus an explicit integration model: one
   script for observation and teaching, registered actions for operation, and a
   store/server adapter for governed shared execution.
 - A test suite that covers repeated task and decision loops, stale-evidence

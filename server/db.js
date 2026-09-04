@@ -78,10 +78,10 @@ function memoryBackend() {
       if (w) w.status = status
       return w ?? null
     },
-    async saveDiscoveryAnswer(id, answer, createdBy) {
+    async saveDiscoveryAnswer(id, slot, answer, createdBy) {
       const w = worklogs.find(x => x.id === id)
       if (!w || w.createdBy !== createdBy || w.status !== 'draft' || w.data?.runId != null || w.data?.systemGenerated) return null
-      w.data = {...w.data, discovery: {before: answer}}
+      w.data = {...w.data, discovery: {...(w.data?.discovery ?? {}), [slot]: answer}}
       return w
     },
     async mergeWorklogData(id, patch) {
@@ -363,12 +363,13 @@ async function pgBackend(databaseUrl) {
       const { rows } = await pool.query('UPDATE worklogs SET status=$2 WHERE id=$1 RETURNING *', [id, status])
       return rows[0] ? wl(rows[0]) : null
     },
-    async saveDiscoveryAnswer(id, answer, createdBy) {
+    async saveDiscoveryAnswer(id, slot, answer, createdBy) {
       const {rows} = await pool.query(
-        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object('discovery', $2::jsonb)
+        `UPDATE worklogs SET data = COALESCE(data, '{}'::jsonb) || jsonb_build_object(
+           'discovery', COALESCE(data->'discovery', '{}'::jsonb) || jsonb_build_object($4::text, $2::jsonb))
          WHERE id=$1 AND created_by=$3 AND status='draft' AND data->>'runId' IS NULL
          AND COALESCE(data->>'systemGenerated', 'false')='false' RETURNING *`,
-        [id, JSON.stringify({before: answer}), createdBy],
+        [id, JSON.stringify(answer), createdBy, slot],
       )
       return rows[0] ? wl(rows[0]) : null
     },

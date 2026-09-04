@@ -172,7 +172,7 @@ test('starter answer survives a failed save and reload, then reaches the saved w
     if(path==='/api/worklogs/1/discovery'){
       if(fail)return response({error:'Save unavailable'},503)
       const payload=JSON.parse(opts.body)
-      work={...work,data:{...work.data,discovery:{before:{answer:payload.answer,answeredBy:payload.actingAs,answeredAt:1}}}}
+      work={...work,data:{...work.data,discovery:{...(work.data.discovery??{}),[payload.slot]:{answer:payload.answer,answeredBy:payload.actingAs,answeredAt:1}}}}
       return response(structuredClone(work))
     }
     throw Error(path)
@@ -190,6 +190,10 @@ test('starter answer survives a failed save and reload, then reaches the saved w
   assert.equal(reloaded.getState().captureContext.answerDraft,'')
   assert.equal(reloaded.getState().captureContext.creationRequested,true)
   assert.equal(events.at(-1)[1].discovery.before.answer,'Sales confirms the order date')
+  reloaded.setStarterDraft('Logistics books the courier, then Lee reviews')
+  await reloaded.saveStarterAnswer('1',reloaded.getState().captureContext.answerDraft,'after')
+  assert.equal(reloaded.getState().worklogs[0].data.discovery.before.answer,'Sales confirms the order date')
+  assert.equal(reloaded.getState().worklogs[0].data.discovery.after.answer,'Logistics books the courier, then Lee reviews')
 })
 
 test('permanent review failure is visible, explicit retry succeeds, and the banner clears after sign-off', async () => {

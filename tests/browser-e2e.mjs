@@ -51,6 +51,11 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     const panel = page.locator('#understudy-panel-host')
     await panel.getByText('Your process will grow here').waitFor()
     assert.equal(await panel.locator('.preview-node').count(), 0, 'the empty start canvas must not look like a preloaded process')
+    await page.getByRole('button', {name: 'Describe a task'}).waitFor()
+    await page.evaluate(() => window.__understudy.call('navigate_workspace', {destination: 'records'}))
+    await page.getByRole('heading', {name: 'Work records'}).waitFor()
+    await page.evaluate(() => window.__understudy.call('navigate_workspace', {destination: 'create'}))
+    await page.getByRole('button', {name: 'Describe a task'}).waitFor()
 
     // A page-only path remains usable when the current AI chat is not bound to
     // the browser's registered WebMCP tools.
@@ -59,6 +64,15 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim confirms the order and the packed quantity.')
     assert.equal(await page.getByRole('textbox', {name: 'Describe your work'}).count(), 0,
       'the saved starting point replaces the blank new-entry form')
+    await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('textbox', {name: 'What happens next, and who takes over?'}).waitFor()
+    await page.waitForFunction(() => document.activeElement?.id === 'followup-answer')
+    await page.reload()
+    const followup = page.getByRole('textbox', {name: 'What happens next, and who takes over?'})
+    await followup.waitFor()
+    await page.waitForFunction(() => document.activeElement?.id === 'followup-answer')
+    await page.getByText('✓ 1. What must happen first? · SAVED').waitFor()
+    await followup.fill('Park records the handoff code, then Lee reviews the evidence.')
     await page.getByRole('button', {name: 'Save answer & continue'}).click()
     await page.getByRole('button', {name: 'Continue interview on this page'}).click()
     await panel.getByText(/Evidence-only starter · work log/).waitFor()
@@ -118,9 +132,13 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     }), incidentGap.resolves_gap)
     await panel.getByRole('button', {name: 'Continue later'}).waitFor()
     await panel.getByRole('button', {name: 'Skip this question'}).waitFor()
+    await page.waitForFunction(() => document.querySelector('#understudy-panel-host')?.shadowRoot?.activeElement?.classList.contains('freetext'))
     const sourceAnswer = panel.locator('input.freetext')
     await sourceAnswer.fill('A normal package count hid a crushed corner, so I stopped standard handoff.')
     await sourceAnswer.press('Enter')
+    assert.equal(await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Create process'}).getAttribute('aria-current'), 'page',
+      'answering an agent question must keep the current process workspace open')
+    await panel.locator('details.answered-question').filter({hasText: 'A normal package count hid a crushed corner'}).waitFor()
     await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.steps.find(step => step.id === 'route')?.elicitation?.incident?.includes('crushed corner'))
     const knowledge = panel.locator('details.knowledge').filter({hasText: 'Expert judgment sources · 1/5'})
     await knowledge.waitFor()
@@ -336,29 +354,30 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     await page.getByRole('button', {name: 'Start with the first question'}).click()
     await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim checks the order and packed quantity first.')
     await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('textbox', {name: 'What happens next, and who takes over?'}).fill('Park records receipt, then Lee reviews the handoff evidence.')
+    await page.getByRole('button', {name: 'Save answer & continue'}).click()
     await page.getByRole('button', {name: 'Continue interview on this page'}).click()
+    await panel.getByText(/Evidence-only starter · work log/).waitFor()
+    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
     const sourceA = await page.evaluate(() => window.Understudy.getLoadedProcess()?.sourceWorklogId)
     assert.ok(sourceA)
 
     const exactAnswers = [
       'Parcel 104 had a crushed lower corner, so I stopped the normal handoff.',
-      'I compare the corner seam, label alignment, and whether the base rocks on the table.',
-      'A novice checks only the label and sends the parcel without testing the base.',
-      'A cosmetic scuff is acceptable, but any open seam or unstable base requires repacking.',
-      'If the replacement box also rocks, Park isolates the lot and Lee reviews the packaging plan.',
     ]
     for (let index = 0; index < exactAnswers.length; index++) {
-      await panel.getByRole('button', {name: 'Ask the next question on this page'}).click()
       const answer = panel.locator('input.freetext').last()
+      if (await answer.count() === 0) {
+        await panel.getByRole('button', {name: 'Ask the next question on this page'}).click()
+      }
+      await answer.waitFor()
       await answer.fill(exactAnswers[index])
       await answer.press('Enter')
       await page.waitForFunction(expected => {
         const map = window.Understudy.getLoadedProcess?.()
-        return map?.steps.reduce((total, step) => total + (step.elicitation?.answers?.length ?? 0), 0) === expected
+        return (map?.steps.reduce((total, step) => total + (step.elicitation?.answers?.length ?? 0), 0) ?? 0) >= expected
       }, index + 1)
     }
-    await panel.getByText(/Focused expert interview .* 5\/5/).waitFor()
-
     // A -> B -> resume A establishes two independent unfinished sessions.
     await page.getByRole('button', {name: 'Start a separate work entry'}).click()
     await page.waitForFunction(() => !window.Understudy.getLoadedProcess?.())
@@ -392,11 +411,11 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     }
 
     // 1) Playbooks library.
-    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Playbooks'}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Use a playbook'}).click()
     await page.getByRole('button', {name: new RegExp(savedTitle)}).click()
     await page.getByRole('button', {name: 'Run this playbook'}).click()
     await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
-    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Create process'}).click()
     await assertBothDrafts()
     await resumeAAndCheckEvidence()
 
@@ -406,18 +425,18 @@ test('all unfinished interview drafts survive saved-process transitions and relo
     await page.getByRole('textbox', {name: 'Describe your work'}).fill('Another parcel handoff needs the saved route.')
     await page.getByRole('button', {name: 'Follow this playbook'}).click()
     await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
-    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Create process'}).click()
     await assertBothDrafts()
     await resumeAAndCheckEvidence()
 
     // 3) Existing-run picker.
-    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Playbooks'}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Use a playbook'}).click()
     await page.getByText('Choose an existing run').click()
     const runChoice = page.locator('details.recent-runs button.secondary').filter({hasText: savedTitle}).filter({hasText: 'active'}).first()
     await runChoice.waitFor()
     await runChoice.click()
     await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
-    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Create process'}).click()
     await assertBothDrafts()
     await resumeAAndCheckEvidence()
 

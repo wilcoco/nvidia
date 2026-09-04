@@ -127,6 +127,7 @@ process. Browser viewport tests are separate from physical-device testing.
 | Tool | What it does |
 | --- | --- |
 | `describe_workspace` | App description, available host actions, map status. |
+| `navigate_workspace` | Opens Create process, saved playbooks, assigned tasks, reviews, or source work records when the visitor asks. |
 | `get_recent_actions` | The action journal (cursor-based). Human answers to agent questions surface here too. |
 | `get_page_state` | Host-provided business state (records, statuses). |
 | `propose_process_map` | Draw/replace the draft process map rendered in the panel. |

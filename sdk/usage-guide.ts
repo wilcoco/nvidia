@@ -25,13 +25,13 @@ export function buildUsageGuide(language: GuideLanguage, topic: GuideTopic, dism
     'Run it as a team. Each person completes their step and hands work to the next owner.',
     'Reuse the experience. Choose a saved playbook for similar work, and review new knowledge before updating it.',
   ] : ko ? [
-    'Start here에서 지금 하는 일을 한 줄로 적고 첫 질문에 답하세요. 로그인 전이면 Enter demo workspace로 들어오세요.',
+    'Create process에서 지금 하는 일을 한 줄로 적고 첫 질문에 답하세요. 로그인 전이면 Enter demo workspace로 들어오세요.',
     '이어지는 요청을 이 브라우저를 연 AI 채팅에 보내세요. 에이전트가 앞뒤 업무·담당자·판단 기준을 묻고, 질문은 이 패널에 나타납니다.',
     '오른쪽 프로세스에서 틀린 단계나 규칙을 고치고 확정하세요. 저장한 프로세스를 플레이북이라고 부릅니다.',
     'Run this playbook으로 실행하세요. My tasks에서 각 담당자가 순서대로 처리하고, 승인할 일은 Reviews에 나타납니다.',
     '비슷한 업무를 할 때 추천되는 플레이북을 선택하거나 Playbooks에서 찾아 다시 실행하세요.',
   ] : [
-    'On Start here, describe one task and answer the first question. If you are signed out, enter the demo workspace first.',
+    'In Create process, describe one task and answer the first question. If you are signed out, enter the demo workspace first.',
     'Send the request in the AI chat that opened this tab. Your agent asks about the surrounding work, owners and rules. Its questions appear in this panel.',
     'Correct the steps and rules in the process on the right, then confirm. This saved process is your playbook.',
     'Choose Run this playbook. Each owner follows their steps in My tasks; sign-offs appear in Reviews.',

@@ -33,6 +33,14 @@ export interface PendingApproval {
   persona?: string
 }
 
+export interface AnsweredAsk {
+  id: string
+  question: string
+  answer: string
+  answeredAt: number
+  worklogId?: string
+}
+
 export type QuestionResult =
   | { status: 'pending'; question: string }
   | { status: 'answered'; question: string; answer: string }
@@ -46,6 +54,7 @@ export const asks: PendingAsk[] = []
 export const approvals: PendingApproval[] = []
 const questionResults = new Map<string, QuestionResult>()
 const questionWorklogs = new Map<string, string>()
+const answeredAsks: AnsweredAsk[] = []
 const actionResults = new Map<string, ActionResult>()
 const listeners = new Set<Listener>()
 export interface GapAnswerEvidence {
@@ -100,6 +109,8 @@ export function answerAsk(id: string, answer: string, options?: {declinedByUser?
   asks.splice(idx, 1)
   const answeredAt = Date.now()
   questionResults.set(id, { status: 'answered', question: ask.question, answer })
+  answeredAsks.push({id, question: ask.question, answer, answeredAt, worklogId: questionWorklogs.get(id)})
+  if (answeredAsks.length > 50) answeredAsks.splice(0, answeredAsks.length - 50)
   record('user', 'answer', answer, { question: ask.question, questionId: id })
   if (ask.resolvesGap) {
     const evidence = {questionId: id, question: ask.question, answer, answeredAt,
@@ -111,6 +122,13 @@ export function answerAsk(id: string, answer: string, options?: {declinedByUser?
 
 export function getQuestionResult(id: string): QuestionResult | { status: 'unknown' } {
   return questionResults.get(id) ?? { status: 'unknown' }
+}
+
+export function recentAnsweredQuestions(): AnsweredAsk[] {
+  const state = host.getState() as {playbookRequest?: {worklogId?: string}} | null
+  const worklogId = state?.playbookRequest?.worklogId
+  if (!worklogId) return []
+  return answeredAsks.filter(answer => answer.worklogId === worklogId).slice(-1)
 }
 
 /** Only activity for the current capture counts as an interview in progress. */

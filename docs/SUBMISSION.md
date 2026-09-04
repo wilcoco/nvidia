@@ -111,7 +111,7 @@ evidence and approval ownership); WebMCP is the channel through
 which the agent understands it and acts. The page provides explicit review
 controls; these controls do not authenticate human presence.
 
-We register 20 tools imperatively via `modelContext.registerTool()` (with
+We register 21 tools imperatively via `modelContext.registerTool()` (with
 `provideContext` fallback), and the second demo page also exposes its form
 through the declarative attribute API.
 
@@ -121,7 +121,7 @@ through the declarative attribute API.
   auto-capture, shadow-DOM side panel, process-map store with a run-state
   machine (done / next / skipped / blocked / conditional / not-applicable),
   branch resolution against live data, pre-execution process guard,
-  isolated executions with explicit run restoration, and 20 WebMCP tools.
+  isolated executions with explicit run restoration, and 21 WebMCP tools.
 - **Demo workspace** (React + Vite): a generic work-log workspace with
   reviews and a shared playbook library (incidents are one scenario).
 - **Server** (Express + Postgres on Railway): auth, incidents, reviews,

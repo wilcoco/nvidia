@@ -53,7 +53,7 @@ function Login() {
       <form className="card login" onSubmit={submit}>
         <div className="eyebrow">EXPLORE THE WORKSPACE</div>
         <h2>Start with one task.</h2>
-        <p className="hint">The demo account is filled in. Try a delivery example or describe your own work. Start here, then continue the interview in your WebMCP agent’s chat.</p>
+        <p className="hint">The demo account is filled in. Open Create process to describe your own work, then continue the interview in your WebMCP agent’s chat.</p>
         <label>
           Username
           <input value={username} autoComplete="username" onChange={(e) => setUsername(e.target.value)} required />
@@ -601,7 +601,7 @@ function PlaybookList({ state }: { state: store.AppState }) {
 
   if (state.processes.length === 0) {
     return (
-      <div className="empty-card"><h1>Your team’s playbooks start here.</h1><p>Describe one task on Start here, then let your agent ask about its rules. The playbook appears here after you review and save the draft.</p><AgentInvite prompt="What is Understudy and how do I use it? Help me turn one of my tasks into a playbook, asking me one question at a time." /></div>
+      <div className="empty-card"><h1>Your team’s playbooks start here.</h1><p>Describe one task in Create process, then let your agent ask about its rules. The playbook appears here after you review and save the draft.</p><AgentInvite prompt="What is Understudy and how do I use it? Help me turn one of my tasks into a playbook, asking me one question at a time." /></div>
     )
   }
 
@@ -739,7 +739,7 @@ function MyTasks({ state, goReviews }: { state: store.AppState; goReviews: () =>
   const myRole = state.users.find((u) => u.username === state.actingAs)?.role
   if (!proc || prog.length === 0)
     return (
-      <div className="empty-card"><h1>Your next step lives here.</h1><p>Teach a process from Start here, or run a saved playbook. Tasks will appear with their required evidence and owner.</p><button onClick={() => window.Understudy.openPanel?.()}>Open playbook</button></div>
+      <div className="empty-card"><h1>Your next step lives here.</h1><p>Teach a process in Create process, or run one from Use a playbook. Tasks will appear with their required evidence and owner.</p><button onClick={() => window.Understudy.openPanel?.()}>Open playbook</button></div>
     )
   if (!runId) {
     const starting = window.Understudy.isRunStarting?.()
@@ -1131,6 +1131,17 @@ export default function App() {
       if (window.innerWidth >= 1000) window.Understudy.openPanel?.()
     }
   }, [state.runStarted])
+  useEffect(() => {
+    const navigate = (event: Event) => {
+      const destination = (event as CustomEvent<{destination?: string}>).detail?.destination
+      const destinations: Record<string, WorkspaceTab> = {
+        create: 'overview', playbooks: 'playbooks', tasks: 'tasks', reviews: 'approvals', records: 'incidents',
+      }
+      if (destination && destinations[destination]) setTab(destinations[destination])
+    }
+    window.addEventListener('understudy:navigate', navigate)
+    return () => window.removeEventListener('understudy:navigate', navigate)
+  }, [])
   useEffect(() => { if (!state.me) { setTab('overview'); setResetArmed(false) } }, [state.me?.username])
 
   if (!state.authChecked) return <div className="loading-screen" role="status">Opening Understudy…</div>
@@ -1138,7 +1149,7 @@ export default function App() {
 
   const pendingForMe = state.approvals.filter((a) => a.approver === state.actingAs && a.status === 'PENDING').length
   const interaction = window.Understudy.getInteractionState?.()
-  const tabs: Array<[WorkspaceTab, string]> = [['overview', 'Start here'], ['tasks', 'My tasks'], ['approvals', 'Reviews'], ['playbooks', 'Playbooks'], ['incidents', 'Work log']]
+  const tabs: Array<[WorkspaceTab, string]> = [['overview', 'Create process'], ['playbooks', 'Use a playbook'], ['tasks', 'My tasks'], ['approvals', 'Reviews'], ['incidents', 'Work records']]
 
   return (
     <div className="app">
@@ -1182,7 +1193,7 @@ export default function App() {
           : state.restoration === 'error' ? <div className="empty-card" role="alert"><p>Your saved execution could not be restored. Retry before starting new work.</p><button onClick={() => store.retryRestoration()}>Retry restoring workspace</button></div> : <>
         {tab === 'overview' && <Overview state={state} navigate={setTab} />}
         {tab === 'tasks' && <MyTasks state={state} goReviews={() => setTab('approvals')} />}
-        {tab === 'incidents' && <><div className="page-intro"><h1>Work log</h1><p>Record work and results. To teach a new process, start with the guided capture on <button className="text-button" onClick={() => setTab('overview')}>Start here</button>.</p></div><SuggestionCard /><IncidentForm /><IncidentList state={state} /></>}
+        {tab === 'incidents' && <><div className="page-intro"><h1>Work records</h1><p>This is the source record of work and results. An entry becomes a process draft only when you choose to develop it in <button className="text-button" onClick={() => setTab('overview')}>Create process</button>.</p></div><SuggestionCard /><IncidentForm /><IncidentList state={state} /></>}
         {tab === 'approvals' && <ApprovalsInbox state={state} />}
         {tab === 'playbooks' && <PlaybookList state={state} />}
         </>}

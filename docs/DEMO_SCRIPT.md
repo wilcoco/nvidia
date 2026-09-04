@@ -88,7 +88,7 @@ path (remediation branch). Show the amber "unsaved draft" pill → Save as vN.*
 
 ## 2:40–3:00 — Scene 5: A layer, not an app
 
-*Cuts: plain.html one script tag (view-source flash) → the 20-tool list →
+*Cuts: plain.html one script tag (view-source flash) → the 21-tool list →
 mini flowchart close-up.*
 
 > "The work-log app is just a demo workspace. Understudy itself is one

@@ -153,15 +153,18 @@ app.post('/api/worklogs', auth, asyncHandler(async (req, res) => {
 app.post('/api/worklogs/:id/discovery', auth, asyncHandler(async (req, res) => {
   if (intParam(req, res) === null) return
   const answer = req.body?.answer
+  const slot = req.body?.slot ?? 'before'
   if (typeof answer !== 'string' || !answer.trim() || answer.length > 4000)
     return res.status(400).json({ error: 'Write an answer of 1–4,000 characters.' })
+  if (!['before', 'after'].includes(slot))
+    return res.status(400).json({ error: 'Discovery slot must be before or after.' })
   const wl = await db.getWorklog(req.params.id)
   if (!wl) return res.status(404).json({ error: 'worklog not found' })
   const authority = await authorizedActor(req)
   const who = authority.actor
   if (who !== wl.createdBy || authority.role !== 'Contributor')
     return res.status(403).json({ error: 'Answer as the contributor who recorded this work.' })
-  const row = await db.saveDiscoveryAnswer(wl.id, {answer: answer.trim(), answeredBy: who, answeredAt: Date.now()}, who)
+  const row = await db.saveDiscoveryAnswer(wl.id, slot, {answer: answer.trim(), answeredBy: who, answeredAt: Date.now()}, who)
   if (!row) return res.status(409).json({ error: 'Discovery answers belong to draft work, before execution or review.' })
   res.json(row)
 }))
