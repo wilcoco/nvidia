@@ -269,3 +269,149 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await new Promise(resolve => server.exitCode !== null ? resolve() : server.once('exit', resolve))
   }
 })
+
+test('all unfinished interview drafts survive saved-process transitions and reload', {skip: !chromeAvailable && !strictBrowserGate, timeout: 60_000}, async()=>{
+  assert.ok(chromeAvailable, `Chrome is required for the browser E2E gate; set CHROME_PATH (looked for ${chrome})`)
+  let base = ''
+  let stderr = ''
+  const server = spawn(process.execPath, ['server/index.js'], {
+    env: {...process.env, DATABASE_URL: '', PORT: '0'},
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  server.stderr.on('data', chunk => { stderr += String(chunk) })
+  await new Promise((resolve, reject) => {
+    server.stdout.on('data', chunk => {
+      const match = String(chunk).match(/listening on :(\d+)/)
+      if (match) { base = `http://127.0.0.1:${match[1]}`; resolve() }
+    })
+    server.once('exit', code => reject(Error(stderr || `server exited ${code}`)))
+  })
+
+  let browser
+  try {
+    browser = await chromium.launch({executablePath: chrome, headless: true})
+    const context = await browser.newContext({viewport: {width: 1280, height: 900}})
+    const page = await context.newPage()
+    await page.goto(base)
+    await page.getByRole('button', {name: /Enter demo workspace/}).click()
+    await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    const panel = page.locator('#understudy-panel-host')
+
+    // Seed one saved process so the three real transition surfaces can replace
+    // the panel while an unrelated interview remains unfinished.
+    const savedTitle = `Draft transition sentinel ${Date.now()}`
+    await page.evaluate(title => window.Understudy.draftProcess({
+      title,
+      appliesWhen: {kind: 'routine work', keywords: ['parcel', 'handoff']},
+      steps: [
+        {id: 'work', label: 'Complete the saved parcel handoff', type: 'task', role: 'Contributor', humanOnly: true},
+      ],
+    }), savedTitle)
+    await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
+    await page.waitForFunction(title => {
+      const map = window.Understudy.getLoadedProcess?.()
+      return map?.title === title && map.confirmed === true && Boolean(map.sourceProcessId)
+    }, savedTitle)
+
+    const taskA = 'I inspect one outgoing parcel before handoff.'
+    const taskB = 'I inspect a separate customer return before restocking.'
+    await page.getByRole('textbox', {name: 'Describe your work'}).fill(taskA)
+    await page.getByRole('button', {name: 'Start with the first question'}).click()
+    await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim checks the order and packed quantity first.')
+    await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('button', {name: 'Continue interview on this page'}).click()
+    const sourceA = await page.evaluate(() => window.Understudy.getLoadedProcess()?.sourceWorklogId)
+    assert.ok(sourceA)
+
+    const exactAnswers = [
+      'Parcel 104 had a crushed lower corner, so I stopped the normal handoff.',
+      'I compare the corner seam, label alignment, and whether the base rocks on the table.',
+      'A novice checks only the label and sends the parcel without testing the base.',
+      'A cosmetic scuff is acceptable, but any open seam or unstable base requires repacking.',
+      'If the replacement box also rocks, Park isolates the lot and Lee reviews the packaging plan.',
+    ]
+    for (let index = 0; index < exactAnswers.length; index++) {
+      await panel.getByRole('button', {name: 'Ask the next question on this page'}).click()
+      const answer = panel.locator('input.freetext').last()
+      await answer.fill(exactAnswers[index])
+      await answer.press('Enter')
+      await page.waitForFunction(expected => {
+        const map = window.Understudy.getLoadedProcess?.()
+        return map?.steps.reduce((total, step) => total + (step.elicitation?.answers?.length ?? 0), 0) === expected
+      }, index + 1)
+    }
+    await panel.getByText(/Focused expert interview .* 5\/5/).waitFor()
+
+    // A -> B -> resume A establishes two independent unfinished sessions.
+    await page.getByRole('textbox', {name: 'Describe your work'}).fill(taskB)
+    await page.getByRole('button', {name: 'Start with the first question'}).click()
+    await page.getByText(taskA).last().waitFor()
+    await page.locator('.paused-draft').filter({hasText: taskA}).getByRole('button', {name: 'Continue editing'}).click()
+    await page.waitForFunction(id => window.Understudy.getLoadedProcess?.()?.sourceWorklogId === id, sourceA)
+
+    const assertBothDrafts = async () => {
+      const storedTasks = await page.evaluate(() => JSON.parse(sessionStorage.getItem('understudy.workspace') ?? '{}')
+        .pausedDrafts?.map(draft => ({key: draft.key, task: draft.task, title: draft.title, sourceWorklogId: draft.map?.sourceWorklogId})) ?? [])
+      assert.deepEqual(storedTasks.map(draft => draft.task).sort(), [taskA, taskB].sort(), JSON.stringify(storedTasks, null, 2))
+      const loadedIdentity = await page.evaluate(() => {
+        const map = window.Understudy.getLoadedProcess?.()
+        const workspace = JSON.parse(sessionStorage.getItem('understudy.workspace') ?? '{}')
+        return {title: map?.title, sourceProcessId: map?.sourceProcessId, sourceWorklogId: map?.sourceWorklogId,
+          captureContext: workspace.captureContext, visiblePaused: document.querySelectorAll('.paused-draft').length}
+      })
+      await page.getByText(taskA).last().waitFor({timeout: 5_000}).catch(error => {
+        throw new Error(`${error.message}\nloaded=${JSON.stringify(loadedIdentity)}`)
+      })
+      await page.getByText(taskB).last().waitFor({timeout: 5_000})
+      assert.equal(await page.locator('.paused-draft').count(), 2)
+    }
+    const resumeAAndCheckEvidence = async () => {
+      await page.locator('.paused-draft').filter({hasText: taskA}).getByRole('button', {name: 'Continue editing'}).click()
+      await page.waitForFunction(id => window.Understudy.getLoadedProcess?.()?.sourceWorklogId === id, sourceA)
+      assert.deepEqual(await page.evaluate(() => window.Understudy.getLoadedProcess().steps
+        .flatMap(step => step.elicitation?.answers ?? []).map(answer => answer.answer)), exactAnswers)
+    }
+
+    // 1) Playbooks library.
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Playbooks'}).click()
+    await page.getByRole('button', {name: new RegExp(savedTitle)}).click()
+    await page.getByRole('button', {name: 'Run this playbook'}).click()
+    await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await assertBothDrafts()
+    await resumeAAndCheckEvidence()
+
+    // 2) Contextual suggestion card.
+    await page.getByRole('textbox', {name: 'Describe your work'}).fill('Another parcel handoff needs the saved route.')
+    await page.getByRole('button', {name: 'Follow this playbook'}).click()
+    await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await assertBothDrafts()
+    await resumeAAndCheckEvidence()
+
+    // 3) Existing-run picker.
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Playbooks'}).click()
+    await page.getByText('Choose an existing run').click()
+    const runChoice = page.locator('details.recent-runs button.secondary').filter({hasText: savedTitle}).filter({hasText: 'active'}).first()
+    await runChoice.waitFor()
+    await runChoice.click()
+    await page.waitForFunction(title => window.Understudy.getLoadedProcess?.()?.title === title && Boolean(window.Understudy.currentRunId?.()), savedTitle)
+    await page.getByRole('navigation', {name: 'Workspace'}).getByRole('button', {name: 'Start here'}).click()
+    await assertBothDrafts()
+    await resumeAAndCheckEvidence()
+
+    // The active draft is restored from the same registry after a full reload;
+    // the other unfinished entry remains selectable and all source answers are exact.
+    await page.reload()
+    await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
+    await page.waitForFunction(id => window.Understudy.getLoadedProcess?.()?.sourceWorklogId === id, sourceA)
+    assert.deepEqual(await page.evaluate(() => window.Understudy.getLoadedProcess().steps
+      .flatMap(step => step.elicitation?.answers ?? []).map(answer => answer.answer)), exactAnswers)
+    await page.getByText(taskB).last().waitFor()
+    assert.equal(await page.locator('.paused-draft').filter({hasText: taskB}).count(), 1)
+  } finally {
+    await browser?.close()
+    server.kill()
+    await new Promise(resolve => server.exitCode !== null ? resolve() : server.once('exit', resolve))
+  }
+})

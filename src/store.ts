@@ -201,9 +201,14 @@ export async function refresh(): Promise<void> {
       workspaceRestored = true
       try {
         const saved = JSON.parse(sessionStorage.getItem('understudy.workspace') ?? 'null')
-        if (saved?.username === s.me.username && typeof saved.captureDraft?.task === 'string')
+        if (saved?.username === s.me.username && typeof saved.captureDraft?.task === 'string') {
           commit({captureDraft: saved.captureDraft, captureContext: saved.captureContext ?? null, draft: saved.draft ?? {},
             pausedDrafts: Array.isArray(saved.pausedDrafts) ? saved.pausedDrafts : []})
+          const key = saved.captureContext?.id ? `worklog:${saved.captureContext.id}` : ''
+          const activeDraft = state.pausedDrafts.find(draft => draft.key === key && draft.map)
+          if (activeDraft?.map && !window.Understudy.getLoadedProcess?.())
+            window.Understudy.draftProcess?.(structuredClone(activeDraft.map))
+        }
       } catch { /* Ignore stale or unavailable browser storage. */ }
     }
     resumeLastPlaybook()
@@ -543,6 +548,10 @@ export async function followPlaybook(
   processId: string,
   opts?: { silent?: boolean; resume?: boolean; run?: ProcessRun },
 ): Promise<void> {
+  // Opening a saved process replaces the panel map. Snapshot the current
+  // teaching session first; otherwise a fully answered draft can disappear
+  // when the visitor switches through Playbooks, a suggestion, or RunPicker.
+  if (!(opts?.silent && window.Understudy.getLoadedProcess?.())) pauseCurrentDraft()
   await window.Understudy.flushRun?.()
   const p = await getProcess(processId)
   let resume: { runId: string; steps?: unknown[]; decisions?: unknown[]; events?: ProcessRun['events'] } | undefined
@@ -574,12 +583,19 @@ export async function followPlaybook(
     }
   }
   if (opts?.silent && window.Understudy.getLoadedProcess?.()) return
+  // Detach the teaching context before loadProcess emits its synchronous map
+  // change. Otherwise the incoming confirmed map can be mistaken for the
+  // draft that belonged to the previous work log and remove that snapshot.
+  commit({ reviewSync: null, captureContext: null })
   window.Understudy.loadProcess(p.map as never, {
     id: p.id,
     createdBy: p.createdBy,
     ...(resume ? { resume } : {}),
   })
-  commit({ reviewSync: null, captureContext: null })
+  // The map lives in the SDK rather than React state. A second host signal is
+  // required after replacement so an in-place suggestion click recalculates
+  // which registry row is active instead of hiding the previous draft.
+  commit({ reviewSync: null })
   if (!opts?.silent)
     window.Understudy.log(`opened playbook "${p.title}" to work along it`, { processId: p.id })
   try {
@@ -785,11 +801,19 @@ export function clearCaptureContext(): void {
   try { localStorage.removeItem('understudy.lastPlaybook') } catch { /* optional */ }
 }
 
-/** Preserve an unfinished page draft before the visitor starts a different
- * work entry. This is tab-scoped working state, not a saved team playbook. */
-export function pauseCurrentDraft(): boolean {
+/** Keep every unfinished teaching session in a worklog-keyed tab registry.
+ * The active draft remains in the registry too, so switching work never
+ * depends on a later "pause" operation to put it back. */
+export function rememberCurrentDraft(): boolean {
   const current = window.Understudy.getLoadedProcess?.()
-  if (current?.confirmed || (!current && !state.captureContext)) return false
+  if (current?.confirmed) {
+    const sourceId = current.sourceWorklogId ?? state.captureContext?.id
+    const key = sourceId ? `worklog:${sourceId}` : `draft:${current.title}`
+    if (state.pausedDrafts.some(draft => draft.key === key))
+      commit({pausedDrafts: state.pausedDrafts.filter(draft => draft.key !== key)})
+    return false
+  }
+  if (!current && !state.captureContext) return false
   const sourceId = current?.sourceWorklogId ?? state.captureContext?.id
   const task = state.worklogs.find(work => work.id === sourceId)?.task
     ?? state.captureContext?.task
@@ -797,29 +821,40 @@ export function pauseCurrentDraft(): boolean {
     ?? 'Unfinished work entry'
   const title = current?.title ?? (sourceId ? `Process draft from work log #${sourceId}` : 'Unfinished process draft')
   const key = sourceId ? `worklog:${sourceId}` : `draft:${title}`
+  const existing = state.pausedDrafts.find(draft => draft.key === key)
+  const captureContext = sourceId && String(state.captureContext?.id) === String(sourceId)
+    ? state.captureContext ? structuredClone(state.captureContext) : null
+    : existing?.captureContext ?? null
   const paused = {
     key,
     task,
     title,
     ...(current ? {map: structuredClone(current)} : {}),
-    captureContext: state.captureContext ? structuredClone(state.captureContext) : null,
+    captureContext,
     pausedAt: Date.now(),
   }
   commit({pausedDrafts: [paused, ...state.pausedDrafts.filter(draft => draft.key !== key)]})
-  window.Understudy.log(`paused unfinished draft "${title}" before starting or continuing a separate work entry`,
-    {sourceWorklogId: sourceId})
   return true
 }
 
+/** Preserve an unfinished page draft before the visitor starts a different
+ * work entry. This is tab-scoped working state, not a saved team playbook. */
+export function pauseCurrentDraft(): boolean {
+  const current = window.Understudy.getLoadedProcess?.()
+  const remembered = rememberCurrentDraft()
+  if (remembered) window.Understudy.log(`paused unfinished draft "${current?.title ?? state.captureContext?.task ?? 'work entry'}" before starting or continuing a separate work entry`,
+    {sourceWorklogId: current?.sourceWorklogId ?? state.captureContext?.id})
+  return remembered
+}
+
 export function resumePausedDraft(key: string): boolean {
+  rememberCurrentDraft()
   const target = state.pausedDrafts.find(draft => draft.key === key)
   if (!target) return false
-  pauseCurrentDraft()
-  const remaining = state.pausedDrafts.filter(draft => draft.key !== key)
+  commit({captureContext: target.captureContext, captureDraft: {task: '', sample: false},
+    draft: {task: target.task, hasInput: true}})
   if (target.map) window.Understudy.draftProcess?.(structuredClone(target.map))
   else window.Understudy.unloadProcess?.()
-  commit({captureContext: target.captureContext, captureDraft: {task: '', sample: false},
-    draft: {task: target.task, hasInput: true}, pausedDrafts: remaining})
   window.Understudy.log(`continued paused draft "${target.title}"`,
     {sourceWorklogId: target.map?.sourceWorklogId ?? target.captureContext?.id})
   return true

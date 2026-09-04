@@ -263,7 +263,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 
 // The approval hand-off is process-driven: when a run reaches its sign-off
 // step, the pending review is created automatically.
-window.addEventListener('understudy:mapchange', () => setTimeout(() => void store.autoSyncApproval(), 0))
+window.addEventListener('understudy:mapchange', () => {
+  store.rememberCurrentDraft()
+  setTimeout(() => void store.autoSyncApproval(), 0)
+})
 window.addEventListener('understudy:host-state', () => setTimeout(() => void store.autoSyncApproval(), 0))
 window.addEventListener('understudy:run-state', () => {
   store.rememberActiveRun()
