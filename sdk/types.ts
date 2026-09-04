@@ -23,6 +23,40 @@ export interface BranchTarget {
 
 export type StepType = 'task' | 'decision' | 'approval'
 
+export type ElicitationStage =
+  | 'incident'
+  | 'cues'
+  | 'novice_mistake'
+  | 'boundary'
+  | 'failure_recovery'
+
+export interface ElicitationAnswer {
+  questionId: string
+  question: string
+  answer: string
+  stage: ElicitationStage
+  answeredAt: number
+  /** Accepted source material, an explicit decline, a request for one more
+   * sensory probe, or knowledge that must stay in apprenticeship/observation. */
+  disposition: 'accepted' | 'declined' | 'needs_probe' | 'unspeakable'
+}
+
+/** Human-sourced judgment surrounding one process step. This is evidence for
+ * designing the playbook, never executable criteria by itself. An agent must
+ * still encode fields/branches and the human must confirm the whole draft. */
+export interface ElicitationRecord {
+  incident?: string
+  cues?: string[]
+  noviceMistake?: string
+  boundaries?: string[]
+  failureRecovery?: string
+  unspeakable?: string[]
+  answers: ElicitationAnswer[]
+  confirmed?: boolean
+  confirmedBy?: string
+  confirmedAt?: number
+}
+
 export interface Step {
   id: string
   label: string
@@ -39,6 +73,9 @@ export interface Step {
   completedAt?: number
   /** Values the assignee submitted when completing the step. */
   resultData?: Record<string, unknown>
+  /** Structured source material captured through the adaptive expert
+   * interview. It is displayed and preserved as untrusted human evidence. */
+  elicitation?: ElicitationRecord
   /** Which host action (if any) performs this step when the agent replays the process. */
   action?: string
   next?: BranchTarget[]
@@ -89,6 +126,9 @@ export interface ProcessMap {
   sourceProcessId?: string
   /** Interview gaps the human already answered (kind[:stepId]) — not re-asked. */
   resolvedGaps?: string[]
+  /** Presence opts this design into the adaptive expert-interview model.
+   * Absence is a legacy saved playbook and is treated as already reviewed. */
+  elicitationVersion?: 1
   /** Explicit outcomes of branching steps in this run: which edge was taken and why. */
   decisions?: Array<{
     stepId: string

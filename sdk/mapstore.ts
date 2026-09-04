@@ -1,13 +1,41 @@
 import type { BranchTarget, FieldDef, MapEdit, ProcessMap, Step, StepType, RunEvent } from './types'
 import { record } from './journal'
 import * as host from './host'
-import { onGapResolved } from './asks'
+import { onGapResolved, type GapAnswerEvidence } from './asks'
 import { validateFields, validateFieldValues, validateFieldBindings, validateCriteria } from '../shared/fields'
+import {
+  confirmedElicitation,
+  elicitationHotspots,
+  isElicitationGapKey,
+  nextElicitationGap,
+  recordElicitationAnswer,
+  type ElicitationGapKind,
+} from './elicitation'
 
-onGapResolved((gapKey) => markGapResolved(gapKey))
+onGapResolved((gapKey, evidence) => markGapResolved(gapKey, evidence))
 
-export function markGapResolved(gapKey: string): void {
+export function markGapResolved(gapKey: string, evidence?: GapAnswerEvidence): void {
   if (!map) return
+  if (isElicitationGapKey(gapKey) && evidence) {
+    const [, stepId] = gapKey.split(':')
+    const step = map.steps.find((candidate) => candidate.id === stepId)
+    if (step) {
+      const result = recordElicitationAnswer(step, gapKey, evidence)
+      if (result.handled) {
+        record(
+          'user',
+          'map',
+          result.disposition === 'needs_probe'
+            ? `described judgment at "${step.label}" as tacit; one observable-signal follow-up remains`
+            : result.disposition === 'unspeakable'
+              ? `marked judgment at "${step.label}" for observation or apprenticeship`
+              : `added ${gapKey.split(':')[0].replace('knowledge_', '').replace(/_/g, ' ')} source evidence to "${step.label}"`,
+          {questionId: evidence.questionId, disposition: result.disposition},
+        )
+        if (!result.resolved) { notify(); return }
+      }
+    }
+  }
   if (!map.resolvedGaps) map.resolvedGaps = []
   if (!map.resolvedGaps.includes(gapKey)) {
     map.resolvedGaps.push(gapKey)
@@ -48,8 +76,14 @@ export function subscribe(fn: Listener): () => void {
  *  survive a re-propose: resolvedGaps merge with the previous draft's. */
 export function proposeMap(next: ProcessMap): void {
   const prevResolved = map?.resolvedGaps ?? []
+  const previousSteps = new Map((map?.steps ?? []).map((step) => [step.id, step]))
   map = {
     ...next,
+    elicitationVersion: next.elicitationVersion ?? (map?.sourceProcessId ? undefined : 1),
+    steps: next.steps.map((step) => ({
+      ...step,
+      elicitation: step.elicitation ?? previousSteps.get(step.id)?.elicitation,
+    })),
     confirmed: false,
     editError: undefined,
     resolvedGaps: [...new Set([...(next.resolvedGaps ?? []), ...prevResolved])],
@@ -228,13 +262,23 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
   if (!map || map.confirmed || map.saving) return
   const invalid = validateFieldBindings(map)
   if (invalid) { map.saveError = invalid; notify(); return }
+  const confirmationActor = actingPersona()
+  const confirmationTime = Date.now()
   const confirm = (current: ProcessMap) => {
     current.editError = undefined
     // A revised design is ready for a NEW execution. Do not present the
     // previous run's completed tasks or decisions as this version's work.
     current.decisions = []
     current.events = []
-    current.steps = current.steps.map((step) => ({ ...step, done: false, naReason: undefined, resultId: undefined, completedBy: undefined, completedAt: undefined, resultData: undefined }))
+    current.steps = current.steps.map((step) => ({
+      ...confirmedElicitation(step, confirmationActor, confirmationTime),
+      done: false,
+      naReason: undefined,
+      resultId: undefined,
+      completedBy: undefined,
+      completedAt: undefined,
+      resultData: undefined,
+    }))
     current.confirmed = true
     current.saving = false
     pushEdit({ field: 'confirmed', to: 'true' })
@@ -258,7 +302,7 @@ export function humanConfirmMap(saver?: (m: ProcessMap) => Promise<{ id: string;
       events: [],
       resolvedGaps: current.resolvedGaps,
       steps: current.steps.map((s) => ({
-        ...s,
+        ...confirmedElicitation(s, confirmationActor, confirmationTime),
         done: undefined,
         naReason: undefined,
         resultId: undefined,
@@ -911,8 +955,16 @@ export interface MapGap {
     | 'field_assignment'
     | 'precursors'
     | 'pass_criteria'
+    | ElicitationGapKind
   stepId?: string
   step?: string
+  /** Exact key to pass back as ask_user.resolves_gap. */
+  resolves_gap?: string
+  /** Higher values should be interviewed first. */
+  priority?: number
+  /** Structured elicitation move used for knowledge gaps. */
+  method?: string
+  stage?: string
   /** What the question should find out — the agent writes the actual wording. */
   question_goal?: string
   /** The concrete information still missing. */
@@ -932,6 +984,10 @@ export function knownFallbackQuestions(): string[] {
 /** What the current map does NOT yet know — the interview agenda for the agent. */
 export function mapGaps(): MapGap[] {
   if (!map) return []
+  // A confirmed playbook is an execution asset, not an active interview.
+  // Older saved maps have no elicitationVersion; their original Save action
+  // remains the human confirmation and no migration questionnaire is imposed.
+  if (map.confirmed) return []
   const gaps: MapGap[] = []
   const actionable = map.steps.filter((s) => s.type !== 'decision')
   const first = actionable[0]
@@ -943,14 +999,6 @@ export function mapGaps(): MapGap[] {
       question_goal: `Find out whether anything must happen before "${first.label}"`,
       missing_information: ['prerequisite steps', 'notifications', 'readiness or safety checks'],
       fallback_question: `Before "${first.label}" — is there anything that must happen first?`,
-    })
-    gaps.push({
-      kind: 'precursors',
-      stepId: first.id,
-      step: first.label,
-      question_goal: 'Identify early signs an experienced person notices before this situation becomes a problem',
-      missing_information: ['early warning signs', 'what to watch or check'],
-      fallback_question: 'Are there early signs that usually precede this situation?',
     })
   }
   for (const step of actionable.filter(s => s.type === 'task' && !s.fields?.length)) gaps.push({
@@ -996,15 +1044,14 @@ export function mapGaps(): MapGap[] {
       fallback_question: 'Who gives the final sign-off for this process, and at which point?',
     })
   }
-  for (const s of actionable.filter((x) => !x.detail).slice(0, 3)) {
-    gaps.push({
-      kind: 'judgment',
-      stepId: s.id,
-      step: s.label,
-      question_goal: `Capture the rule or threshold that guides "${s.label}"`,
-      missing_information: ['the rule or threshold', 'what an expert checks', 'when they would deviate'],
-      fallback_question: `What rule or threshold guides "${s.label}"?`,
-    })
+  // Process structure is only the map. For the steps where judgment matters,
+  // surface one adaptive knowledge-engineering move at a time: real incident,
+  // observable cue, novice counterexample, boundary, then failure/recovery.
+  if (map.elicitationVersion === 1) {
+    for (const step of elicitationHotspots(map.steps)) {
+      const gap = nextElicitationGap(step)
+      if (gap) gaps.push(gap)
+    }
   }
   for (const s of actionable.filter((x) => !x.action && !x.humanOnly)) {
     gaps.push({
@@ -1033,7 +1080,18 @@ export function mapGaps(): MapGap[] {
   }
   const resolved = new Set(map.resolvedGaps ?? [])
   lastFallbacks = gaps.map((g) => g.fallback_question).filter((q): q is string => !!q)
-  return gaps.filter((g) => g.kind === 'field_assignment' || (!resolved.has(g.stepId ? `${g.kind}:${g.stepId}` : g.kind) && !resolved.has(g.kind)))
+  return gaps
+    .map((gap) => ({
+      ...gap,
+      resolves_gap: gap.stepId ? `${gap.kind}:${gap.stepId}` : gap.kind,
+      priority: gap.priority ?? (
+        ['branch_condition', 'pass_criteria', 'required_context'].includes(gap.kind) ? 90
+          : ['before', 'after', 'final_signoff'].includes(gap.kind) ? 75
+            : 50
+      ),
+    }))
+    .filter((g) => g.kind === 'field_assignment' || (!resolved.has(g.resolves_gap!) && !resolved.has(g.kind)))
+    .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
 }
 
 /** Reapply a persisted run's progress onto the freshly loaded map (page reload). */

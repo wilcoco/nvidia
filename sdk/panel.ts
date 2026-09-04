@@ -153,6 +153,14 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step .detail { color: #8b96a8; font-size: 11px; line-height: 1.5; margin-top: 3px; cursor: text; }
 .step .detail-empty { color: #475569; font-style: italic; }
 .step input.detail-edit { width: 100%; background: #0f172a; color: #fff; border: 1px solid #3b82f6; border-radius: 4px; padding: 2px 6px; font-size: 11px; margin-top: 3px; }
+.step .knowledge { margin-top: 6px; border: 1px solid rgba(167,139,250,.28); border-radius: 7px; background: rgba(124,58,237,.07); color: #aeb8c8; font-size: 10px; }
+.step .knowledge summary { cursor: pointer; padding: 5px 7px; color: #c4b5fd; font-weight: 650; list-style-position: inside; }
+.step .knowledge-body { padding: 0 8px 7px; line-height: 1.45; }
+.step .knowledge-row { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.step .knowledge-row b { color: #ddd6fe; }
+.step .knowledge-source { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(167,139,250,.18); color: #7f8a9c; }
+.step .knowledge-status { color: #a78bfa; }
+.step .knowledge-status.confirmed { color: #6ee7b7; }
 .step .action-tag { color: #38bdf8; font-size: 10px; margin-top: 2px; }
 .step .human-tag { color: #a5b4fc; }
 .role-chip { font-size: 9px; font-weight: 700; color: #93c5fd; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.3); border-radius: 999px; padding: 1px 7px; flex: none; }
@@ -487,6 +495,42 @@ function renderStep(
       }
     }
     card.appendChild(detail)
+  }
+  if (step.elicitation?.answers?.length) {
+    const captured = step.elicitation
+    const covered = new Set(captured.answers
+      .filter(answer => answer.disposition !== 'needs_probe')
+      .map(answer => answer.stage)).size
+    const knowledge = el('details', 'knowledge') as HTMLDetailsElement
+    knowledge.appendChild(el('summary', undefined, `Expert judgment sources · ${covered}/5`))
+    const body = el('div', 'knowledge-body')
+    const status = el(
+      'div',
+      `knowledge-status${captured.confirmed ? ' confirmed' : ''}`,
+      captured.confirmed
+        ? `✓ Human-confirmed${captured.confirmedBy ? ` by ${captured.confirmedBy}` : ''}`
+        : 'Draft evidence · confirmed when this playbook is saved',
+    )
+    body.appendChild(status)
+    const addKnowledgeRow = (label: string, value?: string | string[]) => {
+      const values = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : []
+      if (!values.length) return
+      const row = el('div', 'knowledge-row')
+      row.appendChild(el('b', undefined, `${label}: `))
+      row.appendChild(document.createTextNode(values.join(' / ')))
+      body.appendChild(row)
+    }
+    addKnowledgeRow('Real case', captured.incident)
+    addKnowledgeRow('Observed cues', captured.cues)
+    addKnowledgeRow('Likely novice mistake', captured.noviceMistake)
+    addKnowledgeRow('Boundaries / exceptions', captured.boundaries)
+    addKnowledgeRow('Failure / recovery', captured.failureRecovery)
+    addKnowledgeRow('Needs observation', captured.unspeakable)
+    const sources = el('div', 'knowledge-source', `${captured.answers.length} source answer${captured.answers.length === 1 ? '' : 's'} preserved`)
+    sources.title = 'These human answers are source evidence. They do not become executable thresholds or routes unless the reviewed process explicitly encodes them.'
+    body.appendChild(sources)
+    knowledge.appendChild(body)
+    card.appendChild(knowledge)
   }
   if (step.fields?.length) {
     const inputs = el('div', 'detail task-input-preview')

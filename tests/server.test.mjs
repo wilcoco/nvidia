@@ -175,6 +175,26 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal((await call(`/approvals/${measuredReview.body.id}/decide`,reviewer,{actingAs:'lee',decision:'APPROVED'})).status,400)
   assert.equal((await call(`/approvals/${correctedReview.body.id}/decide`,reviewer,{actingAs:'lee',decision:'APPROVED'})).status,200)
 
+  // The server derives completion from the persisted route. A branch that was
+  // not selected may remain pending in the runtime snapshot without keeping a
+  // completed run active or letting the next run reclassify it as abandoned.
+  const routedMap={title:'TEST server route completion',entry:'start',steps:[
+    {id:'start',type:'task',label:'Start',next:[{to:'choice'}]},
+    {id:'choice',type:'decision',label:'Choose',next:[{to:'unused'},{to:'selected'}]},
+    {id:'unused',type:'task',label:'Unused branch'},
+    {id:'selected',type:'task',label:'Selected finish'},
+  ]}
+  const routedProcess=(await call('/processes',owner,{title:routedMap.title,map:routedMap,actingAs:'kim'})).body
+  let routed=(await call('/runs',owner,{processId:routedProcess.id,title:routedMap.title})).body
+  routed=(await call(`/runs/${routed.id}`,owner,{steps:routed.steps.map(step=>step.id==='start'?{...step,status:'done'}:step)})).body
+  routed=(await call(`/runs/${routed.id}`,owner,{decisions:[{stepId:'choice',to:'selected',reason:'normal path',ts:1}]})).body
+  routed=(await call(`/runs/${routed.id}`,owner,{steps:routed.steps.map(step=>step.id==='selected'?{...step,status:'done'}:step)})).body
+  assert.equal(routed.status,'completed')
+  assert.equal(routed.steps.find(step=>step.id==='unused').status,'pending')
+  await call('/runs',owner,{processId:routedProcess.id,title:`${routedMap.title} next`})
+  const routedAfter=(await call(`/runs/${routed.id}`,owner)).body
+  assert.equal(routedAfter.status,'completed')
+
  } finally {
   server.kill()
   await new Promise(r=>server.exitCode!==null?r():server.once('exit',r))

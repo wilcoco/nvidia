@@ -20,6 +20,26 @@ interface UnderstudyFieldDef {
   required?: boolean
 }
 
+interface UnderstudyElicitationRecord {
+  incident?: string
+  cues?: string[]
+  noviceMistake?: string
+  boundaries?: string[]
+  failureRecovery?: string
+  unspeakable?: string[]
+  answers: Array<{
+    questionId: string
+    question: string
+    answer: string
+    stage: 'incident' | 'cues' | 'novice_mistake' | 'boundary' | 'failure_recovery'
+    answeredAt: number
+    disposition: 'accepted' | 'declined' | 'needs_probe' | 'unspeakable'
+  }>
+  confirmed?: boolean
+  confirmedBy?: string
+  confirmedAt?: number
+}
+
 interface UnderstudyProcessMap {
   events?: import('../sdk/types').RunEvent[]
   title: string
@@ -38,6 +58,7 @@ interface UnderstudyProcessMap {
     completedBy?: string
     completedAt?: number
     resultData?: Record<string, unknown>
+    elicitation?: UnderstudyElicitationRecord
     next?: Array<{ to: string; condition?: string; criteria?: Record<string, Record<string, unknown>> }>
   }>
   confirmed?: boolean
@@ -50,6 +71,7 @@ interface UnderstudyProcessMap {
   priorityWhen?: Record<string, unknown>
   sourceWorklogId?: string
   sourceProcessId?: string
+  elicitationVersion?: 1
 }
 
 interface UnderstudyProcessSummary {

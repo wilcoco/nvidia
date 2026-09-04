@@ -48,6 +48,7 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.evaluate((mapTitle) => {
       window.Understudy.draftRevision({
         title: mapTitle,
+        elicitationVersion: 1,
         appliesWhen: {kind: 'operations', keywords: ['browser', 'handoff']},
         fields: [
           {key: 'packageCount', label: 'Package count', type: 'number', required: true},
@@ -69,6 +70,22 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
 
     const panel = page.locator('#understudy-panel-host')
     assert.equal(await panel.getByText(/auto-approve/i).count(), 0, 'the panel must not expose a global mutation bypass')
+    const agenda = await page.evaluate(() => window.__understudy.call('get_map_gaps'))
+    const incidentGap = agenda.gaps.find(gap => gap.stepId === 'route' && gap.kind === 'knowledge_incident')
+    assert.equal(incidentGap.resolves_gap, 'knowledge_incident:route')
+    await page.evaluate((resolvesGap) => window.__understudy.call('ask_user', {
+      question: 'Tell me about one recent parcel where experience changed the route decision.',
+      resolves_gap: resolvesGap,
+    }), incidentGap.resolves_gap)
+    const sourceAnswer = panel.locator('input.freetext')
+    await sourceAnswer.fill('A normal package count hid a crushed corner, so I stopped standard handoff.')
+    await sourceAnswer.press('Enter')
+    await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.steps.find(step => step.id === 'route')?.elicitation?.incident?.includes('crushed corner'))
+    const knowledge = panel.locator('details.knowledge').filter({hasText: 'Expert judgment sources · 1/5'})
+    await knowledge.waitFor()
+    await knowledge.locator('summary').click()
+    await panel.getByText('Draft evidence · confirmed when this playbook is saved').waitFor()
+    assert.equal(await panel.getByText(/Human-confirmed/).count(), 0, 'draft answers are proposals until Save as vN')
     const focusedPanelControl = () => panel.evaluate((host) => {
       const active = host.shadowRoot?.activeElement
       return active instanceof HTMLElement
@@ -156,6 +173,8 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
 
     await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
     await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 1)
+    await panel.locator('details.knowledge').locator('summary').click()
+    await panel.getByText(/Human-confirmed by kim/).waitFor()
     await panel.getByRole('button', {name: 'Propose changes (new draft)'}).click()
     const secondNote = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
     await secondNote.click()

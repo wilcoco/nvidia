@@ -5,12 +5,16 @@ video may remain because its visible product flow has not changed; update the
 description so the video build and current LIVE build are not presented as the
 same artifact.
 
+## Elevator pitch (195 characters including spaces)
+
+Understudy uses WebMCP to help teams surface the tacit judgment missing between formal process steps, then encode it in versioned playbooks that assign work, verify evidence, and route approvals.
+
 ## Short description
 
-Understudy starts from an ordinary work entry, interviews the expert about the
-steps and judgment around it, and turns the reviewed result into a reusable
-playbook. The integrated workspace assigns each step, captures required values,
-checks branches and routes human sign-off. WebMCP lets the visitor's agent and
+Understudy observes real work and interviews the expert about the tacit
+judgment missing between formal process steps. It turns the reviewed result
+into a reusable playbook whose tasks capture required values, check branches,
+route recovery, and reach human sign-off. WebMCP lets the visitor's agent and
 the page share that process-building surface.
 
 ## Technical description / project story

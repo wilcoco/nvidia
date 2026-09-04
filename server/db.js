@@ -129,7 +129,8 @@ function memoryBackend() {
       if (w && ['APPROVED', 'REJECTED'].includes(status)) {
         w.status = status === 'APPROVED' ? 'approved' : 'rejected'
         const run = runs.find((r) => r.id === String(w.data?.runId))
-        const patch = status === 'APPROVED' ? applySignoff(run, a) : null
+        const map = processes.find(p => p.id === run?.processId)?.map
+        const patch = status === 'APPROVED' ? applySignoff(run, a, map) : null
         if (patch) Object.assign(run, patch, { updatedAt: Date.now() })
       }
       return a
@@ -181,7 +182,7 @@ function memoryBackend() {
       const process = processes.find(p => p.id === run.processId)
       patch = enforceRunUpdate(run, patch, process?.map, patch._authority)
       delete patch._authority
-      patch = preserveSignoffs(run, patch)
+      patch = preserveSignoffs(run, patch, process?.map)
       if (!guardRunUpdate(run, patch, process?.map)) return run
       if (patch.steps) run.steps = patch.steps
       if (patch.decisions) run.decisions = patch.decisions
@@ -442,7 +443,7 @@ async function pgBackend(databaseUrl) {
           const linkedId = work[0]?.data?.runId
           if (status === 'APPROVED' && linkedId != null) {
             const { rows: linked } = await client.query('SELECT * FROM process_runs WHERE id::text=$1 FOR UPDATE', [String(linkedId)])
-            const patch = linked[0] && applySignoff(runRow(linked[0]), approval)
+            const patch = linked[0] && applySignoff(runRow(linked[0]), approval, process.rows[0]?.map)
             if (patch) await client.query('UPDATE process_runs SET steps=$2,status=$3,events=$4,updated_at=now() WHERE id=$1',
               [linked[0].id, JSON.stringify(patch.steps), patch.status, JSON.stringify(patch.events)])
           }
@@ -504,7 +505,7 @@ async function pgBackend(databaseUrl) {
         const process = await client.query('SELECT map FROM processes WHERE id=$1', [run.processId])
         patch = enforceRunUpdate(run, patch, process.rows[0]?.map, patch._authority)
         delete patch._authority
-        patch = preserveSignoffs(run, patch)
+        patch = preserveSignoffs(run, patch, process.rows[0]?.map)
         if (!guardRunUpdate(run, patch, process.rows[0]?.map)) return run
         const { rows } = await client.query(
           `UPDATE process_runs SET

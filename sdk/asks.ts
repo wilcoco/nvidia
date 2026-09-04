@@ -48,7 +48,14 @@ const questionResults = new Map<string, QuestionResult>()
 const questionWorklogs = new Map<string, string>()
 const actionResults = new Map<string, ActionResult>()
 const listeners = new Set<Listener>()
-const gapResolvers = new Set<(gapKey: string) => void>()
+export interface GapAnswerEvidence {
+  questionId: string
+  question: string
+  answer: string
+  answeredAt: number
+}
+
+const gapResolvers = new Set<(gapKey: string, evidence: GapAnswerEvidence) => void>()
 
 function notify() {
   listeners.forEach((fn) => fn())
@@ -60,7 +67,7 @@ export function subscribe(fn: Listener): () => void {
 }
 
 /** mapstore hooks in to mark gaps resolved without an import cycle. */
-export function onGapResolved(fn: (gapKey: string) => void): void {
+export function onGapResolved(fn: (gapKey: string, evidence: GapAnswerEvidence) => void): void {
   gapResolvers.add(fn)
 }
 
@@ -87,9 +94,13 @@ export function answerAsk(id: string, answer: string): void {
   if (idx < 0) return
   const ask = asks[idx]
   asks.splice(idx, 1)
+  const answeredAt = Date.now()
   questionResults.set(id, { status: 'answered', question: ask.question, answer })
   record('user', 'answer', answer, { question: ask.question, questionId: id })
-  if (ask.resolvesGap) gapResolvers.forEach((fn) => fn(ask.resolvesGap!))
+  if (ask.resolvesGap) {
+    const evidence = {questionId: id, question: ask.question, answer, answeredAt}
+    gapResolvers.forEach((fn) => fn(ask.resolvesGap!, evidence))
+  }
   notify()
 }
 

@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { enforceRunUpdate } from '../server/enforcement.js'
+import {routeProgress} from '../server/route.js'
 
 const contributor = {actor:'kim', role:'Contributor', authenticatedAs:'kim', canAdmin:false}
 const operator = {actor:'park', role:'Operations', authenticatedAs:'park', canAdmin:false}
@@ -87,4 +88,27 @@ test('completed evidence cannot change under a stale branch and only its role ma
   assert.equal(accepted.steps[0].status,'ready')
   assert.equal(accepted.steps[0].resultData,undefined)
   assert.equal(accepted.steps[0].completedBy,undefined)
+})
+
+test('server completion follows persisted decisions and ignores pending unchosen branches',()=>{
+  const map={entry:'measure',steps:[
+    {id:'measure',type:'task',next:[{to:'health'}]},
+    {id:'health',type:'decision',next:[{to:'pass'},{to:'restore'}]},
+    {id:'restore',type:'task',next:[{to:'diagnose'}]},
+    {id:'diagnose',type:'task'},
+    {id:'pass',type:'task',next:[{to:'sign'}]},
+    {id:'sign',type:'approval'},
+  ]}
+  const steps=[
+    {id:'measure',type:'task',status:'done'},
+    {id:'restore',type:'task',status:'pending'},
+    {id:'diagnose',type:'task',status:'pending'},
+    {id:'pass',type:'task',status:'done'},
+    {id:'sign',type:'approval',status:'done',resultId:'review-1'},
+  ]
+  const decisions=[{stepId:'health',to:'pass',ts:1}]
+  assert.equal(routeProgress(map,steps,decisions).completed,true)
+  const recomputed=enforceRunUpdate({id:'6',startedBy:'kim',status:'active',steps,decisions,events:[]},{status:'active'},map,contributor)
+  assert.equal(recomputed.status,'completed')
+  assert.deepEqual(routeProgress(map,steps,decisions).reachable,['measure','health','pass','sign'])
 })

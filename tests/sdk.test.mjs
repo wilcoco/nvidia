@@ -24,6 +24,57 @@ test('interview requires inputs per task and refuses to save an unassigned form'
  map.humanConfirmMap()
  assert.equal(map.getMap().confirmed,true)
 })
+test('adaptive expert interview preserves source evidence without turning prose into executable rules', () => {
+ const {map,asks}=fixture()
+ map.proposeMap({title:'expert judgment',steps:[
+  step('observe',{detail:'Inspect the sample.',next:[{to:'route'}]}),
+  step('route',{type:'decision',detail:'Choose recovery or approval.',next:[{to:'recover',condition:'needs recovery'},{to:'approve',condition:'acceptable'}]}),
+  step('recover',{detail:'Correct and retry.'}),step('approve',{type:'approval'})]})
+ const answerNext=(expectedKind,question,answer)=>{
+  const gap=map.mapGaps().find(g=>g.stepId==='route'&&g.kind.startsWith('knowledge_'))
+  assert.equal(gap.kind,expectedKind)
+  assert.equal(gap.resolves_gap,`${expectedKind}:route`)
+  const id=asks.askUser(question,undefined,true,gap.resolves_gap)
+  asks.answerAsk(id,answer)
+  return id
+ }
+ const incidentId=answerNext('knowledge_incident','Tell me about one recent routing decision.','A sample passed the normal reading but its surface rhythm looked wrong.')
+ assert.equal(map.getMap().steps[1].elicitation.incident,'A sample passed the normal reading but its surface rhythm looked wrong.')
+ assert.equal(map.getMap().steps[1].elicitation.answers[0].questionId,incidentId)
+ answerNext('knowledge_cues','What signal changed your call?','I just know it by feel.')
+ let gap=map.mapGaps().find(g=>g.stepId==='route'&&g.kind.startsWith('knowledge_'))
+ assert.equal(gap.kind,'knowledge_cues','one concrete sensory follow-up remains')
+ assert.match(gap.question_goal,/one final attempt/i)
+ answerNext('knowledge_cues','Can that feeling be separated into one observable channel?','It cannot be put into words; it has to be learned by watching.')
+ assert.equal(map.getMap().steps[1].elicitation.unspeakable.length,1)
+ answerNext('knowledge_novice_mistake','What would a less experienced person do?','They would approve from the normal reading and miss the unstable surface rhythm.')
+ answerNext('knowledge_boundary','When does that judgment stop applying?','If the reference sample has the same rhythm, stop and recalibrate before deciding.')
+ answerNext('knowledge_failure_recovery','When did it fail, and what happened next?','We once rejected a sound batch; compare the reference, recalibrate, then repeat inspection.')
+ assert.equal(map.mapGaps().some(g=>g.stepId==='route'&&g.kind.startsWith('knowledge_')),false)
+ assert.equal(map.getMap().steps[1].next.every(edge=>edge.criteria===undefined),true,'raw prose never becomes an executable route')
+ map.proposeMap({title:'expert judgment revised',steps:[
+  step('observe',{detail:'Inspect the sample.',next:[{to:'route'}]}),
+  step('route',{type:'decision',detail:'Choose recovery or approval.',next:[{to:'recover'},{to:'approve'}]}),
+  step('recover',{detail:'Correct and retry.'}),step('approve',{type:'approval'})]})
+ assert.equal(map.getMap().steps[1].elicitation.answers.length,6,'source evidence survives a re-propose of the same step')
+ assert.equal(map.getMap().steps[1].elicitation.confirmed,false)
+ map.humanConfirmMap()
+ assert.equal(map.getMap().steps[1].elicitation.confirmed,true)
+ assert.equal(map.getMap().steps[1].elicitation.confirmedBy,'kim')
+})
+test('legacy saved playbooks remain confirmed without per-answer migration', () => {
+ const {map}=fixture()
+ map.loadSavedMap({title:'legacy',version:4,steps:[step('work',{detail:'Existing reviewed instructions.'}),step('approve',{type:'approval'})]})
+ assert.equal(map.getMap().confirmed,true)
+ assert.equal(map.getMap().elicitationVersion,undefined)
+ assert.equal(map.getMap().steps[0].elicitation,undefined)
+ assert.equal(map.mapGaps().length,0,'a running legacy playbook never opens an interview')
+ map.reopenAsDraft()
+ assert.equal(map.mapGaps().some(g=>g.kind.startsWith('knowledge_')),false,'legacy absence means previously confirmed')
+ map.humanConfirmMap()
+ assert.equal(map.getMap().confirmed,true)
+ assert.equal(map.getMap().steps[0].elicitation,undefined)
+})
 test('dropdown submissions control both routes and cannot be replaced by agent claims', () => {
  for(const method of ['Courier','Pickup']){
   const {map}=fixture()

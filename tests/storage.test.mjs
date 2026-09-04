@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createDb} from '../server/db.js'
+import {applySignoff} from '../server/runstate.js'
 const configs=[['memory',''],...(process.env.TEST_DATABASE_URL?[['postgres',process.env.TEST_DATABASE_URL]]:[])]
 for(const [name,url] of configs) test(`${name}: each review keeps the measured evidence instead of the original log`,async()=>{
  process.env.DATABASE_URL=url
@@ -102,5 +103,68 @@ for(const [name,url] of configs)test(`${name}: execution history pages past fift
   const earlier=await db.listRuns(p.id,{before:first.at(-1).id,limit:10})
   assert.equal(earlier.length,3)
   assert.deepEqual([...first,...earlier].map(r=>r.id),ids.reverse())
+ }finally{await db.close?.()}
+})
+
+for(const [name,url] of configs)test(`${name}: final sign-off completes only the persisted active route`,async()=>{
+ process.env.DATABASE_URL=url
+ const db=await createDb()
+ try{
+  const cases=[
+   {
+    title:'route clean pass',entry:'measure',
+    steps:[
+     {id:'measure',type:'task',next:[{to:'health'}]},
+     {id:'health',type:'decision',next:[{to:'pass'},{to:'recover'}]},
+     {id:'recover',type:'task'},
+     {id:'pass',type:'task',next:[{to:'sign'}]},
+     {id:'sign',type:'approval'},
+    ],
+    runtime:[['measure','task','done'],['recover','task','pending'],['pass','task','done'],['sign','approval','ready']],
+    decisions:[{stepId:'health',to:'pass',ts:1}],
+   },
+   {
+    title:'route recovered pass',entry:'measure',
+    steps:[
+     {id:'measure',type:'task',next:[{to:'health'}]},
+     {id:'health',type:'decision',next:[{to:'pass'},{to:'recover'}]},
+     {id:'pass',type:'task'},
+     {id:'recover',type:'task',next:[{to:'verify'}]},
+     {id:'verify',type:'task',next:[{to:'sign'}]},
+     {id:'sign',type:'approval'},
+    ],
+    runtime:[['measure','task','done'],['pass','task','pending'],['recover','task','done'],['verify','task','done'],['sign','approval','ready']],
+    decisions:[{stepId:'health',to:'recover',ts:1}],
+   },
+   {
+    title:'route replan',entry:'measure',
+    steps:[
+     {id:'measure',type:'task',next:[{to:'health'}]},
+     {id:'health',type:'decision',next:[{to:'pass'},{to:'diagnose'}]},
+     {id:'pass',type:'approval'},
+     {id:'diagnose',type:'decision',next:[{to:'retry'},{to:'plan'}]},
+     {id:'retry',type:'task'},
+     {id:'plan',type:'approval',approvalPurpose:'plan'},
+    ],
+    runtime:[['measure','task','done'],['pass','approval','pending'],['retry','task','pending'],['plan','approval','ready']],
+    decisions:[{stepId:'health',to:'diagnose',ts:1},{stepId:'diagnose',to:'plan',ts:2}],
+   },
+  ]
+  for(const item of cases){
+   const map={entry:item.entry,steps:item.steps}
+   const process=await db.saveProcess({title:item.title,createdBy:'kim',map})
+   const runtime=item.runtime.map(([id,type,status])=>({id,type,status}))
+   const run=await db.startRun({processId:process.id,title:item.title,startedBy:'kim',steps:runtime})
+   await db.updateRun(run.id,{decisions:item.decisions})
+   const current=await db.getRun(run.id)
+   const target=current.steps.find(step=>step.type==='approval' && step.status==='ready')
+   const patch=applySignoff(current,{id:`review-${run.id}`,stepId:target.id,approver:'lee',decidedBySession:'lee'},map)
+   assert.equal(patch.status,'completed',item.title)
+   await db.updateRun(run.id,patch)
+   assert.equal((await db.getRun(run.id)).status,'completed',item.title)
+   const next=await db.startRun({processId:process.id,title:`${item.title} next`,startedBy:'kim',steps:runtime})
+   assert.ok(next.id)
+   assert.equal((await db.getRun(run.id)).status,'completed','a later run cannot reclassify a signed completion')
+  }
  }finally{await db.close?.()}
 })

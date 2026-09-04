@@ -25,9 +25,12 @@ the demo workspace includes those adapters and its server enforcement module.
    process can be saved to a shared library so another worker can choose and
    follow a reviewed version.
 
-Company processes live in people's habits, not in documents. Understudy turns
-**doing** into **documentation** into guided execution, without requiring the
-expert to begin by authoring an SOP from a blank page.
+Many organizations already have SOPs, ERP workflows and explicitly programmed
+processes. Daily execution still contains gaps between those formal steps:
+weak signals, exceptions, recovery choices and handoff judgment. Understudy
+helps a team surface those gaps during real work, review them, and turn the
+confirmed result into guided execution without asking the expert to begin with
+a blank SOP.
 
 The point is not "AI automates your work" — recorders, task miners, and
 computer-use agents already chase that, all of them turn-taking: the human
@@ -92,8 +95,12 @@ clears only the current tab’s unsaved workspace and keeps shared records.
    how do I use it?” to see the introduction on the page.
 2. As Kim, describe a task such as “I’m preparing a customer order for delivery.”
    Choose to create a playbook and answer what must happen before and after it.
-3. Answer questions about owners, required numbers, dropdown choices and routing
-   rules. Review the map beside your work. For an existing confirmed playbook,
+3. Answer one focused question at a time. Around judgment-heavy steps the
+   interview moves from a real incident to observable cues, the tempting novice
+   mistake, boundaries/exceptions, and failure/recovery. The source answers stay
+   visible as draft evidence; the existing **Save as vN** action confirms them
+   with the full playbook. Also define owners, required numbers, dropdown
+   choices and routing rules. Review the map beside your work. For an existing confirmed playbook,
    use **Propose changes (new draft)** before editing. Ask the agent to read your
    corrections, then save the reviewed version.
 4. Run that saved version. Kim’s preparation leads to Park’s task form. Enter
@@ -113,13 +120,13 @@ process. Browser viewport tests are separate from physical-device testing.
 | `get_recent_actions` | The action journal (cursor-based). Human answers to agent questions surface here too. |
 | `get_page_state` | Host-provided business state (records, statuses). |
 | `propose_process_map` | Draw/replace the draft process map rendered in the panel. |
-| `get_process_map` | Current map including human edits, confirmed flag, and per-step `done` flags. |
+| `get_process_map` | Current map including human edits, elicitation source evidence, confirmed flag, and per-step `done` flags. |
 | `get_process_progress` | Run-state of the loaded process: done / next-up / skipped steps, plus a suggested next action — the missed-step coach. |
 | `list_my_tasks` | The active persona's worklist: their ready steps (with required fields) and what the run is waiting on from other roles. |
 | `get_map_edits` | Human corrections to the map (cursor-based) — they outrank agent inference. |
-| `get_map_gaps` | The interview agenda: what the map does not yet know — missing before/after steps, undecided branches, no sign-off, steps without judgment rules. |
-| `update_step` | Refine one step in place — the agent writes the human's explained judgment rules into step notes. |
-| `ask_user` | Shows a question card and returns a pending id immediately (humans take longer than tool timeouts). Options can carry a `run` binding that executes an action on the human's click. |
+| `get_map_gaps` | Adaptive agenda for structural gaps and expert judgment: incident → observable cues → novice mistake → boundary → failure/recovery. |
+| `update_step` | Refine one step in place and encode the reviewed operational meaning; raw interview prose never becomes an executable rule automatically. |
+| `ask_user` | Shows one question card and returns a pending id immediately. With a gap key, the page preserves the source question, answer, time and disposition on the relevant step. Options can carry a `run` binding. |
 | `get_question_result` | Poll a question: pending, or answered with the human's answer. |
 | `get_action_result` | Poll a gated run_action: pending, denied, or complete with the result. |
 | `update_map_fields` | Set the playbook's data contract — typed fields (from the variables interview) rendered as a form for the next worker. |
@@ -193,6 +200,10 @@ completed run returns. It uses `CHROME_PATH` when set and otherwise looks for
 the standard Chrome installation path; when Chrome is unavailable, the
 browser test reports as skipped locally. Set `BROWSER_E2E_REQUIRED=1` (or run
 under `CI=true`) to make a missing Chrome installation fail this required gate.
+
+The adaptive interview's methodology, compatibility contract and clean-room
+implementation boundary are documented in
+[`docs/ELICITATION_ENGINE.md`](docs/ELICITATION_ENGINE.md).
 
 ## Deploy (Railway)
 

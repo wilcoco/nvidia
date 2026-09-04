@@ -1,4 +1,4 @@
-const TERMINAL = new Set(['done', 'not_applicable', 'conditional'])
+import {routeProgress} from './route.js'
 
 function refuse(error, detail, status = 409) {
   throw Object.assign(new Error(error), { status, code: error, detail })
@@ -30,53 +30,11 @@ export function criteriaResult(criteria, values) {
   }))
 }
 
-function activeDecisionMap(decisions = []) {
-  const result = new Map()
-  for (const decision of decisions) {
-    if (!decision?.invalidated) result.set(decision.stepId, decision)
-    else result.delete(decision.stepId)
-  }
-  return result
-}
-
-function nextEdges(design, index) {
-  const step = design[index]
-  if (Array.isArray(step?.next) && step.next.length) return step.next
-  return design[index + 1] ? [{ to: design[index + 1].id }] : []
-}
-
 /** Return the next task/approval or unresolved decision on the persisted route.
  * The target task is treated as unfinished, even when the submitted snapshot
  * marks it done, so a direct jump cannot make itself look eligible. */
 function liveGate(map, steps, decisions, targetId) {
-  const design = map?.steps ?? []
-  if (!design.length) return null
-  const byId = new Map(steps.map((step) => [step.id, step]))
-  const chosen = activeDecisionMap(decisions)
-  let id = map.entry && design.some((step) => step.id === map.entry) ? map.entry : design[0].id
-  const visits = new Map()
-  for (let guard = 0; id && guard < design.length * 4 + 4; guard++) {
-    const index = design.findIndex((step) => step.id === id)
-    if (index < 0) return null
-    const step = design[index]
-    visits.set(id, (visits.get(id) ?? 0) + 1)
-    if ((visits.get(id) ?? 0) > 2) return null
-    if (step.type === 'decision') {
-      const edges = nextEdges(design, index)
-      if (edges.length > 1) {
-        const decision = chosen.get(step.id)
-        if (!decision || !edges.some((edge) => edge.to === decision.to)) return { id: step.id, type: 'decision' }
-        id = decision.to
-      } else id = edges[0]?.to
-      continue
-    }
-    const runtime = byId.get(step.id)
-    const terminal = step.id !== targetId && TERMINAL.has(runtime?.status)
-    if (!terminal) return { id: step.id, type: step.type }
-    const edges = nextEdges(design, index)
-    id = edges.length > 1 ? chosen.get(step.id)?.to : edges[0]?.to
-  }
-  return null
+  return routeProgress(map, steps, decisions, targetId).next
 }
 
 function evidenceForDecision(map, steps, decision) {
@@ -219,8 +177,7 @@ export function enforceRunUpdate(run, patch, map, authority) {
     if (!definition) refuse('invalid_event_step', 'Audit events must reference a saved playbook step.', 400)
     return { ...event, label: definition.label || definition.id, actor: authority.actor, authenticatedBy: authority.authenticatedAs }
   }) : patch.events
-  const noOpen = incoming.filter((step) => step.type !== 'gate').every((step) => TERMINAL.has(step.status)) &&
-    !incoming.some((step) => step.type === 'gate' && !TERMINAL.has(step.status))
-  const status = patch.status === 'abandoned' ? 'abandoned' : noOpen ? 'completed' : 'active'
+  const completed = routeProgress(map, incoming, decisions).completed
+  const status = patch.status === 'abandoned' ? 'abandoned' : completed ? 'completed' : 'active'
   return { ...patch, steps: patch.steps ? incoming : undefined, decisions: patch.decisions ? decisions : undefined, events, status }
 }

@@ -1,5 +1,7 @@
+import {routeProgress} from './route.js'
+
 // Approval outcomes are server-owned, even when the reviewer uses another login.
-export function applySignoff(run, approval) {
+export function applySignoff(run, approval, map) {
   if (!run || run.status === 'abandoned') return null
   const steps = (run.steps ?? []).map((s) => ({ ...s }))
   const step = steps.find((s) => s.type === 'approval' &&
@@ -13,21 +15,18 @@ export function applySignoff(run, approval) {
     stepId: step.id, label: step.label, actor: approval.approver,
     authenticatedBy: approval.decidedBySession ?? approval.approver,
     note: approval.comment ?? 'Approved', resultId: String(approval.id) }])
-  return { steps, events, status: finished(steps) ? 'completed' : 'active' }
-}
-
-function finished(steps) {
-  return steps.length > 0 && steps.every((s) => ['done', 'not_applicable', 'conditional'].includes(s.status))
+  return { steps, events, status: routeProgress(map, steps, run.decisions).completed ? 'completed' : 'active' }
 }
 
 // A browser's delayed snapshot cannot undo a sign-off already accepted by the server.
-export function preserveSignoffs(run, patch) {
+export function preserveSignoffs(run, patch, map) {
   if (!Array.isArray(patch.steps)) return patch
   const signed = new Map((run.steps ?? [])
     .filter((s) => s.type === 'approval' && s.status === 'done' && s.resultId)
     .map((s) => [s.id, s]))
   const steps = patch.steps.map((s) => signed.has(s.id) ? { ...signed.get(s.id) } : s)
-  return { ...patch, steps, ...(signed.size && finished(steps) ? { status: 'completed' } : {}) }
+  const decisions = patch.decisions ?? run.decisions
+  return { ...patch, steps, ...(signed.size && routeProgress(map, steps, decisions).completed ? { status: 'completed' } : {}) }
 }
 
 export function reviewFingerprint(run, scope) {

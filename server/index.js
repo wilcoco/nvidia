@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { createDb, verifyPassword } from './db.js'
 import { approvalGate, reviewFingerprint } from './runstate.js'
 import { validateFieldBindings, validateFieldValues } from '../shared/fields.js'
+import {routeProgress} from './route.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const PORT = Number(process.env.PORT || 8787)
@@ -381,18 +382,13 @@ app.post('/api/runs', auth, asyncHandler(async (req, res) => {
       // Three-way classification: real open work → abandoned (+ cancel its
       // reviews); everything done → completed; only sign-off outstanding →
       // stays ACTIVE awaiting approval (multi-pending is supported).
-      const steps = Array.isArray(r.steps) ? r.steps : []
-      const open = steps.filter(
-        (s) => s && s.type !== 'approval' && ['ready', 'blocked', 'skipped', 'pending'].includes(String(s.status ?? '')),
-      )
-      const approvalsOutstanding = steps.some(
-        (s) => s && s.type === 'approval' && !['done', 'not_applicable'].includes(String(s.status ?? '')),
-      )
-      if (open.length > 0) {
+      const priorProcess = await db.getProcess(r.processId)
+      const progress = routeProgress(priorProcess?.map, r.steps, r.decisions)
+      if (progress.completed) {
+        await db.updateRun(r.id, { status: 'completed' })
+      } else if (progress.next?.type !== 'approval') {
         await db.updateRun(r.id, { status: 'abandoned' })
         await cancelPendingApprovalsForRun(r.id)
-      } else if (steps.length > 0 && !approvalsOutstanding) {
-        await db.updateRun(r.id, { status: 'completed' })
       }
       // else: awaiting sign-off — leave active, keep its pending review.
     }
