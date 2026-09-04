@@ -36,6 +36,12 @@ for(const [mode,url] of modes)test(`${mode}: HTTP guards and cross-login approva
   assert.equal((await call('/runs',operator,{processId:formProcess.body.id,title:'TEST spoofed run',actingAs:'kim'})).status,403)
   for(const resultData of [{},{quantity:'12',method:'Pickup'},{quantity:12,method:'Other'}])
     assert.equal((await call(`/runs/${formRun.id}`,owner,{steps:[{id:'input',type:'task',status:'done',resultData}]})).status,400)
+  for(const status of ['conditional','not_applicable']){
+    const forged=await call(`/runs/${formRun.id}`,owner,{status:'completed',steps:[{id:'input',type:'task',status}]})
+    assert.equal(forged.status,200)
+    assert.equal(forged.body.status,'active')
+    assert.equal(forged.body.steps[0].status,'pending')
+  }
   assert.equal((await call(`/runs/${formRun.id}`,owner,{status:'completed',steps:[{id:'input',type:'task',status:'done',resultData:{quantity:12.5,method:'Pickup'}}]})).status,200)
   assert.equal((await call(`/runs/${formRun.id}`,null)).status,401)
   const otherViewer=await call(`/runs/${formRun.id}`,reviewer)

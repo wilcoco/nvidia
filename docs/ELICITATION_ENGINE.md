@@ -29,6 +29,11 @@ TypeScript state machine for Understudy's WebMCP tool and process-map model.
 - A first answer such as “I just know it by feel” triggers one concrete
   observable-channel follow-up. If it still cannot be expressed, the answer is
   preserved as `unspeakable`, meaning it needs observation or apprenticeship.
+- The interview starts with only the highest-value judgment point and shows
+  one question at a time. When its five evidence stages are complete, the
+  panel stops. Only a human click on **Explore another judgment point** adds
+  the next point to the agenda. The playbook can be saved earlier and refined
+  in a later revision, so the interview never becomes a mandatory long form.
 - Raw prose never becomes a numeric field, branch criterion, route or approval
   rule automatically. The agent must show its interpretation in the draft and
   the human must review it.

@@ -76,10 +76,13 @@ export function subscribe(fn: Listener): () => void {
  *  survive a re-propose: resolvedGaps merge with the previous draft's. */
 export function proposeMap(next: ProcessMap): void {
   const prevResolved = map?.resolvedGaps ?? []
+  const previousExpanded = map?.elicitationExpandedSteps ?? []
   const previousSteps = new Map((map?.steps ?? []).map((step) => [step.id, step]))
   map = {
     ...next,
     elicitationVersion: next.elicitationVersion ?? (map?.sourceProcessId ? undefined : 1),
+    elicitationExpandedSteps: [...new Set(next.elicitationExpandedSteps ?? previousExpanded)]
+      .filter(stepId => next.steps.some(step => step.id === stepId)),
     steps: next.steps.map((step) => ({
       ...step,
       elicitation: step.elicitation ?? previousSteps.get(step.id)?.elicitation,
@@ -1044,14 +1047,15 @@ export function mapGaps(): MapGap[] {
       fallback_question: 'Who gives the final sign-off for this process, and at which point?',
     })
   }
-  // Process structure is only the map. For the steps where judgment matters,
-  // surface one adaptive knowledge-engineering move at a time: real incident,
-  // observable cue, novice counterexample, boundary, then failure/recovery.
+  // Process structure is only the map. Start with one highest-value judgment
+  // point so an expert is not silently enrolled in a long questionnaire. The
+  // human can explicitly open another point in the panel after finishing this
+  // one. Even within the active set, expose only one adaptive move at a time.
   if (map.elicitationVersion === 1) {
-    for (const step of elicitationHotspots(map.steps)) {
-      const gap = nextElicitationGap(step)
-      if (gap) gaps.push(gap)
-    }
+    const hotspots = elicitationHotspots(map.steps)
+    const active = new Set([hotspots[0]?.id, ...(map.elicitationExpandedSteps ?? [])].filter(Boolean))
+    const gap = hotspots.filter(step => active.has(step.id)).map(nextElicitationGap).find(Boolean)
+    if (gap) gaps.push(gap)
   }
   for (const s of actionable.filter((x) => !x.action && !x.humanOnly)) {
     gaps.push({
@@ -1092,6 +1096,50 @@ export function mapGaps(): MapGap[] {
     }))
     .filter((g) => g.kind === 'field_assignment' || (!resolved.has(g.resolves_gap!) && !resolved.has(g.kind)))
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0))
+}
+
+export interface ElicitationInterviewState {
+  active?: {stepId: string; step: string; covered: number; total: 5; complete: boolean}
+  activePoints: number
+  totalPoints: number
+  next?: {stepId: string; step: string}
+  canExploreAnother: boolean
+}
+
+/** Human-facing interview scope. One judgment point is active by default;
+ * further points only enter the agenda through exploreAnotherJudgmentPoint. */
+export function elicitationInterviewState(): ElicitationInterviewState | null {
+  if (!map || map.elicitationVersion !== 1) return null
+  const hotspots = elicitationHotspots(map.steps)
+  if (!hotspots.length) return {activePoints: 0, totalPoints: 0, canExploreAnother: false}
+  const expanded = new Set(map.elicitationExpandedSteps ?? [])
+  const activeSteps = hotspots.filter((step, index) => index === 0 || expanded.has(step.id))
+  const current = activeSteps.find(step => nextElicitationGap(step)) ?? activeSteps[activeSteps.length - 1]
+  if (!current) return {activePoints: 0, totalPoints: hotspots.length, canExploreAnother: false}
+  const covered = new Set((current.elicitation?.answers ?? [])
+    .filter(answer => answer.disposition !== 'needs_probe')
+    .map(answer => answer.stage)).size
+  const allActiveComplete = activeSteps.every(step => !nextElicitationGap(step))
+  const next = allActiveComplete ? hotspots.find(step => !activeSteps.some(active => active.id === step.id)) : undefined
+  return {
+    active: {stepId: current.id, step: current.label, covered, total: 5, complete: !nextElicitationGap(current)},
+    activePoints: activeSteps.length,
+    totalPoints: hotspots.length,
+    next: next ? {stepId: next.id, step: next.label} : undefined,
+    canExploreAnother: !map.confirmed && Boolean(next),
+  }
+}
+
+/** Opt another judgment point into the interview. This is deliberately a
+ * human panel gesture; get_map_gaps never expands the scope on its own. */
+export function exploreAnotherJudgmentPoint(): boolean {
+  if (structureLocked() || !map) return false
+  const state = elicitationInterviewState()
+  if (!state?.canExploreAnother || !state.next) return false
+  ;(map.elicitationExpandedSteps ??= []).push(state.next.stepId)
+  record('user', 'map', `chose to explore another judgment point: "${state.next.step}"`)
+  notify()
+  return true
 }
 
 /** Reapply a persisted run's progress onto the freshly loaded map (page reload). */

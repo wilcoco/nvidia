@@ -157,6 +157,10 @@ h2.activity-toggle:hover { color: #94a3b8; }
 .step .knowledge summary { cursor: pointer; padding: 5px 7px; color: #c4b5fd; font-weight: 650; list-style-position: inside; }
 .step .knowledge-body { padding: 0 8px 7px; line-height: 1.45; }
 .step .knowledge-row { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.interview-scope { background: #172337; border: 1px solid #35506f; border-radius: 9px; padding: 10px 11px; color: #cbd5e1; font-size: 12px; line-height: 1.5; }
+.interview-scope strong { color: #f1f5f9; }
+.interview-scope .scope-note { color: #94a3b8; margin-top: 4px; }
+.interview-scope button { margin-top: 9px; width: 100%; border: 1px solid #6ee7b7; border-radius: 6px; padding: 7px 9px; background: #173e36; color: #d1fae5; cursor: pointer; }
 .step .knowledge-row b { color: #ddd6fe; }
 .step .knowledge-source { margin-top: 6px; padding-top: 5px; border-top: 1px solid rgba(167,139,250,.18); color: #7f8a9c; }
 .step .knowledge-status { color: #a78bfa; }
@@ -1064,6 +1068,24 @@ function render() {
     const flow = el('div', 'flow')
     map.steps.forEach((s, i) => renderStep(s, i, flow, statuses.get(s.id)))
     mapSection.appendChild(flow)
+    if (!map.confirmed) {
+      const interview = mapstore.elicitationInterviewState()
+      if (interview?.active) {
+        const scope = el('div', 'interview-scope')
+        scope.appendChild(el('strong', undefined,
+          `Focused expert interview · ${interview.active.step} · ${interview.active.covered}/${interview.active.total}`))
+        scope.appendChild(el('div', 'scope-note', interview.active.complete
+          ? 'This judgment point is complete. Save now, or deliberately explore one more point.'
+          : 'One question at a time. This interview is optional: you can save now and continue in a later revision.'))
+        if (interview.canExploreAnother && interview.next) {
+          const more = el('button', undefined, 'Explore another judgment point')
+          more.title = `Add “${interview.next.step}” to this interview`
+          more.onclick = () => mapstore.exploreAnotherJudgmentPoint()
+          scope.appendChild(more)
+        }
+        mapSection.appendChild(scope)
+      }
+    }
     if (map.confirmed && isRunComplete()) {
       const card = el('div', 'run-summary')
       card.appendChild(el('div', 'rs-title', '🏁 Run complete — all required steps handled'))

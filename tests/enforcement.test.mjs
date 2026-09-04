@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { enforceRunUpdate } from '../server/enforcement.js'
 import {routeProgress} from '../server/route.js'
+import {approvalGate} from '../server/runstate.js'
 
 const contributor = {actor:'kim', role:'Contributor', authenticatedAs:'kim', canAdmin:false}
 const operator = {actor:'park', role:'Operations', authenticatedAs:'park', canAdmin:false}
@@ -111,4 +112,67 @@ test('server completion follows persisted decisions and ignores pending unchosen
   const recomputed=enforceRunUpdate({id:'6',startedBy:'kim',status:'active',steps,decisions,events:[]},{status:'active'},map,contributor)
   assert.equal(recomputed.status,'completed')
   assert.deepEqual(routeProgress(map,steps,decisions).reachable,['measure','health','pass','sign'])
+})
+
+test('browser branch presentation cannot waive reachable work or approval',()=>{
+  const map={steps:[
+    {id:'work',type:'task',label:'Do work',role:'Contributor'},
+    {id:'sign',type:'approval',label:'Approve work',role:'Reviewer'},
+  ]}
+  const run={id:'7',startedBy:'kim',status:'active',steps:map.steps.map(step=>({...step,status:'pending'})),decisions:[],events:[],deviations:0}
+  for(const status of ['conditional','not_applicable']){
+    const patch=enforceRunUpdate(run,{status:'completed',steps:run.steps.map(step=>({...step,status}))},map,contributor)
+    assert.equal(patch.status,'active')
+    assert.deepEqual(patch.steps.map(step=>step.status),['pending','pending'])
+  }
+  assert.throws(()=>enforceRunUpdate(run,{steps:run.steps.map(step=>step.id==='sign'
+    ? {...step,status:'not_applicable',naReason:'skip approval'} : step)},map,reviewer),/approval_server_owned/)
+  const deviation=enforceRunUpdate(run,{steps:run.steps.map(step=>step.id==='work'
+    ? {...step,status:'not_applicable',naReason:'No shipment was received'} : step)},map,contributor)
+  assert.equal(deviation.status,'active')
+  assert.equal(deviation.steps[0].completedBy,'kim')
+  assert.equal(deviation.events[0].kind,'deviation')
+  assert.equal(deviation.deviations,1)
+})
+
+test('explicit terminal and approval selection follow the persisted active route',()=>{
+  const map={entry:'measure',steps:[
+    {id:'measure',type:'task',next:[{to:'health'}]},
+    {id:'health',type:'decision',next:[{to:'sign'},{to:'restore'}]},
+    {id:'sign',type:'approval',next:[]},
+    {id:'restore',type:'task',next:[{to:'diagnose'}]},
+    {id:'diagnose',type:'decision',next:[{to:'recoverSign'},{to:'plan'}]},
+    {id:'recoverSign',type:'approval',next:[]},
+    {id:'plan',type:'approval',approvalPurpose:'plan',next:[]},
+  ]}
+  const base=[
+    {id:'measure',type:'task',status:'done'},
+    {id:'sign',type:'approval',status:'pending'},
+    {id:'restore',type:'task',status:'done'},
+    {id:'recoverSign',type:'approval',status:'ready'},
+    {id:'plan',type:'approval',status:'pending'},
+  ]
+  const recovered={status:'active',steps:base,decisions:[
+    {stepId:'health',to:'restore',ts:1},{stepId:'diagnose',to:'recoverSign',ts:2},
+  ]}
+  assert.deepEqual(approvalGate(recovered,map,'recoverSign').open,[])
+  assert.equal(approvalGate(recovered,map).stepId,'recoverSign')
+  const signed=base.map(step=>step.id==='recoverSign'?{...step,status:'done',resultId:'review-1'}:step)
+  assert.equal(routeProgress(map,signed,recovered.decisions).completed,true)
+  assert.deepEqual(routeProgress(map,signed,recovered.decisions).reachable,
+    ['measure','health','restore','diagnose','recoverSign'])
+
+  const replanned={...recovered,steps:base.map(step=>step.id==='recoverSign'?{...step,status:'pending'}:
+    step.id==='plan'?{...step,status:'ready'}:step),decisions:[
+      {stepId:'health',to:'restore',ts:1},{stepId:'diagnose',to:'plan',ts:2},
+    ]}
+  assert.deepEqual(approvalGate(replanned,map,'plan').open,[])
+  assert.equal(approvalGate(replanned,map).stepId,'plan')
+
+  const cleanSteps=base.map(step=>step.id==='restore'?{...step,status:'pending'}:
+    step.id==='sign'?{...step,status:'done',resultId:'review-clean'}:
+      step.id==='recoverSign'?{...step,status:'pending'}:step)
+  const cleanDecisions=[{stepId:'health',to:'sign',ts:1}]
+  assert.equal(routeProgress(map,cleanSteps,cleanDecisions).completed,true)
+  assert.deepEqual(routeProgress(map,cleanSteps,cleanDecisions).reachable,['measure','health','sign'])
 })

@@ -168,3 +168,37 @@ for(const [name,url] of configs)test(`${name}: final sign-off completes only the
   }
  }finally{await db.close?.()}
 })
+
+for(const [name,url] of configs)test(`${name}: review requests use the persisted active route and explicit terminals`,async()=>{
+ process.env.DATABASE_URL=url
+ const db=await createDb()
+ try{
+  const map={entry:'measure',steps:[
+   {id:'measure',type:'task',next:[{to:'health'}]},
+   {id:'health',type:'decision',next:[{to:'sign'},{to:'restore'}]},
+   {id:'sign',type:'approval',label:'Clean approval',next:[]},
+   {id:'restore',type:'task',next:[{to:'diagnose'}]},
+   {id:'diagnose',type:'decision',next:[{to:'recoverSign'},{to:'plan'}]},
+   {id:'recoverSign',type:'approval',label:'Recovery approval',next:[]},
+   {id:'plan',type:'approval',label:'Plan approval',approvalPurpose:'plan',next:[]},
+  ]}
+  const process=await db.saveProcess({title:`route gate ${name}`,createdBy:'kim',map})
+  for(const route of [
+   {target:'sign',decisions:[{stepId:'health',to:'sign',ts:1}],done:['measure']},
+   {target:'recoverSign',decisions:[{stepId:'health',to:'restore',ts:1},{stepId:'diagnose',to:'recoverSign',ts:2}],done:['measure','restore']},
+   {target:'plan',decisions:[{stepId:'health',to:'restore',ts:1},{stepId:'diagnose',to:'plan',ts:2}],done:['measure','restore']},
+  ]){
+   const runtime=map.steps.filter(step=>step.type!=='decision').map(step=>({...step,
+    status:route.done.includes(step.id)?'done':step.id===route.target?'ready':'pending'}))
+   const run=await db.startRun({processId:process.id,title:`route ${route.target}`,startedBy:'kim',steps:runtime})
+   await db.updateRun(run.id,{decisions:route.decisions})
+   const work=await db.createWorklog({date:'2026-09-04',line:'A',task:`review ${route.target}`,progressPct:100,hours:0,createdBy:'kim',
+    data:{runId:run.id,systemGenerated:true,approvalStepId:route.target}})
+   const review=await db.createApproval({worklogId:work.id,requestedBy:'kim',approver:'lee',stepId:route.target})
+   assert.ok(review,`${route.target} review must be created`)
+   assert.equal(review.stepId,route.target)
+   assert.ok(await db.decideApproval(review.id,'APPROVED','route checked',{authenticatedAs:'lee'}))
+   assert.equal((await db.getRun(run.id)).status,'completed',route.target)
+  }
+ }finally{await db.close?.()}
+})

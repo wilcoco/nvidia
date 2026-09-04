@@ -20,6 +20,11 @@ build has been retested.
   PostgreSQL row-lock transaction. It rechecks the next live step, role,
   required branch evidence, decision history, approval ownership and final run
   status instead of accepting those claims from a browser snapshot.
+- Branch-presentation states (`conditional` and unattributed
+  `not_applicable`) no longer satisfy work. A reasoned task deviation is
+  attributed and journaled by the server, while approval steps remain
+  server-owned. Explicit `next: []` terminals and the persisted decision path
+  determine which approval is reachable.
 - Made approval completion and approval audit events server-owned.
 - Restricted verification, corrective-action and playbook-deletion writes to
   their authenticated/delegated owner.

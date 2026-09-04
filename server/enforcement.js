@@ -1,4 +1,4 @@
-import {routeProgress} from './route.js'
+import {accountableTerminal, routeProgress} from './route.js'
 
 function refuse(error, detail, status = 409) {
   throw Object.assign(new Error(error), { status, code: error, detail })
@@ -73,6 +73,28 @@ export function enforceRunUpdate(run, patch, map, authority) {
   const oldById = new Map(previous.map((step) => [step.id, step]))
   const now = Date.now()
 
+  // Browser progress uses conditional/N/A states to draw branches. They are
+  // never evidence. Restore the persisted state before validating decisions
+  // or step order, except for one explicit, reasoned task deviation which the
+  // server will attribute below. This prevents presentation state from making
+  // prerequisites or approvals look complete.
+  for (let index = 0; index < incoming.length; index++) {
+    const step = incoming[index]
+    if (step?.type === 'gate') continue
+    const saved = oldById.get(step?.id)
+    const definition = byDesign.get(step?.id)
+    if (!saved || !definition) continue
+    const reasonedDeviation = step.status === 'not_applicable' &&
+      typeof step.naReason === 'string' && Boolean(step.naReason.trim())
+    const existingDeviation = accountableTerminal(saved) && saved.status === 'not_applicable'
+    if (step.status === 'conditional' || (step.status === 'not_applicable' && !reasonedDeviation) || existingDeviation) {
+      incoming[index] = structuredClone(saved)
+      continue
+    }
+    if (reasonedDeviation && definition.type === 'approval')
+      refuse('approval_server_owned', 'Approval steps cannot be waived by browser progress; they require a server-owned review decision.', 403)
+  }
+
   if (patch.decisions) {
     for (const old of run.decisions ?? []) {
       const current = decisions.find(item => item?.stepId === old?.stepId && item?.to === old?.to && item?.ts === old?.ts)
@@ -115,6 +137,7 @@ export function enforceRunUpdate(run, patch, map, authority) {
   }
 
   const substantive = []
+  const serverEvents = []
   for (const step of incoming) {
     if (step.type === 'gate') continue
     const saved = oldById.get(step.id)
@@ -129,7 +152,7 @@ export function enforceRunUpdate(run, patch, map, authority) {
     // naReason and remains accountable; a real completion is `done`.
     const newlyTerminal = (step.status === 'done' && saved.status !== 'done') ||
       (step.status === 'not_applicable' && Boolean(step.naReason) &&
-        (saved.status !== 'not_applicable' || !saved.naReason))
+        !accountableTerminal(saved))
     const changedEvidence = step.status === 'done' && saved.status === 'done' &&
       (!sameValue(step.resultData, saved.resultData) || !sameValue(step.resultId, saved.resultId))
     const reopened = saved.status === 'done' && step.status !== 'done'
@@ -153,6 +176,21 @@ export function enforceRunUpdate(run, patch, map, authority) {
     step.completedBy = authority.actor
     step.authenticatedBy = authority.authenticatedAs
     step.completedAt = now
+    if (step.status === 'not_applicable') {
+      delete step.resultId
+      delete step.resultData
+      step.naReason = step.naReason.trim()
+      serverEvents.push({
+        id: `deviation:${step.id}:${now}`,
+        ts: now,
+        kind: 'deviation',
+        stepId: step.id,
+        label: definition.label || definition.id,
+        actor: authority.actor,
+        authenticatedBy: authority.authenticatedAs,
+        note: step.naReason,
+      })
+    }
     if (reopened) {
       delete step.completedBy
       delete step.authenticatedBy
@@ -168,7 +206,7 @@ export function enforceRunUpdate(run, patch, map, authority) {
   if (patch.status === 'abandoned' && authority.authenticatedAs !== run.startedBy && !authority.canAdmin)
     refuse('not_run_owner', 'Only the run owner may abandon this execution.', 403)
 
-  const events = Array.isArray(patch.events) ? patch.events.map((event) => {
+  const submittedEvents = Array.isArray(patch.events) ? patch.events.map((event) => {
     if ((run.events ?? []).some((old) => old.id === event.id)) return event
     if (event.kind === 'approval')
       refuse('approval_server_owned', 'Approval audit events are written only by the server.', 403)
@@ -176,8 +214,11 @@ export function enforceRunUpdate(run, patch, map, authority) {
       (event.stepId?.startsWith('gate:') ? byDesign.get(event.stepId.slice(5)) : undefined)
     if (!definition) refuse('invalid_event_step', 'Audit events must reference a saved playbook step.', 400)
     return { ...event, label: definition.label || definition.id, actor: authority.actor, authenticatedBy: authority.authenticatedAs }
-  }) : patch.events
+  }) : []
+  const events = submittedEvents.length || serverEvents.length ? [...submittedEvents, ...serverEvents] : undefined
   const completed = routeProgress(map, incoming, decisions).completed
   const status = patch.status === 'abandoned' ? 'abandoned' : completed ? 'completed' : 'active'
-  return { ...patch, steps: patch.steps ? incoming : undefined, decisions: patch.decisions ? decisions : undefined, events, status }
+  const deviations = serverEvents.length ? (run.deviations ?? 0) + serverEvents.length : undefined
+  return { ...patch, steps: patch.steps ? incoming : undefined, decisions: patch.decisions ? decisions : undefined,
+    events, deviations, status }
 }

@@ -129,6 +129,9 @@ export interface ProcessMap {
   /** Presence opts this design into the adaptive expert-interview model.
    * Absence is a legacy saved playbook and is treated as already reviewed. */
   elicitationVersion?: 1
+  /** Additional judgment points the human explicitly chose to explore. The
+   * highest-value point is included by default and is not repeated here. */
+  elicitationExpandedSteps?: string[]
   /** Explicit outcomes of branching steps in this run: which edge was taken and why. */
   decisions?: Array<{
     stepId: string

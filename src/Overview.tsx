@@ -16,6 +16,8 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
   const action = useAction()
   const proc = window.Understudy.getLoadedProcess()
   const runId = window.Understudy.currentRunId?.()
+  const runNotice = window.Understudy.getRunStartError?.() || ''
+  const retired = runNotice.startsWith('This run was retired by a newer execution.')
   const done = window.Understudy.isRunComplete?.() === true
   const interaction = window.Understudy.getInteractionState?.()
   const decision = window.Understudy.getPendingDecision?.()
@@ -65,9 +67,10 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
 
       {proc ? (
         <section className="card current-work">
-          <div className="eyebrow">{done ? 'COMPLETED RUN' : !proc.confirmed ? 'TEACH & REFINE' : !runId ? 'READY TO PUT TO WORK' : decision ? 'CHECK THE EVIDENCE' : ready?.type === 'approval' ? 'REVIEW & SIGN OFF' : 'WORK IN PROGRESS'}</div>
+          <div className="eyebrow">{retired ? 'ARCHIVED RUN' : done ? 'COMPLETED RUN' : !proc.confirmed ? 'TEACH & REFINE' : !runId ? 'READY TO PUT TO WORK' : decision ? 'CHECK THE EVIDENCE' : ready?.type === 'approval' ? 'REVIEW & SIGN OFF' : 'WORK IN PROGRESS'}</div>
           <h2>{proc.title}</h2>
-          <p>{done ? 'The required work is complete. Your submitted evidence and approval are saved with this run.'
+          <p>{retired ? 'A newer execution replaced this unfinished run. Its history is preserved; start a fresh run or open an active run below.'
+            : done ? 'The required work is complete. Your submitted evidence and approval are saved with this run.'
             : !proc.confirmed ? 'Your agent has drafted the process. Open the playbook, correct a step, and confirm it when it reflects how you work.'
               : !runId ? 'Your playbook is confirmed. Start an execution to collect evidence and put its rules into practice.'
                 : decision ? `“${decision.label}” needs a decision. Ask your agent to check the submitted values and take the matching branch. Failed evidence should lead to rework.`
@@ -75,14 +78,15 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
                     : 'Open your tasks to see what this execution is waiting for.'}</p>
           <div className="button-row">
             {!proc.confirmed ? <button className="primary" onClick={() => window.Understudy.openPanel?.()}>Review the draft →</button>
-              : !runId && saved ? <button className="primary" disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(saved.id))}>{action.busy ? 'Starting…' : 'Run this playbook →'}</button>
+              : !runId && saved ? <button className="primary" disabled={action.busy} onClick={() => void action.run(() => store.followPlaybook(saved.id))}>{action.busy ? 'Starting…' : retired ? 'Start a new run →' : 'Run this playbook →'}</button>
                 : runId ? <button className="primary" onClick={() => navigate('tasks')}>{done ? 'View the completed run' : 'Continue to my tasks →'}</button>
                   : <span className="meta">Saving the playbook…</span>}
             <button className="secondary" onClick={() => window.Understudy.openPanel?.()}>Open playbook</button>
             {done && <button className="ghost" onClick={() => { window.Understudy.unloadProcess?.(); store.clearCaptureContext(); setEditing(true) }}>Teach another process</button>}
           </div>
           {decision && <AgentInvite hint="Ask your agent: “Do these results meet the rules? What should we do next?” It can check the evidence and explain the next step." label="Copy evidence-check request" prompt={`Use Understudy on this page. Read get_process_progress and the submitted evidence for “${decision.label}”. Check the recorded criteria with resolve_decision. If the evidence fails, take the rework branch and explain the next task. Do not replace submitted measurements with an assumed passing value.`} />}
-          <ErrorNotice message={action.error || window.Understudy.getRunStartError?.() || ''} />
+          <ErrorNotice message={action.error || (retired ? '' : runNotice)} />
+          {retired && <p className="hint">Archived executions are read-only. Choose an active run below to continue existing work.</p>}
           {done && <p className="hint">Found a missing step or exception? Open the playbook and choose “Propose changes”. Tell your agent what you learned, review the changes, and save a new version for the next person.</p>}
         </section>
       ) : captured?.creationRequested ? <DiscoveryStart state={state} /> : captured ? (

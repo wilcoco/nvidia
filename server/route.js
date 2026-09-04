@@ -1,4 +1,13 @@
-const TERMINAL = new Set(['done', 'not_applicable', 'conditional'])
+/** Runtime state that can satisfy work on the persisted active route.
+ * `conditional` and branch-derived `not_applicable` are client presentation
+ * hints. A real deviation is attributable and carries a reason. */
+export function accountableTerminal(step) {
+  if (step?.status === 'done') return true
+  return step?.status === 'not_applicable' &&
+    typeof step.naReason === 'string' && Boolean(step.naReason.trim()) &&
+    typeof step.completedBy === 'string' && Boolean(step.completedBy) &&
+    Number.isFinite(step.completedAt)
+}
 
 function currentDecisions(decisions = []) {
   const result = new Map()
@@ -11,7 +20,9 @@ function currentDecisions(decisions = []) {
 
 function outgoing(design, index) {
   const step = design[index]
-  if (Array.isArray(step?.next) && step.next.length) return step.next
+  // Omitted `next` keeps the concise implicit sequence. An explicit empty
+  // array is a terminal by contract, even when later steps exist in storage.
+  if (Array.isArray(step?.next)) return step.next
   return design[index + 1] ? [{to: design[index + 1].id}] : []
 }
 
@@ -24,7 +35,7 @@ function outgoing(design, index) {
 export function routeProgress(map, steps = [], decisions = [], targetId) {
   const design = map?.steps ?? []
   if (!design.length) {
-    const next = steps.find(step => step?.type !== 'gate' && !TERMINAL.has(step?.status))
+    const next = steps.find(step => step?.type !== 'gate' && !accountableTerminal(step))
     return {completed: steps.length > 0 && !next, next: next ? {id: next.id, type: next.type} : null, reachable: []}
   }
   const byId = new Map(steps.map(step => [step.id, step]))
@@ -54,7 +65,7 @@ export function routeProgress(map, steps = [], decisions = [], targetId) {
     }
 
     const runtime = byId.get(id)
-    if (id === targetId || !TERMINAL.has(runtime?.status))
+    if (id === targetId || !accountableTerminal(runtime))
       return {completed: false, next: {id, type: step.type}, reachable}
     if (!edges.length) return {completed: true, next: null, reachable}
     if (edges.length > 1) {

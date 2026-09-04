@@ -72,6 +72,7 @@ interface UnderstudyProcessMap {
   sourceWorklogId?: string
   sourceProcessId?: string
   elicitationVersion?: 1
+  elicitationExpandedSteps?: string[]
 }
 
 interface UnderstudyProcessSummary {

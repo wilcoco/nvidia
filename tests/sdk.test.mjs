@@ -75,6 +75,31 @@ test('legacy saved playbooks remain confirmed without per-answer migration', () 
  assert.equal(map.getMap().confirmed,true)
  assert.equal(map.getMap().steps[0].elicitation,undefined)
 })
+test('expert interview focuses on one judgment point until the human expands it', () => {
+ const {map,asks}=fixture()
+ map.proposeMap({title:'bounded interview',steps:[
+  step('routeA',{type:'decision',next:[{to:'workA'},{to:'routeB'}]}),
+  step('workA'),
+  step('routeB',{type:'decision',next:[{to:'workB'},{to:'approve'}]}),
+  step('workB'),step('approve',{type:'approval'})]})
+ const answerActive=(answer='evidence')=>{
+  const knowledge=map.mapGaps().filter(g=>g.kind.startsWith('knowledge_'))
+  assert.equal(knowledge.length,1,'only one adaptive move is exposed')
+  const gap=knowledge[0]
+  const id=asks.askUser(`Question for ${gap.step}`,undefined,true,gap.resolves_gap)
+  asks.answerAsk(id,answer)
+  return gap
+ }
+ for(let i=0;i<5;i++) assert.equal(answerActive().stepId,'routeA')
+ assert.equal(map.mapGaps().some(g=>g.kind.startsWith('knowledge_')),false,'second point does not start automatically')
+ let state=map.elicitationInterviewState()
+ assert.equal(state.canExploreAnother,true)
+ assert.equal(state.next.stepId,'routeB')
+ assert.equal(map.exploreAnotherJudgmentPoint(),true)
+ assert.equal(map.mapGaps().find(g=>g.kind.startsWith('knowledge_')).stepId,'routeB')
+ state=map.elicitationInterviewState()
+ assert.equal(state.activePoints,2)
+})
 test('dropdown submissions control both routes and cannot be replaced by agent claims', () => {
  for(const method of ['Courier','Pickup']){
   const {map}=fixture()

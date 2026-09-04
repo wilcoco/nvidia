@@ -82,7 +82,13 @@ function criteriaResult(criteria, values) {
 function reviewMeaning(run, map, scope, taskValues) {
   const design = map?.steps ?? []
   const target = design.find(s => s.id === approvalGate(run, map).stepId)
-  if (!target) return {}
+  if (!target) return {
+    verification: null,
+    verifiedRoute: null,
+    verifiedAt: null,
+    reviewContext: {approvalStepId: null, approvalLabel: 'Unresolved route', purpose: 'unspecified',
+      purposeSource: 'unresolved-route', workChecks: 'unverified', decisions: []},
+  }
   const current = new Map()
   for (const d of run.decisions ?? []) if (!d.invalidated && (!scope || scope.includes(d.stepId))) current.set(d.stepId, d)
   const decisions = [], workChecks = []
@@ -164,23 +170,27 @@ export function approvalGate(run, map, requestedStepId, requesting = false) {
   if (!run || run.status === 'abandoned') return { open: ['linked run is unavailable or abandoned'] }
   const steps = run.steps ?? []
   const design = map?.steps ?? steps
-  const target = design.find((s) => s.type === 'approval' &&
-    !['done', 'not_applicable', 'conditional'].includes(steps.find((r) => r.id === s.id)?.status))
-  if (requestedStepId && target?.id !== requestedStepId)
-    return { open: ['this approval is not the next required sign-off'] }
-  const before = target ? design.slice(0, design.findIndex((s) => s.id === target.id)) : design
-  const scope = before.flatMap((s) => [s.id, `gate:${s.id}`])
   // POST /submit is the operation that performs request_review. Exempt only
-  // that administrative step, never its required inputs or another task.
-  const request = requesting ? before.find(s => s.type === 'task' && s.action === 'request_review' &&
-    steps.some(r => r.id === s.id && !['done', 'not_applicable', 'conditional'].includes(r.status)) &&
+  // eligible administrative steps while tracing the persisted active route;
+  // never exempt their required inputs, criteria, or another task.
+  const requestIds = new Set(requesting ? design.filter(s => s.type === 'task' && s.action === 'request_review' &&
+    steps.some(r => r.id === s.id && !['done'].includes(r.status)) &&
     !(map?.fields ?? []).some(f => s.fields?.includes(f.key) && (f.required || f.confirm)) &&
-    !s.next?.some(edge => Object.keys(edge.criteria ?? {}).length)) : undefined
-  const open = steps.filter((s) => scope.includes(s.id) && s.id !== request?.id &&
-    !['done', 'not_applicable', 'conditional'].includes(s.status))
-  // Initial or partial snapshots must not make absent work look completed.
-  const missing = before.filter((s) => s.type !== 'decision' && !steps.some((r) => r.id === s.id))
-  return { stepId: target?.id, scope, open: steps.length ? [...open, ...missing].map((s) => s.label || s.id) : ['run has not synced yet'] }
+    !s.next?.some(edge => Object.keys(edge.criteria ?? {}).length)).map(s => s.id) : [])
+  const effective = steps.map(s => requestIds.has(s.id) ? {...s, status: 'done'} : s)
+  const progress = routeProgress(map, effective, run.decisions, requestedStepId)
+  const target = progress.next?.type === 'approval'
+    ? design.find(s => s.id === progress.next.id && s.type === 'approval')
+    : undefined
+  const routeBeforeTarget = target ? progress.reachable.slice(0, -1) : progress.reachable
+  const scope = routeBeforeTarget.flatMap(id => [id, `gate:${id}`])
+  if (requestedStepId && target?.id !== requestedStepId) {
+    if (progress.next?.type === 'approval') return {stepId: target?.id, scope, open: ['this approval is not the next required sign-off']}
+    const blocked = design.find(s => s.id === progress.next?.id)
+    return {stepId: target?.id, scope, open: [blocked?.label || progress.next?.id || 'the active route is incomplete']}
+  }
+  return {stepId: target?.id, scope,
+    open: target || progress.completed ? [] : [design.find(s => s.id === progress.next?.id)?.label || progress.next?.id || 'the active route has no pending sign-off']}
 }
 
 export function mergeRunEvents(previous = [], incoming = []) {
