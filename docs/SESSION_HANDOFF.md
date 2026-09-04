@@ -71,8 +71,9 @@
 - 라이브: https://nvidia-production-f205.up.railway.app (judge/webmcp2026,
   페르소나 kim=Contributor·park=Operations·lee=Reviewer, linepulse)
 - 보조 호스트: /plain.html (프레임워크 없음 — 레이어 이식성 증명)
-- 헤더의 `build <sha7>`로 배포 확인. index.html no-store / understudy.js
-  no-cache / 해시 자산 immutable.
+- 헤더의 `build <sha7>`와 Start here 하단의 `SDK <sha7>`로 배포 확인.
+  HTML은 no-store, SDK URL은 `/understudy.js?v=<sha7>`, 해시 자산은
+  immutable이다.
 
 ## 2. 구조
 

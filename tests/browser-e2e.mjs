@@ -42,6 +42,10 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     page.on('pageerror', error => browserErrors.push(`pageerror: ${error.message}`))
     const title = `Browser E2E ${Date.now()}`
     await page.goto(base)
+    assert.match(await page.locator('script[src*="/understudy.js"]').getAttribute('src'), /^\/understudy\.js\?v=dev$/)
+    assert.equal(await page.evaluate(() => window.Understudy.getInteractionState?.().sdkBuild), 'dev')
+    const plainHtml = await (await page.request.get(`${base}/plain.html`)).text()
+    assert.match(plainHtml, /<script src="\/understudy\.js\?v=dev"><\/script>/)
     await page.getByRole('button', {name: /Enter demo workspace/}).click()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
 

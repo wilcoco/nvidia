@@ -167,7 +167,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
       </section>}
       <p className="workspace-footnote">Demo workspace · sample accounts and data · {interaction?.active ? 'WebMCP agent connected'
         : interaction?.registered ? 'WebMCP tools registered · awaiting an agent call'
-          : 'On-page starter draft available without an agent'}</p>
+          : 'On-page starter draft available without an agent'} · SDK {interaction?.sdkBuild ?? 'unversioned'}</p>
     </div>
   )
 }

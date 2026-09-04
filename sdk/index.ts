@@ -19,6 +19,18 @@ import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isR
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
 let initialized = false
+const sdkBuild = (() => {
+  try {
+    const src = (document.currentScript as HTMLScriptElement | null)?.src
+    return src ? new URL(src, location.href).searchParams.get('v') ?? 'unversioned' : 'unversioned'
+  } catch {
+    return 'unversioned'
+  }
+})()
+
+function interactionState() {
+  return {...getInteractionState(), sdkBuild}
+}
 
 function init(opts: InitOptions = {}): void {
   if (initialized) return
@@ -180,6 +192,6 @@ window.addEventListener('beforeunload', (e) => {
   openPanel,
   closePanel,
   openUsageGuide,
-  getInteractionState,
+  getInteractionState: interactionState,
   getPendingDecision: () => pendingDecision(),
 }

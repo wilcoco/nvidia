@@ -142,7 +142,7 @@ interface UnderstudyApi {
   openPanel?(): void
   closePanel?(): void
   openUsageGuide?(language?: 'en' | 'ko', topic?: 'overview' | 'usage'): boolean
-  getInteractionState?(): { registered: boolean; active: boolean; connected: boolean; questions: number; approvals: number; interview?: {asked: number; answered: number} }
+  getInteractionState?(): { registered: boolean; active: boolean; connected: boolean; questions: number; approvals: number; sdkBuild: string; interview?: {asked: number; answered: number} }
   getPendingDecision?(): { id: string; label: string } | null
   reportProblem?(stepId: string, note: string): void
   getLoadedProcess(): UnderstudyProcessMap | null

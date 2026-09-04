@@ -64,6 +64,10 @@ desktop app’s built-in browser; other clients require their own compatibility
 checks. No site-owned LLM key is needed; the visitor’s agent may have its own
 subscription, usage limits and costs.
 
+Each production HTML shell loads `/understudy.js?v=<build>` and the workspace
+footer shows that SDK build. This keeps an already-open browser's registered
+tool provider on the same release as the reloaded app after a deployment.
+
 ## Live demo
 
 Two host apps are included to prove the layer is app-agnostic:
