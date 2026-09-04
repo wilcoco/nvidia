@@ -249,6 +249,22 @@ test('review journal identifies another target run and its actual server status'
  assert.equal(logs.at(-1).detail.runId,'other')
 })
 
+test('an accepted review pulls the server-owned sign-off instead of completing it again in the browser',async()=>{
+ const calls=[],completed=[]
+ const review={id:'76',worklogId:'w',stepId:'approve',evidence:{runId:'r'}}
+ const store=fixture(async(path)=>{
+  if(path.endsWith('/decide'))return response(review)
+  if(path==='/api/state')return response({me:{username:'lee'},users:[],worklogs:[{id:'w',data:{runId:'r'}}],approvals:[{...review,status:'APPROVED'}],processes:[]})
+  if(path==='/api/runs/r')return response({id:'r',status:'completed'})
+  return response([])
+ },{window:{dispatchEvent(){},Understudy:{getLoadedProcess:()=>({}),currentRunId:()=> 'r',
+  getProgress:()=>[{id:'approve',type:'approval',status:'ready'}],
+  refreshRunState:async authoritative=>calls.push(authoritative),log(){},notifyAction:name=>completed.push(name)}}})
+ await store.decideApproval('76','APPROVED')
+ assert.equal(completed.length,0,'approval completion is owned by the server transaction')
+ assert.equal(calls[0],true,'the accepted server state is pulled before normal polling')
+})
+
 test('version comparison describes input and branch-rule changes without raw JSON',async()=>{
  const old={title:'process',map:{version:1,fields:[{key:'weight',label:'Weight',type:'number',unit:'g'},{key:'method',label:'Delivery method',type:'select',options:['Courier']}],steps:[{id:'a',label:'Measure',type:'task',next:[{to:'b',criteria:{weight:{gt:0}}}]},{id:'b',label:'Review',type:'approval'}]}}
  const store=fixture(async(path)=>response(path==='/api/processes'?[{id:'1',title:'process',version:1}]:old))

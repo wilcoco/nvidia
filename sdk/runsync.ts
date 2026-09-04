@@ -22,15 +22,25 @@ let lastRemote = ''
 
 /** Refresh the open run without replacing its design or the host's form drafts.
  * A response fetched before a local edit/write is discarded, never merged over it. */
-export async function refreshRunState(): Promise<boolean> {
+export async function refreshRunState(authoritative = false): Promise<boolean> {
   const id = currentRunId(), store = host.getProcessStore()
-  if (!id || !store?.readRun || pulling || syncTimer || pendingWrites || syncError) return false
-  const seq = startSeq, version = localVersion, current = trackedMap
+  if (!id || !store?.readRun || pulling || (!authoritative && (syncTimer || pendingWrites || syncError))) return false
   pulling = true
   try {
+    // Approval is a server-owned transition. Once its API call succeeds, any
+    // queued browser echo is stale by definition: wait for an in-flight write,
+    // drop a not-yet-sent debounce, then accept the locked server record.
+    if (authoritative) {
+      if (syncTimer) clearTimeout(syncTimer)
+      syncTimer = null
+      await writes.catch(() => {})
+      if (currentRunId() !== id) return false
+    }
+    const seq = startSeq, version = localVersion, current = trackedMap
     const remote = await store.readRun(id)
     if (seq !== startSeq || version !== localVersion || trackedMap !== current ||
-      currentRunId() !== id || remote.id !== id || syncTimer || pendingWrites || syncError) return false
+      currentRunId() !== id || remote.id !== id ||
+      (!authoritative && (syncTimer || pendingWrites || syncError))) return false
     if (remote.status === 'abandoned') {
       stopRunTracking()
       startError = 'This run was retired by a newer execution. Open an active run from the execution picker.'
@@ -38,12 +48,16 @@ export async function refreshRunState(): Promise<boolean> {
       return false
     }
     const signature = JSON.stringify(remote)
-    if (signature === lastRemote) return false
+    if (!authoritative && signature === lastRemote) return false
     applyingRemote = true
     try {
       mapstore.restoreRunState(remote.steps, remote.decisions, remote.events, true)
-      completed = isRunComplete()
+      completed = remote.status === 'completed' || isRunComplete()
       lastRemote = signature
+      // A successful authoritative restore resolves a stale browser-write
+      // warning. The persisted run, including its approval, is now visible.
+      syncError = null
+      syncFailureLogged = false
     } finally { applyingRemote = false }
     announceRunState()
     return true

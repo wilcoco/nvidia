@@ -12,6 +12,7 @@ const defaultChrome = process.platform === 'darwin'
 const chrome = process.env.CHROME_PATH || defaultChrome
 const strictBrowserGate = process.env.BROWSER_E2E_REQUIRED === '1' || process.env.CI === 'true'
 const chromeAvailable = existsSync(chrome)
+const expectedBuild = (process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA)?.slice(0, 7) || 'dev'
 
 test('natural keyboard editing of a seeded draft and 375px role relay survive approval and reload', {skip: !chromeAvailable && !strictBrowserGate, timeout: 60_000}, async()=>{
   assert.ok(chromeAvailable, `Chrome is required for the browser E2E gate; set CHROME_PATH (looked for ${chrome})`)
@@ -42,10 +43,10 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     page.on('pageerror', error => browserErrors.push(`pageerror: ${error.message}`))
     const title = `Browser E2E ${Date.now()}`
     await page.goto(base)
-    assert.match(await page.locator('script[src*="/understudy.js"]').getAttribute('src'), /^\/understudy\.js\?v=dev$/)
-    assert.equal(await page.evaluate(() => window.Understudy.getInteractionState?.().sdkBuild), 'dev')
+    assert.equal(await page.locator('script[src*="/understudy.js"]').getAttribute('src'), `/understudy.js?v=${expectedBuild}`)
+    assert.equal(await page.evaluate(() => window.Understudy.getInteractionState?.().sdkBuild), expectedBuild)
     const plainHtml = await (await page.request.get(`${base}/plain.html`)).text()
-    assert.match(plainHtml, /<script src="\/understudy\.js\?v=dev"><\/script>/)
+    assert.match(plainHtml, new RegExp(`<script src="/understudy\\.js\\?v=${expectedBuild}"></script>`))
     await page.getByRole('button', {name: /Enter demo workspace/}).click()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
     const panel = page.locator('#understudy-panel-host')
@@ -297,7 +298,6 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
 
     await panel.getByRole('button', {name: 'Confirm & save to library'}).click()
     await page.waitForFunction(() => window.Understudy.getLoadedProcess()?.confirmed === true && window.Understudy.getLoadedProcess()?.version === 1)
-    await panel.locator('details.knowledge').locator('summary').click()
     await panel.getByText(/Human-confirmed by kim/).waitFor()
     await panel.getByRole('button', {name: 'Propose changes (new draft)'}).click()
     const secondNote = panel.getByRole('button', {name: 'Edit note for Prepare counted packages'})
@@ -348,6 +348,9 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByRole('button', {name: 'Approve'}).click()
     await page.getByRole('button', {name: 'My tasks', exact: true}).click()
     await page.getByText(/Run complete/).waitFor()
+    assert.equal(await page.evaluate(() => window.Understudy.getRunSyncError?.()), null,
+      'a server-owned final approval must not leave a stale Retry saving progress warning')
+    assert.equal(await page.getByRole('button', {name: 'Retry saving progress'}).count(), 0)
     const runId = await page.evaluate(() => window.Understudy.currentRunId?.())
 
     await page.reload()
@@ -358,6 +361,8 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByText('Choose an existing run').click()
     await page.locator('details.recent-runs button.secondary').filter({hasText: title}).filter({hasText: `#${runId}`}).click()
     await page.waitForFunction((expected) => window.Understudy.currentRunId?.() === expected && window.Understudy.isRunComplete?.() === true, runId)
+    assert.equal(await page.evaluate(() => window.Understudy.getRunSyncError?.()), null)
+    assert.equal(await page.getByRole('button', {name: 'Retry saving progress'}).count(), 0)
     assert.equal(await page.evaluate(() => window.Understudy.getLoadedProcess()?.version), 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true)
     assert.deepEqual(browserErrors, [], `browser emitted errors:\n${browserErrors.join('\n')}`)

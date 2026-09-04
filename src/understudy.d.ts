@@ -134,7 +134,7 @@ interface UnderstudyApi {
   getRunStartError?(): string | null
   getRunSyncError?(): string | null
   flushRun?(): Promise<void>
-  refreshRunState?(): Promise<boolean>
+  refreshRunState?(authoritative?: boolean): Promise<boolean>
   isRunComplete?(): boolean
   isRunStarting?(): boolean
   getProgress?(): Array<{ id: string; label: string; type: string; role?: string; fields?: string[]; status?: string; done?: boolean }>

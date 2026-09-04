@@ -528,16 +528,13 @@ function renderStep(
       .filter(answer => answer.disposition !== 'needs_probe')
       .map(answer => answer.stage)).size
     const knowledge = el('details', 'knowledge') as HTMLDetailsElement
-    knowledge.appendChild(el('summary', undefined, `Expert judgment sources · ${covered}/5`))
+    const confirmation = captured.confirmed
+      ? `✓ Human-confirmed${captured.confirmedBy ? ` by ${captured.confirmedBy}` : ''}`
+      : 'Draft evidence · confirmed when this playbook is saved'
+    const summary = el('summary', undefined, `Expert judgment sources · ${covered}/5 · `)
+    summary.appendChild(el('span', `knowledge-status${captured.confirmed ? ' confirmed' : ''}`, confirmation))
+    knowledge.appendChild(summary)
     const body = el('div', 'knowledge-body')
-    const status = el(
-      'div',
-      `knowledge-status${captured.confirmed ? ' confirmed' : ''}`,
-      captured.confirmed
-        ? `✓ Human-confirmed${captured.confirmedBy ? ` by ${captured.confirmedBy}` : ''}`
-        : 'Draft evidence · confirmed when this playbook is saved',
-    )
-    body.appendChild(status)
     const addKnowledgeRow = (label: string, value?: string | string[]) => {
       const values = Array.isArray(value) ? value.filter(Boolean) : value ? [value] : []
       if (!values.length) return

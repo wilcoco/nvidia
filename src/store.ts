@@ -368,7 +368,15 @@ export async function decideApproval(
   const targetRunId = decided.evidence?.runId != null ? String(decided.evidence.runId) : wl?.data.runId != null ? String(wl.data.runId) : null
   const liveApproval = window.Understudy.getProgress?.().find((s) => s.type === 'approval' && ['ready', 'blocked'].includes(s.status ?? ''))
   if (runId && targetRunId === String(runId) && (!decided.stepId || liveApproval?.id === decided.stepId)) {
-    window.Understudy.notifyAction(decision === 'APPROVED' ? 'approve_review' : 'reject_review', decided.id)
+    if (decision === 'APPROVED') {
+      // The locked approval transaction has already applied the sign-off to
+      // this run. Pull that authoritative state instead of echoing an
+      // approve_review completion back through updateRun, which the server
+      // correctly rejects after sign-off.
+      await window.Understudy.refreshRunState?.(true)
+    } else {
+      window.Understudy.notifyAction('reject_review', decided.id)
+    }
   }
   await refresh()
   if (targetRunId) {

@@ -176,6 +176,28 @@ test('remote sign-off advances the existing map without echo writes or stale-run
  assert.equal(map.getMap().steps[1].done,false)
  sync.stopRunTracking()
 })
+test('authoritative approval reconciliation clears a stale signed-off write warning without echoing again',async()=>{
+ const {map,host,sync}=fixture();let writes=0
+ let remote={id:'r',status:'active',steps:[{id:'work',status:'pending'},{id:'review',status:'blocked'}],decisions:[],events:[]}
+ host.setProcessStore({
+  readRun:async()=>structuredClone(remote),
+  updateRun:async()=>{writes++;throw Error('Work already signed off cannot be changed in this run.')},
+ })
+ map.loadSavedMap({title:'server-owned approval',steps:[step('work'),step('review',{type:'approval'})]})
+ sync.resumeRunTracking('r');await sync.refreshRunState()
+ assert.equal(map.humanToggleStepDone('work',{qty:12}),true)
+ await assert.rejects(sync.flushRun(),/signed off/)
+ assert.match(sync.getRunSyncError(),/signed off/)
+ remote={id:'r',status:'completed',steps:[{id:'work',status:'done',resultData:{qty:12},completedBy:'kim'},
+  {id:'review',status:'done',resultId:'76',completedBy:'lee'}],decisions:[],events:[{id:'approval:76',kind:'approval'}]}
+ assert.equal(await sync.refreshRunState(true),true)
+ assert.equal(sync.getRunSyncError(),null)
+ assert.equal(sync.isRunComplete(),true)
+ assert.equal(map.getMap().steps[1].resultId,'76')
+ await tick()
+ assert.equal(writes,1,'restoring the accepted approval must not send another browser write')
+ sync.stopRunTracking()
+})
 test('a slow run refresh cannot overwrite a task completed after the read began',async()=>{
  const {map,host,sync}=fixture();let resolveRead
  host.setProcessStore({readRun:()=>new Promise(r=>resolveRead=r),updateRun:async()=>{}})
