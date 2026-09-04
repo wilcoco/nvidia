@@ -187,6 +187,26 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
       }, 'browser-e2e-draft')
     }, title)
 
+    const overviewLayout = await panel.evaluate((host) => Object.fromEntries(
+      [...host.shadowRoot.querySelectorAll('.overview .mini')].map(group => {
+        const shape = group.querySelector('circle, rect')
+        const x = shape.tagName === 'circle'
+          ? Number(shape.getAttribute('cx'))
+          : Number(shape.getAttribute('x')) + Number(shape.getAttribute('width')) / 2
+        const y = shape.tagName === 'circle'
+          ? Number(shape.getAttribute('cy'))
+          : Number(shape.getAttribute('y')) + Number(shape.getAttribute('height')) / 2
+        return [group.querySelector('title').textContent.split(' · ')[0].replace(/^\d+\. /, ''), {x, y}]
+      }),
+    ))
+    assert.equal(overviewLayout['Record handoff'].y, overviewLayout['Arrange bulk handoff'].y,
+      'peer branch choices belong on the same visual rank')
+    assert.equal(overviewLayout['Choose parcel route'].x - overviewLayout['Record handoff'].x,
+      overviewLayout['Arrange bulk handoff'].x - overviewLayout['Choose parcel route'].x,
+      'peer branch choices split symmetrically around their decision')
+    assert.equal(overviewLayout['Approve completed handoff'].x, overviewLayout['Choose parcel route'].x,
+      'a shared join returns to the parent lane')
+
     assert.equal(await panel.getByText(/auto-approve/i).count(), 0, 'the panel must not expose a global mutation bypass')
     const agenda = await page.evaluate(() => window.__understudy.call('get_map_gaps'))
     const incidentGap = agenda.gaps.find(gap => gap.stepId === 'route' && gap.kind === 'knowledge_incident')

@@ -638,41 +638,69 @@ const EDGE_COLORS: Array<[string, string]> = [
   ['arr-red', '#f87171'],
 ]
 
-// Compact true-flowchart overview: branches fan out to the right, loop-backs
-// curve on the left, statuses color the nodes. Clicking a node scrolls to
-// its card. Small graphs only — columns are assigned along the step order.
+// Compact true-flowchart overview: peer branches split symmetrically left and
+// right on the same rank, joins return to the parent lane, and loop-backs curve
+// around the left edge. Clicking a node scrolls to its card.
 function buildOverview(panelEl: HTMLElement): HTMLElement | null {
   const map = mapstore.getMap()
   if (!map || map.steps.length < 2) return null
   const statuses = mapstore.progress(preconditionFor)
   const idx = new Map(map.steps.map((st, i) => [st.id, i] as const))
-  // Lane assignment: a branch's whole chain inherits its lane, so the map
-  // reads as parallel paths (main lane left, alternatives fanning right).
-  const col = new Array(map.steps.length).fill(-1)
-  col[0] = 0
-  map.steps.forEach((st, i) => {
-    if (col[i] === -1) col[i] = 0
-    const base = col[i]
-    const fwd = (st.next ?? [])
-      .map((e) => idx.get(e.to))
-      .filter((j): j is number => j !== undefined && j > i)
-      .sort((x, y) => x - y)
-    fwd.forEach((j, k) => {
-      if (k === 0) col[j] = col[j] === -1 ? base : Math.min(col[j], base)
-      else if (col[j] === -1) col[j] = base + k
-    })
-  })
+  const forwardEdges = (i: number) => {
+    const st = map.steps[i]
+    const edges = st.next !== undefined
+      ? st.next
+      : i < map.steps.length - 1 ? [{to: map.steps[i + 1].id}] : []
+    return edges.map(edge => idx.get(edge.to)).filter((j): j is number => j !== undefined && j > i)
+  }
+  // Rank is graph depth rather than array position. Sibling choices therefore
+  // share a row even when their definitions are adjacent in the saved JSON.
+  const rank = new Array(map.steps.length).fill(-1)
+  rank[0] = 0
   map.steps.forEach((_, i) => {
-    if (col[i] === -1) col[i] = 0
+    if (rank[i] < 0) rank[i] = i === 0 ? 0 : Math.max(0, rank[i - 1] + 1)
+    for (const j of forwardEdges(i)) rank[j] = Math.max(rank[j], rank[i] + 1)
+  })
+
+  // For each fork, all nodes unique to one branch inherit a centered lane.
+  // Nodes reachable from every branch are joins and stay on the parent lane.
+  const col = new Array(map.steps.length).fill(0)
+  const reachable = (start: number) => {
+    const seen = new Set<number>()
+    const visit = (i: number) => {
+      if (seen.has(i)) return
+      seen.add(i)
+      for (const j of forwardEdges(i)) visit(j)
+    }
+    visit(start)
+    return seen
+  }
+  map.steps.forEach((_, i) => {
+    const branches = forwardEdges(i)
+    if (branches.length < 2) return
+    const paths = branches.map(reachable)
+    const common = paths.slice(1).reduce(
+      (shared, path) => new Set([...shared].filter(node => path.has(node))),
+      new Set(paths[0]),
+    )
+    paths.forEach((path, branchIndex) => {
+      // Two paths become -1/+1; three become -2/0/+2.
+      const lane = col[i] + branchIndex * 2 - (paths.length - 1)
+      for (const node of path) if (!common.has(node)) col[node] = lane
+    })
+    for (const node of common) col[node] = col[i]
   })
   const STEPX = 26
   const STEPY = 30
   const PADX = 16
   const PADY = 12
-  const width = PADX * 2 + Math.max(...col) * STEPX + 20
-  const height = PADY * 2 + (map.steps.length - 1) * STEPY
-  const cx = (i: number) => PADX + col[i] * STEPX + 8
-  const cy = (i: number) => PADY + i * STEPY
+  const minCol = Math.min(...col)
+  const maxCol = Math.max(...col)
+  const width = Math.max(140, PADX * 2 + (maxCol - minCol) * STEPX + 20)
+  const startX = (width - (maxCol - minCol) * STEPX) / 2
+  const height = PADY * 2 + Math.max(...rank) * STEPY
+  const cx = (i: number) => startX + (col[i] - minCol) * STEPX
+  const cy = (i: number) => PADY + rank[i] * STEPY
   const NS = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(NS, 'svg')
   svg.setAttribute('width', String(Math.max(width, 120)))
@@ -711,8 +739,8 @@ function buildOverview(panelEl: HTMLElement): HTMLElement | null {
       const path = document.createElementNS(NS, 'path')
       let d: string
       if (back) {
-        const bulge = 16 + col[i] * STEPX
-        d = `M ${cx(i) - 8} ${cy(i)} C ${cx(i) - bulge} ${cy(i)}, ${cx(j) - 16} ${cy(j)}, ${cx(j) - 8} ${cy(j)}`
+        const loopX = Math.min(...col.map((_, n) => cx(n))) - 18
+        d = `M ${cx(i) - 8} ${cy(i)} C ${loopX} ${cy(i)}, ${loopX} ${cy(j)}, ${cx(j) - 8} ${cy(j)}`
       } else if (col[i] === col[j]) {
         d = `M ${cx(i)} ${cy(i) + 8} L ${cx(j)} ${cy(j) - 8}`
       } else {
