@@ -646,6 +646,10 @@ function wrap(tool: ToolDef) {
     description: tool.description,
     inputSchema: tool.inputSchema,
     async execute(args: Record<string, unknown>) {
+      // Registration only proves the browser accepted the tool definitions.
+      // The first wrapper invocation is the earliest page-level evidence that
+      // an agent chat is actually attached to this tab.
+      setWebmcpStatus('active')
       const result = await tool.execute(args ?? {})
       return { content: [{ type: 'text', text: JSON.stringify(result) }] }
     },
@@ -681,7 +685,7 @@ export function registerWebmcpTools(): void {
       setWebmcpStatus('unsupported API')
       return
     }
-    setWebmcpStatus('connected')
+    setWebmcpStatus('registered')
   } catch (err) {
     console.warn('[Understudy] WebMCP registration failed:', err)
     setWebmcpStatus('error')

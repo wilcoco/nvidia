@@ -44,7 +44,7 @@ export function buildUsageGuide(language: GuideLanguage, topic: GuideTopic, dism
     list.appendChild(item)
   }
   if (overview) add('p', ko ? 'Example: “Preparing a customer order” → Confirm order → Pack order → Delivery handoff → Confirm receipt. 반복 업무를 여러 사람이 나누어 처리하는 팀에 맞습니다.' : 'Example: “Preparing a customer order” becomes order confirmation → packing → delivery handoff → receipt. It helps teams coordinate recurring work across people.')
-  else add('p', ko ? '일반 브라우저에서는 WebMCP 에이전트의 채팅을 연결해 사용하세요. 이 패널에는 질문과 프로세스가 표시됩니다.' : 'In a standalone browser, use the chat of your connected WebMCP agent. This panel displays questions and the process.')
+  else add('p', ko ? 'Tools registered는 페이지 등록 상태이고 Agent connected는 실제 호출 상태입니다. 채팅이 연결되지 않으면 페이지의 starter draft와 수동 인터뷰를 사용할 수 있습니다.' : '“Tools registered” is page registration; “Agent connected” appears only after a real tool call. If the chat is not attached, use the on-page starter draft and manual interview.')
   const next = add('button', overview ? ko ? '사용 방법 보기 →' : 'Show me how →' : ko ? '서비스 소개 보기' : 'What is this service?')
   next.onclick = () => changeTopic(overview ? 'usage' : 'overview')
   const close = add('button', ko ? '알겠어요 · 업무로 돌아가기' : 'Got it · back to my work')

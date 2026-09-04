@@ -241,6 +241,9 @@ button.library-link { display: flex; align-items: center; justify-content: space
 .saved-answer p { margin: 8px 0 0; color: var(--ink); white-space: pre-wrap; }
 .agent-invite p.chat-location { font-size: 12px; line-height: 1.7; }
 .agent-invite p.copy-next { color: #195b40; background: #edf6ef; border-radius: 6px; padding: 10px; }
+.manual-fallback { margin-top: 14px; padding: 14px; border: 1px solid #bfd3c7; border-radius: 8px; background: #f6faf7; }
+.manual-fallback p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 5px 0 10px; }
+.waiting-agent { padding: 13px 14px; border-radius: 8px; background: #edf6ef; color: #195b40; }
 @media (max-width: 700px) { .reuse-entry { flex-direction: column; align-items: start; } }
 .attention-banner { width: 100%; display: flex; justify-content: space-between; gap: 12px; text-align: left; align-items: center; border: 1px solid #a2cebc; background: #e7f5ed; color: #145d43; padding: 14px 16px; margin-bottom: 18px; border-radius: 10px; }
 .attention-banner span:last-child { font-weight: 650; }

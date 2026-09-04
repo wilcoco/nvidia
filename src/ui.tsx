@@ -55,11 +55,11 @@ export function AgentInvite({ prompt, label = 'Copy message for your agent', hin
         if (!navigator.clipboard) setFallback(true)
       }}>{copied ? 'Copied — paste and send in your AI chat' : label}</button>
       <p className="chat-location">Use the AI conversation that opened this browser tab. In a standalone browser, use the chat of your connected WebMCP agent. Its questions will appear in the panel on the right.</p>
-      {copied && <p className="copy-next" role="status">Next: paste and send the request in that chat. Copying alone does not start the agent.</p>}
+      {copied && <p className="copy-next" role="status">Next: paste and send the request in that chat. Copying alone does not connect it. The panel changes from “Tools registered” to “Agent connected” after the first real WebMCP call.</p>}
       <details open={fallback || undefined}>
         <summary>{fallback ? 'Select and copy this message' : 'View request & browser setup'}</summary>
         <p className="copy-text">{prompt}</p>
-        <p className="meta">Open this page in your agent’s browser, or attach a WebMCP agent to your browser. If you only have a regular browser, you can explore the example and saved playbooks, and save your first answer here. Continuing the interview requires a WebMCP-capable agent.</p>
+        <p className="meta">Open this page from a WebMCP-capable agent’s browser. “Tools registered” means the page exposed its tools; it does not prove this chat is attached. If no question appears, use the on-page starter draft and manual interview, or reopen this URL from the supported agent browser.</p>
       </details>
     </div>
   )

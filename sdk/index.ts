@@ -14,7 +14,7 @@ import { startCapture } from './capture'
 import { mountPanel, openPanel, closePanel, openUsageGuide, getInteractionState } from './panel'
 import { registerWebmcpTools } from './tools'
 import * as host from './host'
-import { loadSavedMap, reopenAsDraft, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, getCompletionError, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
+import { proposeMap, loadSavedMap, reopenAsDraft, recordActionSuccess, restoreRunState, getMap, clearMap, pendingDecision, progress as progressOf, humanToggleStepDone, getCompletionError, reportProblem as reportProblemOn, subscribe as subscribeMap } from './mapstore'
 import { startRunTracking, stopRunTracking, resumeRunTracking, currentRunId, isRunComplete, isRunStarting, getRunStartError, getRunSyncError, flushRun, refreshRunState } from './runsync'
 import type { HostAction, InitOptions, ProcessMap } from './types'
 
@@ -89,6 +89,14 @@ function draftRevision(map: ProcessMap, sourceId: string): void {
   openPanel()
 }
 
+/** Page-only fallback: start a new unsaved draft without pretending it is a
+ * revision of a saved playbook. The human still reviews and saves it normally. */
+function draftProcess(map: ProcessMap): void {
+  stopRunTracking()
+  proposeMap(map)
+  openPanel()
+}
+
 /** Host apps report a successful semantic action (e.g. the human saved a form),
  *  so the matching step of a loaded process auto-completes. Call only on success. */
 function notifyAction(name: string, resultId?: string): void {
@@ -155,6 +163,7 @@ window.addEventListener('beforeunload', (e) => {
   registerAction,
   loadProcess,
   draftRevision,
+  draftProcess,
   unloadProcess,
   notifyAction,
   getLoadedProcess,

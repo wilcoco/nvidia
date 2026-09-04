@@ -11,7 +11,7 @@ import { buildUsageGuide, type GuideLanguage, type GuideTopic } from './usage-gu
 
 const HOST_ID = 'understudy-panel-host'
 
-let webmcpStatus = 'not detected'
+let webmcpStatus: 'not detected' | 'unsupported API' | 'error' | 'registered' | 'active' = 'not detected'
 let guideLanguage: GuideLanguage | null = null
 let guideTopic: GuideTopic = 'usage'
 function usageGuide(): HTMLElement {
@@ -35,14 +35,16 @@ export function openUsageGuide(language: GuideLanguage = 'en', topic: GuideTopic
   }
   return !!body
 }
-export function setWebmcpStatus(status: string): void {
+export function setWebmcpStatus(status: typeof webmcpStatus): void {
+  if (webmcpStatus === status) return
   webmcpStatus = status
   scheduleRender()
   announceInteraction()
 }
 
 export function getInteractionState() {
-  return { connected: webmcpStatus === 'connected', questions: asksStore.asks.length, approvals: asksStore.approvals.length,
+  return { registered: ['registered', 'active'].includes(webmcpStatus), active: webmcpStatus === 'active',
+    connected: webmcpStatus === 'active', questions: asksStore.asks.length, approvals: asksStore.approvals.length,
     interview: asksStore.getInterviewProgress() }
 }
 
@@ -85,6 +87,7 @@ header .logo { font-weight: 700; font-size: 14px; color: #fff; }
 header .status { font-size: 11px; color: #94a3b8; margin-left: auto; display: flex; align-items: center; gap: 5px; }
 header .dot { width: 8px; height: 8px; border-radius: 50%; background: #64748b; }
 header .dot.on { background: #34d399; }
+header .dot.registered { background: #fbbf24; }
 header button.close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 15px; }
 .body { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 16px; }
 h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #64748b; margin: 0 0 8px; }
@@ -907,10 +910,17 @@ function render() {
   const header = el('header')
   header.appendChild(el('span', 'logo', 'Playbook & conversation'))
   const status = el('span', 'status')
-  const dot = el('span', `dot${webmcpStatus === 'connected' ? ' on' : ''}`)
+  const dot = el('span', `dot${webmcpStatus === 'active' ? ' on' : webmcpStatus === 'registered' ? ' registered' : ''}`)
   status.appendChild(dot)
-  status.appendChild(el('span', undefined, webmcpStatus === 'connected' ? 'Tools ready' : 'Tools unavailable'))
-  status.title = 'WebMCP tools are available to a compatible agent. Send a message in your agent’s chat to start the conversation.'
+  status.appendChild(el('span', undefined,
+    webmcpStatus === 'active' ? 'Agent connected'
+      : webmcpStatus === 'registered' ? 'Tools registered'
+        : 'Tools unavailable'))
+  status.title = webmcpStatus === 'active'
+    ? 'An agent has called this page’s WebMCP tools.'
+    : webmcpStatus === 'registered'
+      ? 'This page registered its WebMCP tools, but cannot know whether the current chat is attached until the agent calls one.'
+      : 'This browser did not expose a supported WebMCP registration API. You can still use the on-page starter draft and interview.'
   header.appendChild(status)
   const help = el('button', 'close', '?')
   help.setAttribute('aria-label', 'How to use Understudy')
@@ -1077,6 +1087,15 @@ function render() {
         scope.appendChild(el('div', 'scope-note', interview.active.complete
           ? 'This judgment point is complete. Save now, or deliberately explore one more point.'
           : 'One question at a time. This interview is optional: you can save now and continue in a later revision.'))
+        const nextGap = mapstore.mapGaps().find(gap => gap.kind.startsWith('knowledge_'))
+        const alreadyAsked = nextGap && asksStore.asks.some(ask => ask.resolvesGap === nextGap.resolves_gap)
+        if (!interview.active.complete && nextGap?.fallback_question && nextGap.resolves_gap && !alreadyAsked) {
+          scope.appendChild(el('div', 'scope-note', `Why this question: ${nextGap.question_goal}`))
+          const manual = el('button', undefined, 'Ask the next question on this page')
+          manual.title = 'Manual fallback when this browser tab is not attached to an agent chat'
+          manual.onclick = () => asksStore.askUser(nextGap.fallback_question!, undefined, true, nextGap.resolves_gap)
+          scope.appendChild(manual)
+        }
         if (interview.canExploreAnother && interview.next) {
           const more = el('button', undefined, 'Explore another judgment point')
           more.title = `Add “${interview.next.step}” to this interview`

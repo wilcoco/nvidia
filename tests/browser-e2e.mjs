@@ -45,6 +45,20 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
     await page.getByRole('button', {name: /Enter demo workspace/}).click()
     await page.getByRole('navigation', {name: 'Workspace'}).waitFor()
 
+    // A page-only path remains usable when the current AI chat is not bound to
+    // the browser's registered WebMCP tools.
+    await page.getByRole('textbox', {name: 'Describe your work'}).fill('I inspect one outgoing parcel before handoff.')
+    await page.getByRole('button', {name: 'Start with the first question'}).click()
+    await page.getByRole('textbox', {name: 'What must happen first?'}).fill('Kim confirms the order and the packed quantity.')
+    await page.getByRole('button', {name: 'Save answer & continue'}).click()
+    await page.getByRole('button', {name: 'Continue on this page'}).click()
+    const panel = page.locator('#understudy-panel-host')
+    await panel.getByText(/Process draft from work log/).waitFor()
+    const starterDraft = await page.evaluate(() => window.Understudy.getLoadedProcess())
+    assert.equal(starterDraft.sourceProcessId, undefined, 'a fallback draft is not a revision of a saved playbook')
+    assert.ok(starterDraft.sourceWorklogId, 'the worker-supplied source remains attributable')
+    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
+
     await page.evaluate((mapTitle) => {
       window.Understudy.draftRevision({
         title: mapTitle,
@@ -68,11 +82,11 @@ test('natural keyboard editing of a seeded draft and 375px role relay survive ap
       }, 'browser-e2e-draft')
     }, title)
 
-    const panel = page.locator('#understudy-panel-host')
     assert.equal(await panel.getByText(/auto-approve/i).count(), 0, 'the panel must not expose a global mutation bypass')
     const agenda = await page.evaluate(() => window.__understudy.call('get_map_gaps'))
     const incidentGap = agenda.gaps.find(gap => gap.stepId === 'route' && gap.kind === 'knowledge_incident')
     assert.equal(incidentGap.resolves_gap, 'knowledge_incident:route')
+    await panel.getByRole('button', {name: 'Ask the next question on this page'}).waitFor()
     await page.evaluate((resolvesGap) => window.__understudy.call('ask_user', {
       question: 'Tell me about one recent parcel where experience changed the route decision.',
       resolves_gap: resolvesGap,
