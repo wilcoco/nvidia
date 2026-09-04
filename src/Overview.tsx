@@ -160,7 +160,7 @@ export default function Overview({ state, navigate }: { state: store.AppState; n
           {retired && <p className="hint">Archived executions are read-only. Choose an active run below to continue existing work.</p>}
           {done && <p className="hint">Found a missing step or exception? Open the playbook and choose “Propose changes”. Tell your agent what you learned, review the changes, and save a new version for the next person.</p>}
         </section>
-      ) : captured?.creationRequested ? <DiscoveryStart state={state} /> : captured ? (
+      ) : captured?.creationRequested ? <DiscoveryStart state={state} onStartSeparate={beginNewWork} /> : captured ? (
         <section className="card current-work">
           <div className="eyebrow">YOUR STARTING POINT IS SAVED</div>
           <h2>What belongs before and after this work?</h2>

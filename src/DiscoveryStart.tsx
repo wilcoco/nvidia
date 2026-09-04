@@ -3,7 +3,7 @@ import * as store from './store'
 import { FOLLOWUP_QUESTION, STARTER_QUESTION, discoveryInvite } from '../sdk/discovery'
 import { AgentInvite, ErrorNotice, useAction } from './ui'
 
-export default function DiscoveryStart({state}: {state: store.AppState}) {
+export default function DiscoveryStart({state, onStartSeparate}: {state: store.AppState; onStartSeparate: () => void}) {
   const action = useAction()
   const captured = state.captureContext!
   const work = state.worklogs.find(w => w.id === captured.id)
@@ -71,7 +71,8 @@ export default function DiscoveryStart({state}: {state: store.AppState}) {
     </> : <>
       {questions ? <><p>Your agent’s question is in the right panel. Your saved answer is available for it to read.</p>
         <button className="primary" onClick={() => window.Understudy.openPanel?.()}>Answer the question →</button></>
-        : interaction?.active ? <p className="waiting-agent" role="status">Connected. Keep this page open; the next question will appear in the panel. You can continue in the chat while it works.</p>
+        : interaction?.active ? <><p className="waiting-agent" role="status">Connected. Keep this page open; the next question will appear in the panel. You can continue in the chat while it works.</p>
+          <button type="button" className="ghost" onClick={onStartSeparate}>Start a separate work entry</button></>
         : interviewStarted ? <><p role="status">Your agent can read your answer and continue drafting. Watch your AI chat for its response; the draft will appear on the right.</p>
           <details className="intro-help"><summary>Need to resume in your AI chat?</summary><AgentInvite prompt={prompt} /></details></>
           : <><AgentInvite prompt={prompt} label="Copy request for my agent" hint="Your work is saved. Send this request in your browser agent’s chat to continue with questions about the next steps and owners." />
